@@ -1,11 +1,11 @@
 #include <stdint.h>
 #include <time.h>
-#include "datstrc/bitmap/bitmap.h"
+#include "datstrc/bitmap.h"
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
 #任何人或组织在未经版权所有者同意的情况下禁止使用、修改、分发此作品
-start from 2024.11
+start from 2024.12
 Email:hj18914255909@outlook.com
 */
 static const char logo_bitmap_inf[60*26+1]={"\
@@ -39,21 +39,14 @@ static const char logo_bitmap_inf[60*26+1]={"\
 void print_mhuixs_logo()
 {
     srand(time(NULL));
-    BITMAP logo=getBITMAP(60*26);
-    setBITs(logo,logo_bitmap_inf,0,60*26-1);
-    //printBITMAP(logo);
+    BITMAP* logo=initBITMAP(60*26);
+    setBITs(&logo,logo_bitmap_inf,0,60*26-1);
+    //printBITMAP(&logo);
     for(uint64_t i=0;i<26;i++){
         for(uint64_t j=0;j<60;j++){
-            if(getBIT(logo,i*60+j))printf("%c",(rand()%100>50)?('A'+rand()%26):('a'+rand()%26));
+            if(getBIT(&logo,i*60+j))printf("%c",(rand()%100>50)?('A'+rand()%26):('a'+rand()%26));
             else printf(" ");
         }
         printf("\n");
-    }
-    
-    
-}
-
-int mymain()
-{
-    print_mhuixs_logo();
+    }    
 }

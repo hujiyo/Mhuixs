@@ -1,7 +1,0 @@
-这个文件夹是整个Mhuixs项目的根文件夹
-
-在其他任何文件.c中include时都以这个文件夹为根
-
-比如你要引用Mhuixs/datastrc/bitmap.h
-
-你就#include "datastrc/bitmap.h"

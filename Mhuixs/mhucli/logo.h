@@ -8,6 +8,6 @@ Email:hj18914255909@outlook.com
 #ifndef LOGO_H
 #define LOGO_H
 
-#include <logo.c>
+void print_mhuixs_logo();
 
 #endif
