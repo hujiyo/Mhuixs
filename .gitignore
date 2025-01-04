@@ -1,0 +1,11 @@
+# 忽略 dirt 文件夹及其内容
+dirt/
+ 
+# 忽略 Mhuixs 文件夹下的特定子文件夹及其内容
+Mhuixs/output/
+Mhuixs/mlib/output/
+Mhuixs/mhucli/output/
+Mhuixs/datstrc/output/
+ 
+# 忽略顶层的 output 文件夹及其内容
+output/
