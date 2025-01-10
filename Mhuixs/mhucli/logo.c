@@ -1,6 +1,7 @@
 #include <stdint.h>
+#include <stdio.h>
 #include <time.h>
-#include "datstrc/bitmap.h"
+#include "bitmap.h"
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
@@ -48,5 +49,5 @@ void print_mhuixs_logo()
             else printf(" ");
         }
         printf("\n");
-    }    
+    }
 }

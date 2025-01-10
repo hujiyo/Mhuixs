@@ -5,6 +5,7 @@
 start from 2024.11
 Email:hj18914255909@outlook.com
 */
+#include <stdint.h>
 #ifndef BITMAP_H
 #define BITMAP_H
 /*
