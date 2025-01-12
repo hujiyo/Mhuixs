@@ -560,6 +560,24 @@ uint8_t tblh_getfrom_i_j(TABLE* table, uint32_t i, uint32_t j, void* buffer)
 	}
 	return 1;
 }
+static uint8_t copymemfrom_i_j(TABLE* table, uint32_t i, uint32_t j, void* buffer)
+{
+	/*
+	从（i，j）虚拟位置获得数据
+	内置函数，和tblh_getfrom_i_j相比，本函数直接在TABLE所管辖的数据内存区域直接复制到buffer中
+	本函数不会根据数据类型自动返回相应的格式化数据
+	*/
+	//先获得第i个字段的类型、偏移量的信息
+	char type = table->p_field[i].type;
+	//找到（i,j）的地址
+	uint8_t* inf_addr = table->p_data + j * table->record_length + table->offsetofield[i];
+	memcpy(buffer,inf_addr,sizeoftype(type));
+	return 0;
+}
+static uint8_t* address_of_i_j(TABLE *table,uint32_t i,uint32_t j)
+{
+	return table->p_data + j * table->record_length + table->offsetofield[i];
+}
 void tblh_printf_record(TABLE* table, uint32_t j, uint32_t y)
 {
 	//初始化ptfmap得到打印地图
@@ -779,7 +797,18 @@ int tblh_join_record(TABLE* table, TABLE* table_join){//把join表加到table后
 		if (table->p_field[i].type != table_join->p_field[i].type) return err;
 	}
 	//不用检查字段名是否相同，直接把join表的内容加到table后面
+	/*
+	接下来我们来确定table的容量够不够
+	*/
+	if (table->record_num + table_join->record_num >= table->data_ROM) {	//记录数容量满了:扩展//不用担心有空位没有利用，记录条数永远等于实际记录条数
+		table->p_data = (uint8_t*)realloc(table->p_data, table->record_length * (table->data_ROM + table_join->record_num));
+		//更新p_data后要注意要刷新line_index
+		flash_line_index(table);
+		table->data_ROM += table_join->record_num;
+	}
+	memset(table->p_data + table->record_num*table->record_length ,0,table_join->record_num*table->record_length);
 	//下面是一些临时变量的提前声明
+	/*
 	int8_t cc_i1 = 0;
 	int16_t cc_i2 = 0;
 	int32_t cc_i4 = 0;
@@ -796,13 +825,15 @@ int tblh_join_record(TABLE* table, TABLE* table_join){//把join表加到table后
 	tp_t111 cc_t111;
 	tp_dt1111 cc_dt1111;
 	tp_dt211111 cc_dt211111;
+	*/
+	uint8_t* cc_buffer=(uint8_t*)calloc(75,4);//保证可以读取最长的s300
 	uint32_t cc_table_join_record_num = table_join->record_num;
 	uint32_t cc_table_join_field_num = table_join->field_num;
 	uint32_t cc_table_record_num = table->record_num;
 
-	for (uint32_t i = 0; i < cc_table_join_record_num; i++) {
-		for(uint32_t j = 0; j < cc_table_join_field_num; j++) {
-			tblh_getfrom_i_j(table_join,i, j, );
+	for (uint32_t j = 0; j < cc_table_join_record_num; j++) {
+		for(uint32_t i = 0; i < cc_table_join_field_num; i++) {
+			memcpy(address_of_i_j(table,i,j+cc_table_record_num),address_of_i_j(table_join,i,j),sizeof(table->p_field[i].type));
 		}
 	}
 
