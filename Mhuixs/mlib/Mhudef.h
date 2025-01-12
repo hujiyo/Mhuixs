@@ -30,6 +30,7 @@ Mhuixs数据库支持的数据结构/数据操作对象:
 2.任何一个数据结构的使用之前为它创建一个引用hook可以增加其保护等级、链接灵活性
 3.任何hook都必须挂载在Mhuixs或其它
 */
+typedef uint8_t HOOKTYPE;//钩子类型（即钩子指向的数据结构类型）
 //下面是Mhuixs数据库的基本数据结构（操作对象）
 #define M_TABLE      '0'
 #define M_KEYLOT     '1'
@@ -50,7 +51,7 @@ typedef uint32_t GROUP_ID;//组ID
 typedef uint32_t HOOK_ID;//钩子ID
 
 typedef uint8_t RANK;//保护等级
-typedef uint8_t HOOKTYPE;//钩子类型（即钩子指向的数据结构类型）
+
 
 #define RANK_Mhuixs      255     
 #define RANK_root        250     
@@ -61,11 +62,26 @@ typedef uint8_t HOOKTYPE;//钩子类型（即钩子指向的数据结构类型�
 #define RANK_client      25
 #define RANK_guest       0
 
+typedef enum cprs{
+    lv0=0,
+    lv1=1,
+    lv2=2,
+    lv3=3,
+    lv4=4,
+    /*
+    lv0 :不压缩
+    lv1 :snappy压缩
+    lv2 :LZF压缩算法
+    lv3 :直接存放于磁盘（然后返回索引）
+    lv4 :使用zlib库进行压缩存放于磁盘（然后返回索引）
+    */
+}cprs;
 
 typedef struct HOOK{
     void* handle;//指向任意数据结构描述符
     HOOKTYPE type;//描述符类型
     RANK rank;//保护等级
+    cprs cprs_stage;//压缩级别
     OWNER_ID owner;
     GROUP_ID group;
     HOOK_ID hook_id;
