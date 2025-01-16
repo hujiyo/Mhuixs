@@ -40,52 +40,74 @@ typedef uint8_t HOOKTYPE;//钩子类型（即钩子指向的数据结构类型�
 #define M_STACK      '5'
 #define M_QUEUE      '6'
 #define M_HOOK       '7'
-
 /*
 hook在Mhuixs中被用来：
 1.链接所有需要有权限功能的独立"数据结构"
 2.在一种数据结构中引用独立于自己的另一个数据结构
 */
-typedef uint32_t OWNER_ID;//所有者ID
-typedef uint32_t GROUP_ID;//组ID
-typedef uint32_t HOOK_ID;//钩子ID
-
-typedef uint8_t RANK;//保护等级
-
-
-#define RANK_Mhuixs      255     
-#define RANK_root        250     
-#define RANK_admin       200
-#define RANK_user        150
-#define RANK_aiadmin     100
-#define RANK_aiworker    50
-#define RANK_client      25
-#define RANK_guest       0
-
-typedef enum cprs{
-    lv0=0,
-    lv1=1,
-    lv2=2,
-    lv3=3,
-    lv4=4,
-    /*
-    lv0 :不压缩
-    lv1 :snappy压缩
-    lv2 :LZF压缩算法
-    lv3 :直接存放于磁盘（然后返回索引）
-    lv4 :使用zlib库进行压缩存放于磁盘（然后返回索引）
-    */
-}cprs;
-
 typedef struct HOOK{
     void* handle;//指向任意数据结构描述符
     HOOKTYPE type;//描述符类型
     RANK rank;//保护等级
     cprs cprs_stage;//压缩级别
-    OWNER_ID owner;
-    GROUP_ID group;
+    USER_ID owner;//对应所有者ID
+    GROUP_ID group;//对应组ID
     HOOK_ID hook_id;
     char* name;//狗子名
 }HOOK;
+
+/*
+Mhuixs权限管理建议：
+对于人类用户：开启会话默认是guest,通过登录系统获得user权限，通过密码认证获得admin权限，再通过sudo获得root权限
+对于AI用户：开启会话默认是guest,通过密码认证获得aiworker权限，通过密码获得aiadmin权限。
+*/
+typedef uint32_t USER_ID;//用户ID
+#define ROOT 0
+//ID分配规则草案：
+//ADMIN ID：1-99
+//HUMAN ID：100-999
+//AI  ID：1000-9999
+//GUEST ID：10000-
+typedef uint32_t GROUP_ID;//组ID
+typedef uint32_t HOOK_ID;//钩子ID
+
+typedef uint8_t RANK;//保护等级
+//下面是默认的保护等级
+#define RANK_root        255     
+#define RANK_admin       250
+#define RANK_user        150
+#define RANK_aiadmin     100
+#define RANK_aiworker    50
+#define RANK_guest       0
+
+/*
+Mhuixs是基于内存的数据库，在这个寸土寸金的内存世界，内存压缩是数据库的核心
+Mhuixs对于数据的操作是以数据结构为对象的，而所有数据对象是通过HOOK
+结构体来操作的，在execute.c执行每一步标准命令前都需要使用zslish.h中的函数对HOOK对象进行一次解压操作。
+此外，接入模块还要负责对长时间不操作的数据结构对象进行提高压缩等级的操作（刚创建时默认是lv0=0）。
+
+其实简单来说，Mhuixs中压缩就是降低内存的使用，所以将数据存入硬盘这个行为本身就是一个极为有效的压缩算法
+lv0 :不压缩
+lv1 :LZF压缩算法
+lv2 .snappy压缩
+lv3 .zstd压缩
+lv4 :直接存放于磁盘（然后返回磁盘索引）这个索引需要zslish自己定义，可能要包含文件路径、文件名、数据在文件中的偏移量等等
+lv5 :使用mzstd库进行压缩存放于磁盘（然后返回索引）
+*/
+typedef enum cprs{
+    lv0=0,    lv1=1,
+    lv2=2,    lv3=3,
+    lv4=4,    lv5=5
+}cprs;
+
+
+
+uint8_t islittlendian(){
+    uint16_t a=1;//大端:00000000 00000001 小端:00000001 00000000
+    return *(uint8_t*)&a;//返回1则是小端，返回0则是大端
+}
+int _IS_LITTLE_ENDIAN_; //全局变量:是否是小端 0-否 1-是
+
+#define Threadsnum 4 //线程数量
 
 #endif
