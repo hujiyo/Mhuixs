@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "stdlib.h": "c",
-        "bitmap.h": "c"
+        "bitmap.h": "c",
+        "session-linux.c": "cpp"
     }
 }
