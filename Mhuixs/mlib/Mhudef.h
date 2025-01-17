@@ -5,6 +5,7 @@
 start from 2024.11
 Email:hj18914255909@outlook.com
 */
+#include "datstrc.h"
 #include <stdint.h>
 #ifndef MHUDEF_H
 #define MHUDEF_H
@@ -50,9 +51,9 @@ typedef struct HOOK{
     HOOKTYPE type;//描述符类型
     RANK rank;//保护等级
     cprs cprs_stage;//压缩级别
-    USER_ID owner;//对应所有者ID
-    GROUP_ID group;//对应组ID
-    HOOK_ID hook_id;
+    userid_t owner;//对应所有者ID
+    groupid_t group;//对应组ID
+    hookid_t hook_id;
     char* name;//狗子名
 }HOOK;
 
@@ -61,19 +62,21 @@ Mhuixs权限管理建议：
 对于人类用户：开启会话默认是guest,通过登录系统获得user权限，通过密码认证获得admin权限，再通过sudo获得root权限
 对于AI用户：开启会话默认是guest,通过密码认证获得aiworker权限，通过密码获得aiadmin权限。
 */
-typedef uint32_t USER_ID;//用户ID
+typedef uint32_t userid_t;//用户ID 0-65535
 #define ROOT 0
 //ID分配规则草案：
 //ADMIN ID：1-99
 //HUMAN ID：100-999
 //AI  ID：1000-9999
 //GUEST ID：10000-
-typedef uint32_t GROUP_ID;//组ID
-typedef uint32_t HOOK_ID;//钩子ID
+typedef uint32_t groupid_t;//组ID 0-65535
+typedef uint32_t hookid_t;//钩子ID 0-65535
+
+
 
 typedef uint8_t RANK;//保护等级
-//下面是默认的保护等级
-#define RANK_root        255     
+//下面是默认的保
+#define RANK_root        255
 #define RANK_admin       250
 #define RANK_user        150
 #define RANK_aiadmin     100
@@ -106,7 +109,7 @@ uint8_t islittlendian(){
     uint16_t a=1;//大端:00000000 00000001 小端:00000001 00000000
     return *(uint8_t*)&a;//返回1则是小端，返回0则是大端
 }
-int _IS_LITTLE_ENDIAN_; //全局变量:是否是小端 0-否 1-是
+extern int _IS_LITTLE_ENDIAN_; //全局变量:是否是小端 0-否 1-是
 
 #define Threadsnum 4 //线程数量
 
