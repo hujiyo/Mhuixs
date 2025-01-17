@@ -44,9 +44,9 @@ uint64_t countBIT(BITMAP* bitmap,uint64_t start,uint64_t end);
 统计位图中从start偏移量到end偏移量之间1的个数。
 返回值：1的个数
 */
-uint64_t retuoffset(BITMAP* bitmap,uint64_t start,uint64_t end);
+int64_t retuoffset(BITMAP* bitmap,uint64_t start,uint64_t end);
 /*
-返回位图中从start偏移量到end偏移量之间第一个为1的位的偏移量。
+返回位图中从start偏移量到end偏移量之间第一个为1的位的偏移量。包括start和end
 返回值：偏移量  -1：未找到
 */
 void printBITMAP(BITMAP* bitmap);

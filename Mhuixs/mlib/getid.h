@@ -9,8 +9,9 @@ start from 2024.11
 Email:hj18914255909@outlook.com
 */
 
-int init_getid(void);
-int getid(char IDTYPE);
+int init_getid(void);//初始化ID分配器
+int getid(char IDTYPE);//获得相应种类的ID
+int delid(char IDTYPE,uint16_t id);//删除相应种类的ID
 
 #define ADMIN_ID 0
 #define HUMAN_ID 1
@@ -18,6 +19,7 @@ int getid(char IDTYPE);
 #define GUEST_ID 3
 #define GROUP_ID 4
 #define HOOK_ID 5
+
 /*
 extern userid_t _ADMIN_ID_ ;//全局变量:ADMIN ID分配器
 extern userid_t _AI_ID_ ;//全局变量:AI ID分配器
@@ -26,4 +28,5 @@ extern userid_t _GUEST_ID_ ;//全局变量:GUEST ID分配器
 extern groupid_t _GROUP_ID_ ;//全局变量:当前组ID分配器
 extern hookid_t _HOOK_ID_ ;//全局变量:当前钩子ID分配器
 */
+
 #endif
