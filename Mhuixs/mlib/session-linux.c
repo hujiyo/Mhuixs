@@ -4,6 +4,14 @@
 #include <time.h>
 #include "Mhudef.h"
 
+/*
+#版权所有 (c) Mhuixs-team 2024
+#许可证协议:
+#任何人或组织在未经版权所有者同意的情况下禁止使用、修改、分发此作品
+start from 2025.1
+Email:hj18914255909@outlook.com
+*/
+
 #include <unistd.h> //unix标准符号定义头文件
 #include <sys/socket.h>//socket函数库头文件
 #include <sys/types.h>//基本系统数据类型
@@ -50,7 +58,7 @@ typedef struct SESSION{
    int sessocket; // 通信套接字文件描述符
    struct sockaddr client_addr; // 客户端地址
 
-   USER_ID user_id; // 客户端身份id
+   userid_t user_id; // 客户端身份id
    RANK rank; // 客户端权限等级
 
    time_t time; // 会话建立时间

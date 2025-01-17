@@ -12,13 +12,13 @@
 #endif
 
 
-typedef uint32_t USER_ID;
+typedef uint32_t userid_t;
 
 typedef struct SESSION{
    int sessocket; // 通信套接字文件描述符
    struct sockaddr client_addr; // 客户端地址
 
-   USER_ID user_id; // 客户端身份id
+   userid_t user_id; // 客户端身份id
    RANK rank; // 客户端权限等级
 
    time_t time; // 会话建立时间

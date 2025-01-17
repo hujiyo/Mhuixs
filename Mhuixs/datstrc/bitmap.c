@@ -100,7 +100,7 @@ uint64_t countBIT(BITMAP* bitmap,uint64_t start,uint64_t end)//包括start和end
     }
     return num; // 返回计数结果
 }
-uint64_t retuoffset(BITMAP* bitmap,uint64_t start,uint64_t end)//包括start和end,返回范围内第一个1的位置
+int64_t retuoffset(BITMAP* bitmap,uint64_t start,uint64_t end)//包括start和end,返回范围内第一个1的位置
 {
     if(bitmap == NULL){
         return 0;
@@ -109,12 +109,46 @@ uint64_t retuoffset(BITMAP* bitmap,uint64_t start,uint64_t end)//包括start和e
         return 0;
     }
     uint8_t* first = bitmap + sizeof(uint64_t); // 指向数据区
+    if(end-start > 32){
+        goto l;
+    }
+    //逐位查找
     for(;start <= end;start++){
         if(first[start/8] & (1 << (start%8))){
             return start; // 返回第一个1的位置
         }
     }
+    return err; // 如果没有找到，则返回0
+    l://逐字节查找
+    //先找start所在的字节
+    int st_bit = start%8;
+    for(;st_bit < 8;st_bit++){
+        if(first[start/8] & (128 >> st_bit)){//1000 0000 >> st_byte
+            return (start/8)*8 + st_bit; // 返回第一个1的位置
+        }
+    }
+    //再找中间的字节
+    uint32_t st_byte = start/8+1;//开始字节
+    uint32_t en_byte = end/8-1;//结束字节
+    for(;st_byte <= en_byte;st_byte++){
+        if(first[st_byte]!= 0){
+            for(uint8_t i = 0;i < 8;i++){
+                if(first[st_byte] & (128 >> i)){
+                    return st_byte*8 + i; // 返回第一个1的位置
+                }
+            }
+        }
+    }
+    //再找end所在的字节
+    int en_byte = end%8;
+    for(uint8_t i = 0;i <= en_byte;i++){
+        if(first[end/8] & (128 >> i)){
+            return (end/8)*8 + i; // 返回第一个1的位置
+        }
+    }
+    return err; // 如果没有找到，则返回0
 }
+
 void printBITMAP(BITMAP* bitmap)
 {
     if(bitmap == NULL){
