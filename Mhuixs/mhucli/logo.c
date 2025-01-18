@@ -40,7 +40,7 @@ static const char logo_bitmap_inf[60*26+1]={"\
 void print_mhuixs_logo()
 {
     srand(time(NULL));
-    BITMAP* logo=initBITMAP(60*26);
+    BITMAP* logo=makeBITMAP(60*26);
     setBITs(&logo,logo_bitmap_inf,0,60*26-1);
     //printBITMAP(&logo);
     for(uint64_t i=0;i<26;i++){

@@ -37,20 +37,20 @@ int init_getid()
     _HUMAIN_ID_ = 100;//100-999
     _AI_ID_ = 1000;//1000-9999
     _GUEST_ID_ = 10000;//10000-65535
-    _USERS_ID_BITMAP_ = initBITMAP(65535);
+    _USERS_ID_BITMAP_ = makeBITMAP(65535);
     if(_USERS_ID_BITMAP_ == NULL){
         return err;
     }
     setBIT(_USERS_ID_BITMAP_,0,1);//隐藏root位
 
     _GROUP_ID_ = 0;//0-65535
-    _GROUP_ID_BITMAP_ = initBITMAP(65535);
+    _GROUP_ID_BITMAP_ = makeBITMAP(65535);
     if(_GROUP_ID_BITMAP_ == NULL){
         return err;
     }
 
     _HOOK_ID_ = 0;//0-65535
-    _HOOK_ID_BITMAP_ = initBITMAP(65535);
+    _HOOK_ID_BITMAP_ = makeBITMAP(65535);
     if(_HOOK_ID_BITMAP_ == NULL){
         return err;
     }

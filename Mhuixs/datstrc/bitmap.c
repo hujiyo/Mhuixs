@@ -12,39 +12,42 @@ start from 2024.11
 Email:hj18914255909@outlook.com
 */
 /*
+2025.1.17:逐位查找效率太低，改为逐字节查找，同时降低最大偏移量为2^32-1（原来是2^64-1) huji
+*/
+/*
 BITMAP 结构
-0~7             bit数
-8~(bit/8+7)     数据区大小
+0~3             bit数
+4~(bit/8+7)     数据区大小
 */
 
 typedef uint8_t BITMAP;
 
 
-BITMAP* initBITMAP(uint64_t size)//偏移量:0 ~ size-1
+BITMAP* makeBITMAP(uint32_t size)//偏移量:0 ~ size-1
 {
     if(size == 0){
         return NULL;
     }
-    BITMAP* bitmap=(BITMAP*)calloc(1,(size+7)/8 + sizeof(uint64_t));//bitmap的大小：(size+7)/8 + 8 = (size + 15)/8
+    BITMAP* bitmap=(BITMAP*)calloc((size+7)/8 + sizeof(uint32_t),1  );//bitmap的大小：(size+7)/8 + 8 = (size + 15)/8
     if(bitmap == NULL){
         return NULL;
     }
-    *(uint64_t*)bitmap = size; // 设置bitmap的大小
+    *(uint32_t*)bitmap = size; // 设置bitmap的大小
 
     return bitmap;
 }
 void freeBITMAP(BITMAP* bitmap){
     free(bitmap); // 释放bitmap内存
 }
-int getBIT(BITMAP* bitmap,uint64_t offset)//偏移量从0开始
+int getBIT(BITMAP* bitmap,uint32_t offset)//偏移量从0开始
 {
     if(bitmap == NULL){
         return err;
     }
-    if(offset > *(uint64_t*)bitmap){
+    if(offset >= *(uint32_t*)bitmap){
         return err;
     }
-    uint8_t* first = bitmap + sizeof(uint64_t); // 指向数据区
+    uint8_t* first = bitmap + sizeof(uint32_t); // 指向数据区
     return (first[offset/8] >> (offset%8)) & 1; // 获取指定位置的bit值
 }
 int setBIT(BITMAP* bitmap,uint64_t offset,uint8_t value)

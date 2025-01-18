@@ -14,10 +14,10 @@ reids支持位图这种数据结构，
 */
 typedef uint8_t BITMAP;
 
-BITMAP* initBITMAP(uint64_t size);
+BITMAP* makeBITMAP(uint64_t size);
 /*
 创建一个位图对象，位图大小为size位。
-BITMAP *bitmap = initBITMAP(size);
+BITMAP *bitmap = makeBITMAP(size);
 */
 void freeBITMAP(BITMAP* bitmap);
 /*
