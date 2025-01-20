@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include "Mhudef.h"//包含bitmap.h
+#include "bitmap.h"
 #include "getid.h"
 
 /*
