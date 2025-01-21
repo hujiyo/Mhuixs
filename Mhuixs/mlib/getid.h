@@ -9,24 +9,27 @@ start from 2024.11
 Email:hj18914255909@outlook.com
 */
 
+/*
+ID分配器
+会话ID：1-65535 其中：1-99为管理员ID 100-999为用户ID 1000-9999为AI ID 10000-65535为游客ID
+组ID：0-65535
+钩子ID：0-65535
+*/
 int init_getid(void);//初始化ID分配器
 int getid(char IDTYPE);//获得相应种类的ID
 int delid(char IDTYPE,uint16_t id);//删除相应种类的ID
 
+//ID类型 ：IDTYPE
 #define ADMIN_ID 0
 #define HUMAN_ID 1
 #define AI_ID 2
 #define GUEST_ID 3
+
+#define USER_ID 6 //上面4个ID类型的并称为用户ID
+
 #define GROUP_ID 4
 #define HOOK_ID 5
 
-/*
-extern userid_t _ADMIN_ID_ ;//全局变量:ADMIN ID分配器
-extern userid_t _AI_ID_ ;//全局变量:AI ID分配器
-extern userid_t _HUMAIN_ID_ ;//全局变量:用户ID分配器
-extern userid_t _GUEST_ID_ ;//全局变量:GUEST ID分配器
-extern groupid_t _GROUP_ID_ ;//全局变量:当前组ID分配器
-extern hookid_t _HOOK_ID_ ;//全局变量:当前钩子ID分配器
-*/
+
 
 #endif
