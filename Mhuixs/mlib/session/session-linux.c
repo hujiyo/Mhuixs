@@ -3,6 +3,16 @@
 #include <stdio.h>
 #include <time.h>
 #include "Mhudef.h"
+#include "getid.h"//用户ID分配器
+#include "session.h"
+
+#include <unistd.h> //unix标准符号定义头文件
+#include <sys/socket.h>//socket函数库头文件
+#include <sys/types.h>//基本系统数据类型
+#include <netinet/in.h>//Internet地址族
+#include <arpa/inet.h>//提供IP地址转换函数
+#include <fcntl.h> //文件控制定义头文件
+#include <errno.h> //错误号定义头文件
 
 /*
 #版权所有 (c) Mhuixs-team 2024
@@ -12,16 +22,7 @@ start from 2025.1
 Email:hj18914255909@outlook.com
 */
 
-#include <unistd.h> //unix标准符号定义头文件
-#include <sys/socket.h>//socket函数库头文件
-#include <sys/types.h>//基本系统数据类型
-#include <netinet/in.h>//Internet地址族
-#include <arpa/inet.h>//提供IP地址转换函数
-#include <fcntl.h> //文件控制定义头文件
-#include <errno.h> //错误号定义头文件
-/*
-Mhuixs通过会话来管理客户端连接
-*/
+
 int set_nonblocking(int sockfd) 
 {
    /*
@@ -45,16 +46,15 @@ int set_nonblocking(int sockfd)
    return 0; // 成功
 }
 
-#define PORT 18482                  //端口号，1848.2.22:《共产党宣言》发表
+#define PORT 18482                  //Mhuixs默认端口号，1848.2.22:《共产党宣言》发表
 #define BUFFER_SIZE 1024            // 缓冲区大小（1KB/8KB/16KB/64KB）
 #define MAX_SESSIONS 64             // 最大会话数量
 #define SESSION_backlog 8           //连接等待队列最大长度
 #define heartbeat 10                //心跳包间隔时间（单位:s）
-#define err -1                      //错误代码
 
 uint32_t _SESSIONS_CURRENT_NUM_=0; // 全局变量:当前会话总数量
 
-typedef struct SESSION{
+typedef struct SESSION{//会话
    int sessocket; // 通信套接字文件描述符
    struct sockaddr client_addr; // 客户端地址
 
@@ -74,10 +74,10 @@ typedef struct SESSION{
    uint8_t* buffer; // 会话缓冲区
    uint32_t buffer_size; // 会话缓冲区大小
    uint32_t datlen; // 已缓存的数据量
-   uint32_t pos; // 数据读取头偏移量   
+   uint32_t ofst_ptr; // 数据读取头偏移量
 } SESSION;
 
-int set_session_ip(SESSION* session,const char* ip,int af){
+/*static*/int set_session_ip(SESSION* session,const char* ip,int af){
    /*
    功能：设置会话ip地址
 
@@ -87,8 +87,12 @@ int set_session_ip(SESSION* session,const char* ip,int af){
 
    成功-返回0  失败-返回err
    */
-   if(session==NULL) return err;
-   if(af!=AF_INET&&af!=AF_INET6) return err;
+   if(session==NULL) {
+      return err;
+   }
+   if(af!=AF_INET&&af!=AF_INET6) {
+      return err;
+   }
    if(af==AF_INET){
       session->client_addr.sa_family=AF_INET;
       struct sockaddr_in *sockaddr_in = (struct sockaddr_in *)&session->client_addr;
@@ -101,49 +105,41 @@ int set_session_ip(SESSION* session,const char* ip,int af){
    }
    return 0;
 }
-int free_session(SESSION* session)// 释放某会话资源
+int killandfree_session(SESSION* session)
 {
+   /*
+   这个函数是软关闭会话，重置会话资源，关闭通信套接字
+   后期还要考虑很多安全结束会话的问题
+   */
    if(session==NULL) {
       return err;
    }
-   goto l;
-   /*
-   功能：释放、重置会话资源
-   */   
-   session->sessocket=0;//通信套接字文件描述符
-   memset(&session->client_addr,0,sizeof(session->client_addr));//清空客户端地址
-   session->user_id=0; // 客户端身份id RANK_guest=0
-   session->rank=0; // 客户端权限等级 RANK_guest=0
+
+   //先关闭通信套接字
+   if(session->sessocket > 2 ) {//防止关闭stdin文件描述符
+      close(session->sessocket);
+   }
+   session->sessocket=err;//通信套接字文件描述符
+   //清空客户端地址
+   memset(&session->client_addr,0,sizeof(session->client_addr));
+   //释放用户ID
+   delid(USER_ID,session->user_id);//释放用户ID
+   session->user_id=VOID; // 客户端身份id
+   session->rank=RANK_guest; // 客户端权限等级 RANK_guest=0
+
+   //会话的其他属性信息清空
    session->time=0; // 会话建立时间
    session->revisit_sum=0; // 回访次数归零
    session->status=SESS_idle; // 会话状态归0
    session->priority=0; // 会话优先级0
+
+   //清空会话内存资源
    free(session->buffer);
    session->buffer=(uint8_t*)calloc(BUFFER_SIZE,sizeof(uint8_t));
-   session->buffer_size=BUFFER_SIZE;//唯一不是0的成员
+   session->buffer_size=BUFFER_SIZE;//缓存区大小
    session->datlen=0; // 已缓存的数据量归零
-   session->pos=0; // 数据读取头偏移量归零
-   return 0;
-   l:
-   free(session->buffer);
-   memset(session,0,sizeof(SESSION));
-   session->buffer=(uint8_t*)calloc(BUFFER_SIZE,sizeof(uint8_t));
-   if(session->buffer==NULL) {
-      return err;
-   }
-   session->buffer_size=BUFFER_SIZE;//唯一不是0的成员
-   return 0;
-}
-int kill_session(SESSION* session)
-{
-   /*
-   这个函数是软关闭会话，释放会话资源，关闭通信套接字
-   后期还要考虑很多安全结束会话的问题
-   */
-   //先关闭通信套接字
-   close(session->sessocket);
-   //重置会话资源
-   free_session(session);
+   session->ofst_ptr=0; // 数据读取头偏移量归零
+
    return 0;
 }
 int start_session_server(uint16_t port,int af,uint32_t backlog,SESSION* SESSPOOL,uint32_t sessionums,uint32_t buffer_size)// 启动会话服务器
@@ -157,7 +153,7 @@ int start_session_server(uint16_t port,int af,uint32_t backlog,SESSION* SESSPOOL
    backlog:连接等待队列最大长度
    buffer_size:会话缓冲区默认大小（最开始分配1KB，可以增加）
 
-   成功-返回socket文件描述符  失败-返回err
+   成功-返回一个非阻塞的socket文件描述符  失败-返回err
    */
    if(af!=AF_INET&&af!=AF_INET6) {
       return err;
@@ -168,7 +164,7 @@ int start_session_server(uint16_t port,int af,uint32_t backlog,SESSION* SESSPOOL
       perror("socket failed");//AF_INET:IPv4协议族，SOCK_STREAM:面向连接的字节流，0:使用默认协议
       return err;
    }
-   // 设置为非阻塞模式
+   // 将服务套接字socket设置为非阻塞模式
    if (set_nonblocking(server_fd) == err) {
       perror("set_nonblocking failed");
       close(server_fd);
@@ -178,14 +174,14 @@ int start_session_server(uint16_t port,int af,uint32_t backlog,SESSION* SESSPOOL
    struct sockaddr_in address;
    int addrlen = sizeof(struct sockaddr_in);
    address.sin_family = AF_INET;//IPv4协议族
-   address.sin_addr.s_addr = INADDR_ANY;//任意IP地址
+   address.sin_addr.s_addr = INADDR_ANY;//任意IP地址：监听所有IP地址
    address.sin_port = htons(port);//htons:将主机字节序转换为网络字节序
    if ( bind(server_fd, (struct sockaddr *)&address, sizeof(struct sockaddr_in)) < 0) {
       perror("bind failed");
       close(server_fd);
       return err;
    }
-   // 设置为监听，设置最大待处理数
+   // 将服务套接字socket设置为监听套接字，设置最大待处理数
    if (listen(server_fd, backlog) < 0) {
       perror("listen failed");
       close(server_fd);
@@ -194,8 +190,7 @@ int start_session_server(uint16_t port,int af,uint32_t backlog,SESSION* SESSPOOL
    //初始化会话池
    SESSPOOL=(SESSION*)calloc(sessionums,sizeof(SESSION));
    for(int i=0;i<sessionums;i++){
-      SESSPOOL[i].buffer=(uint8_t*)calloc(buffer_size,sizeof(uint8_t));
-      SESSPOOL[i].buffer_size=buffer_size;
+      killandfree_session(&SESSPOOL[i]);
    }
    return server_fd;
 }
@@ -203,7 +198,7 @@ int end_session_server(int server_fd,SESSION* SESSPOOL,uint32_t sessionums)// �
 {
    //关闭socket服务模块
    for(int i=0;i<sessionums;i++){ // 遍历所有会话
-      kill_session(&SESSPOOL[i]); // 软关闭会话
+      killandfree_session(&SESSPOOL[i]); // 软关闭会话
       free(SESSPOOL[i].buffer);//释放会话缓冲区
    }
    free(SESSPOOL);//释放整个会话池内存
@@ -213,7 +208,13 @@ int end_session_server(int server_fd,SESSION* SESSPOOL,uint32_t sessionums)// �
 void flash_accept(int server_fd,SESSION* SESSPOOL, uint16_t sessionums,uint16_t backlog)
 {
    /*
-   功能：刷新accept连接，将新连接加入会话池
+   功能：刷新accept连接，将”新增连接“加入”会话池“中
+   常常调用这个函数以实时接受客户端新连接
+
+   server_fd:服务器socket文件描述符
+   SESSPOOL:会话池
+   sessionums:会话池最大容量
+   backlog:连接等待队列最大长度，建议和start_session_server中的backlog相同
    */
    for(int i=0;i<backlog;i++){
       if(_SESSIONS_CURRENT_NUM_>=sessionums) {
@@ -221,7 +222,9 @@ void flash_accept(int server_fd,SESSION* SESSPOOL, uint16_t sessionums,uint16_t 
       }
       //接受新连接
       struct sockaddr new_client_addr;//即将存储待连接的客户端地址
-      int addrlen = sizeof(struct sockaddr_in);
+      int addrlen = sizeof(struct sockaddr_in);//客户端地址长度
+      //memset(&new_client_addr,0,sizeof(new_client_addr));//清空客户端地址
+      //accept将自动把new_client_addr中的无关内容清空
       int new_socket=accept(server_fd, &new_client_addr, (socklen_t*)&addrlen);//获得通信套接字文件描述符
       if(new_socket<0){
          if(errno==EAGAIN||errno==EWOULDBLOCK) {// 没有新连接
@@ -230,53 +233,68 @@ void flash_accept(int server_fd,SESSION* SESSPOOL, uint16_t sessionums,uint16_t 
          continue;
       }
       _SESSIONS_CURRENT_NUM_++;//当前会话数量+1
-      //找到一个空闲的会话
+      //找到一个空会话，将新连接存入这个空会话
       for(int j=0;j<sessionums;j++){
          if(SESSPOOL[j].status==SESS_idle){
             SESSPOOL[j].sessocket=new_socket;//初始化通信套接字文件描述符
             SESSPOOL[j].client_addr=new_client_addr;//初始化客户端ip地址
+
             SESSPOOL[j].time=time(NULL);//初始化会话建立时间
             SESSPOOL[j].status=SESS_alive;//初始化会话状态
             SESSPOOL[j].priority=1;//初始化会话优先级
-            SESSPOOL[j].user_id = 
+            //SESSPOOL[j].revisit_sum=0;//初始化回访次数
+            /*
+            新连接的默认身份是游客
+            权限等级为游客
+            */
+            SESSPOOL[j].user_id =getid(GUEST_ID);//初始化用户ID
+            //SESSPOOL[j].rank=RANK_guest;//初始化用户权限等级
+            
+            //SESSPOOL[j].datlen=0;//初始化已缓存的数据量
+            //SESSPOOL[j].ofst_ptr=0;//初始化数据读取头偏移量
+            //会话缓冲区不会初始化，因为killandfree_session会保证缓冲区回归默认状态
+            //SESSPOOL[j].buffer_size=BUFFER_SIZE;//初始化会话缓冲区大小 
          }  
       }
-   }
-  
+   }  
 }
 
-
+/*
 
 
 
 int my_main() {
-    SESSION* SESSPOOL=NULL;
-    int server_fd = start_session_server(PORT,SESSION_backlog,SESSPOOL,MAX_SESSIONS,BUFFER_SIZE);
-    if(server_fd == err) return err;
+   
+   // 启动会话服务器
+   SESSION* SESSPOOL=NULL;//会话池
+   int server_fd = start_session_server(PORT,SESSION_backlog,SESSPOOL,MAX_SESSIONS,BUFFER_SIZE);
+   if(server_fd == err) return err;
 
 
 
-   int new_socket;//通信套接字文件描述符   
+   
 
-    // 接受客户端连接
-    if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
-        perror("accept");
-        close(server_fd);
-        exit(EXIT_FAILURE);
-    }
+   // 接受客户端连接
+   int new_socket;//通信套接字文件描述符
+   if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+      perror("accept");
+      close(server_fd);
+      exit(EXIT_FAILURE);
+   }
 
-    printf("Connection accepted\n");
+   printf("Connection accepted\n");
 
-    // 读取客户端消息
-    int valread = read(new_socket, buffer, BUFFER_SIZE);
-    printf("%s\n", buffer);
+   // 读取客户端消息
+   int valread = read(new_socket, buffer, BUFFER_SIZE);
+   printf("%s\n", buffer);
 
-    // 发送响应消息给客户端
-    const char *hello = "Hello from server";
-    send(new_socket, hello, strlen(hello), 0);
-    printf("Hello message sent\n");
+   // 发送响应消息给客户端
+   const char *hello = "Hello from server";
+   send(new_socket, hello, strlen(hello), 0);
+   printf("Hello message sent\n");
 
-    // 关闭socket
-    close(new_socket);
-    close(server_fd);
+   // 关闭socket
+   close(new_socket);
+   close(server_fd);
 }
+*/

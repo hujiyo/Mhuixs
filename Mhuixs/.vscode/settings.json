@@ -1,6 +1,8 @@
 {
     "files.associations": {
-        "getid.h": "c"
+        "getid.h": "c",
+        "session-win.c": "cpp",
+        "session-linux.c": "cpp"
     },
     "marscode.codeCompletionPro": {
         "enableCodeCompletionPro": true

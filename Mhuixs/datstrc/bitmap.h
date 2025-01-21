@@ -14,7 +14,7 @@ reids支持位图这种数据结构，
 */
 typedef uint8_t BITMAP;
 
-BITMAP* makeBITMAP(uint64_t size);
+BITMAP* makeBITMAP(uint32_t size);
 /*
 创建一个位图对象，位图大小为size位。
 BITMAP *bitmap = makeBITMAP(size);
@@ -24,27 +24,27 @@ void freeBITMAP(BITMAP* bitmap);
 释放一个位图对象。
 freeBITMAP(bitmap);
 */
-int getBIT(BITMAP* bitmap,uint64_t offset);
+int getBIT(BITMAP* bitmap,uint32_t offset);
 /*
 获取位图中偏移量为offset的位的值。
 返回值：0或1
 */
-int setBIT(BITMAP* bitmap,uint64_t offset,uint8_t value);
+int setBIT(BITMAP* bitmap,uint32_t offset,uint8_t value);
 /*
 设置位图中偏移量为offset的位的值为value。
 返回值：0：成功  -1：失败
 */
-int setBITs(BITMAP* bitmap,const char* data_stream,uint64_t start,uint64_t end);
+int setBITs(BITMAP* bitmap,const char* data_stream,uint32_t start,uint32_t end);
 /*
 将data_stream中的数据设置到位图中，从start偏移量到end偏移量。
 返回值：0：成功  -1：失败
 */
-uint64_t countBIT(BITMAP* bitmap,uint64_t start,uint64_t end);
+int64_t countBIT(BITMAP* bitmap,uint32_t start,uint32_t end);
 /*
 统计位图中从start偏移量到end偏移量之间1的个数。
 返回值：1的个数
 */
-int64_t retuoffset(BITMAP* bitmap,uint64_t start,uint64_t end);
+int64_t retuoffset(BITMAP* bitmap,uint32_t start,uint32_t end);
 /*
 返回位图中从start偏移量到end偏移量之间第一个为1的位的偏移量。包括start和end
 返回值：偏移量  -1：未找到

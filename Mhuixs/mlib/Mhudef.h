@@ -62,8 +62,10 @@ Mhuixs权限管理建议：
 对于人类用户：开启会话默认是guest,通过登录系统获得user权限，通过密码认证获得admin权限，再通过sudo获得root权限
 对于AI用户：开启会话默认是guest,通过密码认证获得aiworker权限，通过密码获得aiadmin权限。
 */
-typedef uint32_t userid_t;//用户ID 0-65535
+typedef uint32_t userid_t;//用户ID 1-65535
+//下面是ID的两个极端，ROOT是最高权限ID，VOID是最低权限ID
 #define ROOT 0
+#define VOID 65535
 //ID分配规则草案：
 //ADMIN ID：1-99
 //HUMAN ID：100-999
@@ -75,7 +77,7 @@ typedef uint32_t hookid_t;//钩子ID 0-65535
 
 
 typedef uint8_t RANK;//保护等级
-//下面是默认的保
+//下面是默认的保护等级
 #define RANK_root        255
 #define RANK_admin       250
 #define RANK_user        150
