@@ -1,5 +1,9 @@
 {
     "files.associations": {
         "getid.h": "c"
-    }
+    },
+    "marscode.codeCompletionPro": {
+        "enableCodeCompletionPro": true
+    },
+    "marscode.enableInlineCommand": true
 }
