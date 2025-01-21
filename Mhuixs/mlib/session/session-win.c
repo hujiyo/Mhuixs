@@ -1,17 +1,4 @@
-#include <stdint.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <time.h>
-#include "Mhudef.h"
-#include "getid.h"//用户ID分配器
-#include "session.h"
-
-#include <winsock2.h> // Windows 套接字头文件
-#include <ws2tcpip.h> // Windows 套接字函数库头文件
-#include <fcntl.h> // 文件控制定义头文件
-#include <errno.h> // 错误号定义头文件
-
-#pragma comment(lib, "ws2_32.lib") // 链接 Winsock 库
+#ifdef _WIN32
 
 /*
 #版权所有 (c) Mhuixs-team 2024
@@ -20,6 +7,9 @@
 start from 2025.1
 Email:hj18914255909@outlook.com
 */
+
+#include "session.h"
+#pragma comment(lib, "ws2_32.lib") // 链接 Winsock 库
 
 int set_nonblocking(int sockfd) 
 {
@@ -157,7 +147,7 @@ int start_session_server(uint16_t port,int af,uint32_t backlog,SESSION* SESSPOOL
    int server_fd;
    if ((server_fd = socket(af, SOCK_STREAM, 0)) == INVALID_SOCKET) { //返回一个非负整数表示成功
       perror("socket failed");//AF_INET:IPv4协议族，SOCK_STREAM:面向连接的字节流，0:使用默认协议
-      WSACleanup();
+      WSACleanup();//释放Winsock资源
       return err;
    }
    // 将服务套接字socket设置为非阻塞模式
@@ -202,7 +192,7 @@ int end_session_server(int server_fd,SESSION* SESSPOOL,uint32_t sessionums)// �
    }
    free(SESSPOOL);//释放整个会话池内存
    closesocket(server_fd);
-   WSACleanup();
+   WSACleanup();//释放Winsock资源
    return 0;
 }
 void flash_accept(int server_fd,SESSION* SESSPOOL, uint16_t sessionums,uint16_t backlog)
@@ -258,3 +248,5 @@ void flash_accept(int server_fd,SESSION* SESSPOOL, uint16_t sessionums,uint16_t 
       }
    }  
 }
+
+#endif
