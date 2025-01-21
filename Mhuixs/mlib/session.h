@@ -1,6 +1,12 @@
+#include <stdlib.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <time.h>
 #include "Mhudef.h"
+#include "getid.h"//用户ID分配器
+
+#include <fcntl.h> // 文件控制定义头文件
+#include <errno.h> // 错误号定义头文件
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
@@ -24,10 +30,12 @@ Mhuixs通过会话来管理客户端连接
 
 
 #ifdef _WIN32
-/*
-NULL
-*/
-#else //默认linux
+
+#include <winsock2.h> // Windows 套接字头文件
+#include <ws2tcpip.h> // Windows 套接字函数库头文件
+
+#endif
+#ifdef __linux__
 
 #include <unistd.h> //unix标准符号定义头文件
 #include <sys/socket.h>//socket函数库头文件
@@ -36,6 +44,9 @@ NULL
 #include <arpa/inet.h>//提供IP地址转换函数
 #include <fcntl.h> //文件控制定义头文件
 #include <errno.h> //错误号定义头文件
+
+#endif
+
 
 typedef struct SESSION{//会话
    int sessocket; // 通信套接字文件描述符
@@ -100,4 +111,40 @@ void flash_accept(int server_fd,SESSION* SESSPOOL, uint16_t sessionums,uint16_t 
 
 #endif
 
-#endif
+
+/*
+int my_main() {
+   
+   // 启动会话服务器
+   SESSION* SESSPOOL=NULL;//会话池
+   int server_fd = start_session_server(PORT,SESSION_backlog,SESSPOOL,MAX_SESSIONS,BUFFER_SIZE);
+   if(server_fd == err) return err;
+
+
+
+   
+
+   // 接受客户端连接
+   int new_socket;//通信套接字文件描述符
+   if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+      perror("accept");
+      close(server_fd);
+      exit(EXIT_FAILURE);
+   }
+
+   printf("Connection accepted\n");
+
+   // 读取客户端消息
+   int valread = read(new_socket, buffer, BUFFER_SIZE);
+   printf("%s\n", buffer);
+
+   // 发送响应消息给客户端
+   const char *hello = "Hello from server";
+   send(new_socket, hello, strlen(hello), 0);
+   printf("Hello message sent\n");
+
+   // 关闭socket
+   close(new_socket);
+   close(server_fd);
+}
+*/
