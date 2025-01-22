@@ -9,3 +9,5 @@ Mhuixs/datstrc/output/
  
 # 忽略顶层的 output 文件夹及其内容
 output/
+
+document/
