@@ -25,7 +25,7 @@ typedef struct STREAM {
     /*
     字节流的长度
     */
-} STREAM;
+} STREAM,str;
 
 STREAM* makeSTREAM();
 /*
@@ -51,4 +51,11 @@ int writeSTREAM(STREAM *stream, uint32_t pos, uint8_t *bitestream, uint32_t leng
 writeSTREAM(object,pos,bitestream,length);
 返回真实的写入位置pos
 */
+str* bcstr(uint8_t *string, uint32_t len);
+/*
+将字符串string转换为str结构体
+bcstr(string,len);
+返回str结构体
+*/
+
 #endif

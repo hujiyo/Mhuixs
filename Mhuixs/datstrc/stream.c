@@ -13,7 +13,7 @@ Email:hj18914255909@outlook.com
 typedef struct STREAM{
     uint8_t *string;
     uint32_t len;
-} STREAM;
+} STREAM,str;
 
 STREAM* makeSTREAM() {
     return (STREAM *)calloc(1,sizeof(STREAM));
@@ -56,4 +56,15 @@ int writeSTREAM(STREAM *stream, uint32_t pos, uint8_t *bitestream, uint32_t leng
     // 将新数据复制到指定位置
     memcpy(stream->string + pos, bitestream, length);
     return pos;
+}
+str* bcstr(uint8_t *string, uint32_t len)
+{
+    /*
+    将C字符串转换为STREAM对象
+    返回一个STREAM对象
+    */
+    str* stream = (str*)malloc(sizeof(str));
+    stream->string = string;
+    stream->len = len;
+    return stream;
 }
