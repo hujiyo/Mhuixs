@@ -4,6 +4,7 @@
 #include <time.h>
 #include "Mhudef.h"
 #include "getid.h"//用户ID分配器
+#include "iami/aes.h"
 
 #include <fcntl.h> // 文件控制定义头文件
 #include <errno.h> // 错误号定义头文件
@@ -69,6 +70,8 @@ typedef struct SESSION{//会话
    uint32_t buffer_size; // 会话缓冲区大小
    uint32_t datlen; // 已缓存的数据量
    uint32_t ofst_ptr; // 数据读取头偏移量
+
+   SKEY skey;//AES加密密钥
 } SESSION;
 
 int killandfree_session(SESSION* session);
