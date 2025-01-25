@@ -4,7 +4,7 @@
 #include <time.h>
 #include "Mhudef.h"
 #include "getid.h"//用户ID分配器
-#include "iami/aes.h"
+#include "iami/maes.h"
 
 #include <fcntl.h> // 文件控制定义头文件
 #include <errno.h> // 错误号定义头文件
