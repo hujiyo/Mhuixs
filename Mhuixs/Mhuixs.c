@@ -28,7 +28,9 @@ table需要增添表格恢复功能
 #include "datstrc/stack.h"
 #include "datstrc/queue.h"
 
-LIST run_queue;//执行队列execution queue
+#include "mlib/session.h"
+
+QUEUE run_queue;//执行队列execution queue
 #define commend_size 32 //命令长度
 #define run_queue_len 1000 //执行队列长度
 /*
@@ -41,7 +43,7 @@ LIST run_queue;//执行队列execution queue
 */
 
 
-LIST ret_queue;//发送返回队列return queue
+QUEUE ret_queue;//发送返回队列return queue
 #define retinf_size 1024  //一般返回的数据都应该比较大
 #define ret_queue_len 100 //返回数据的队列长度
 /*
@@ -49,7 +51,7 @@ LIST ret_queue;//发送返回队列return queue
 由发送模块负责取出数据进行整合发送给客户端,其中list适合存放字节流
 */
 
-LIST log_queue;//日志队列log queue
+QUEUE log_queue;//日志队列log queue
 /*
 这个列表（队列）由执行模块直接维护。可以由
 特殊命令和权限读取发送给客户端,list适合存放字节流
@@ -104,6 +106,7 @@ int main(){
     启动监听线程，端口7777
     启动发送线程，端口9999    
     */
+    //启动监听线程
     //主线程:
     uint32_t period=0;
     for(int i = 1000;i>0;i--){
