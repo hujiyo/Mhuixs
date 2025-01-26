@@ -12,9 +12,11 @@ kvalh与redis相比，keval库的键值对数据结构具有可构建关系的�
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include "Mhudef.h"
-#include "datstrc/tblh.h"
+#include "datstrc.h"
 #define err -1
+#define bits(X) (int)(log(X)/log(2))
 
 static uint32_t murmurhash(const uint8_t *data, int len, uint32_t result_bits) {
     /*
@@ -81,9 +83,9 @@ typedef struct HASH_TONG{
     uint32_t* offsetof_key;//桶内的key偏移量数组
 }HASH_TONG;
 
-typedef struct KVALOT{ //键值对池，它具有4个键值对分池
+typedef struct KVALOT{
     HASH_TONG* hash_table;//哈希表--->索引
-    uint32_t numof_tong;//哈希表数量
+    uint32_t numof_tong;//哈希桶数量
 
     KEY* keypool;//键池
     uint32_t keynum;//key数量
@@ -125,10 +127,18 @@ KVALOT* kvalh_make_kvalot(char* kvalot_name,uint8_t hash_tong_num)//只能是规
     return 0;
 }
 
-int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* value)
+int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* parameter)//添加一个键值对
 {
+    /*
+    必须保证哈希桶的数量足够大，否则返回错误
+    key_name:键名,以C字符串形式传入
+    type:value类型
+    parameter:其它参数
+    */
     //先判断哈希桶是不是太少了
-    if(kvalot->keynum+1>=kvalot->numof_tong*hash_k)return err;//如果键数量大于等于哈希表数量*加载因子,增加失败
+    if(kvalot->keynum+1 >= kvalot->numof_tong * hash_k ){
+        return err;//如果键数量大于等于哈希表数量*加载因子,增加失败
+    }
     //再判断键名池有没有满，满了就对keypool_ROM进行扩容
     if(kvalot->keynum+1>=kvalot->keypoolROM){//如果键值对池容量不足,增加keypool容量
         KEY* cc_keypool=kvalot->keypool;
@@ -141,14 +151,16 @@ int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* valu
         kvalot->keypoolROM+=add_ROM;
     }
     //对键名进行哈希，找到存储对应的哈希桶hash_index并保存    
-    uint32_t hash_index=murmurhash((const uint8_t*)key_name,strlen(key_name),kvalot->numof_tong);//计算哈希表索引
+    uint32_t hash_index=murmurhash((const uint8_t*)key_name,strlen(key_name),bits(kvalot->numof_tong));//计算哈希表索引
     //hash_index先不要动，我们先试着把value和key都存放进去之后最后设置桶内参数
     //默认都是存放在键池keypool内的最后一个里
     //先为KEY成员keyname申请一段内存
     kvalot->keypool[kvalot->keynum].name=(char*)calloc(strlen(key_name)+1,sizeof(char));//创建一个键名//键名不可更改
-    if(kvalot->keypool[kvalot->keynum].name==NULL)return err;
+    if(kvalot->keypool[kvalot->keynum].name==NULL){
+        return err;
+    }
     strcpy(kvalot->keypool[kvalot->keynum].name,key_name);//复制键名
-    //为KEY其他成员初始化    
+    //为KEY其他成员初始化
     kvalot->keypool[kvalot->keynum].linkey_num=0;//初始化键连接数量
     kvalot->keypool[kvalot->keynum].linkey_coef=NULL;//初始化键连接系数数组
     kvalot->keypool[kvalot->keynum].linkey_offset=NULL;//初始化键连接偏移量数组
@@ -156,24 +168,40 @@ int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* valu
     kvalot->keypool[kvalot->keynum].type=type;//复制键类型
 
     //之后我们要根据type的类型为KEY的val_addr分别处理
-    //处理结束
-
     /*
-    //1.泛化数据类型
-    #define K_STRING 'a'    //字符   串
-    #define K_ARRAY   'b'   //数组
-    #define K_STRUCT 'c'    //结构体
-    //2.具象数据类型
-    #define K_TABLE 'd'     //表-->结构体
-    #define K_TABLOT 'e'    //表库-->结构体数组
-    #define K_KEY   'f'     //键-->数据库/某键库/某键-->
-    #define K_KEYLOT 'g'    //键库
+    #define M_TABLE      '0'
+    #define M_KEYLOT     '1'
+    #define M_STREAM     '2'
+    #define M_LIST       '3'
+    #define M_BITMAP     '4'
+    #define M_STACK      '5'
+    #define M_QUEUE      '6'
+    #define M_HOOK       '7'
     */
     switch (type){
-        case K_STREAM://这是最简单的数据类型
-            kvalot->keypool[kvalot->keynum].handle=(char*)calloc(strlen((char*)value)+1,sizeof(char));//创建一个字符串
-            if(kvalot->keypool[kvalot->keynum].handle==NULL)goto ERR;
-            strcpy(kvalot->keypool[kvalot->keynum].handle,(char*)value);//复制字符串
+        case M_STREAM://这是最简单的数据类型
+            kvalot->keypool[kvalot->keynum].handle=makeSTREAM();//创建一个STREAM
+            break;
+        case M_LIST:
+            kvalot->keypool[kvalot->keynum].handle=makeLIST();//创建一个LIST
+            break;
+        case M_BITMAP:
+            kvalot->keypool[kvalot->keynum].handle=makeBITMAP(*(uint32_t*)parameter);//创建一个BITMAP
+            break;
+        case M_STACK:
+            kvalot->keypool[kvalot->keynum].handle=makeSTACK();//创建一个STACK
+            break;
+        case M_QUEUE:
+            kvalot->keypool[kvalot->keynum].handle=makeQUEUE();//创建一个QUEUE
+            break;
+        case M_HOOK:
+            kvalot->keypool[kvalot->keynum].handle=makeHOOK();//创建一个HOOK
+            break;
+        case M_TABLE:
+            kvalot->keypool[kvalot->keynum].handle=makeTABLE();//创建一个TABLE
+            break;
+        case M_KEYLOT:
+            kvalot->keypool[kvalot->keynum].handle=makeKEYLOT();//创建一个KEYLOT
             break;
         default:goto ERR;
     }

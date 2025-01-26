@@ -13,7 +13,7 @@ Email:hj18914255909@outlook.com
 typedef struct STREAM{
     uint8_t *string;
     uint32_t len;
-} STREAM;
+} STREAM,str;
 
 STREAM* makeSTREAM() {
     return (STREAM *)calloc(1,sizeof(STREAM));
@@ -45,7 +45,9 @@ int writeSTREAM(STREAM *stream, uint32_t pos, uint8_t *bitestream, uint32_t leng
     if (stream == NULL || bitestream == NULL || length == 0) {
         return err;
     }
-    if (pos > stream->len) pos = stream->len; // 如果位置超出范围，则追加到末尾
+    if (pos > stream->len) {
+        pos = stream->len; // 如果位置超出范围，则追加到末尾
+    }
     // 如果超范围，则扩展内存以容纳新数据
     if (pos + length > stream->len) {
         uint8_t *new_string = (uint8_t *)realloc(stream->string, pos + length);
@@ -55,5 +57,17 @@ int writeSTREAM(STREAM *stream, uint32_t pos, uint8_t *bitestream, uint32_t leng
     }
     // 将新数据复制到指定位置
     memcpy(stream->string + pos, bitestream, length);
+    stream->len = pos + length;//更新长度
     return pos;
+}
+str* bcstr(uint8_t *string, uint32_t len)
+{
+    /*
+    将C字符串转换为STREAM对象
+    返回一个STREAM对象
+    */
+    str* stream = (str*)malloc(sizeof(str));
+    stream->string = string;
+    stream->len = len;
+    return stream;
 }
