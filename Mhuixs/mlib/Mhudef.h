@@ -6,6 +6,7 @@ start from 2024.11
 Email:hj18914255909@outlook.com
 */
 #include "datstrc.h"
+#include "getid.h"
 #include <stdint.h>
 #ifndef MHUDEF_H
 #define MHUDEF_H
@@ -33,7 +34,8 @@ Mhuixs数据库支持的数据结构/数据操作对象:
 */
 typedef uint8_t HOOKTYPE;//钩子类型（即钩子指向的数据结构类型）
 //下面是Mhuixs数据库的基本数据结构（操作对象）
-#define M_TABLE      '0'
+
+#define M_NULL       '0'
 #define M_KEYLOT     '1'
 #define M_STREAM     '2'
 #define M_LIST       '3'
@@ -41,6 +43,8 @@ typedef uint8_t HOOKTYPE;//钩子类型（即钩子指向的数据结构类型�
 #define M_STACK      '5'
 #define M_QUEUE      '6'
 #define M_HOOK       '7'
+#define M_TABLE      '8'
+
 /*
 hook在Mhuixs中被用来：
 1.链接所有需要有权限功能的独立"数据结构"

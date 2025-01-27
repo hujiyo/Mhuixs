@@ -51,6 +51,7 @@ typedef struct TABLE {
     char* table_name;//table名
 } TABLE;
 
+TABLE*      makeTABLE(char* table_name, FIELD* field, uint32_t field_num);
 uint8_t     tblh_make_table     (TABLE* table, char* table_name, FIELD* field, uint32_t field_num);
 uint8_t     tblh_add_record     (TABLE* table, const char* record);
 uint8_t     tblh_rmv_record     (TABLE* table, uint32_t j);
