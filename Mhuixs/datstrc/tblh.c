@@ -230,6 +230,34 @@ static uint8_t store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type){
 	}
 	return 1;
 }
+TABLE* makeTABLE(char* table_name, FIELD* field, uint32_t field_num)
+{
+	TABLE* table = (TABLE*)calloc(1, sizeof(TABLE));
+	table->field_num = field_num;
+	table->record_num = 0;
+	uint32_t record_usage = 0;
+	for (uint32_t i = 0; i < field_num; record_usage += sizeoftype(field[i].type), i++);
+	table->record_usage = record_usage;
+	table->record_length = record_usage * ((record_usage < long_record) ? short_record_s_vacancy_rate : long_record_s_vacancy_rate);//根据现有字段的占用长度合理的选择留白率
+	//创建p_head区,并创建对应的偏移量索引
+	table->p_field = (FIELD*)calloc(field_num , sizeof(FIELD));
+	table->offsetofield = (uint32_t*)malloc(field_num * sizeof(uint32_t*));
+	uint32_t ofsum = 0;
+	for (uint32_t i = 0; i < field_num; table->p_field[i] = field[i], table->offsetofield[i] = ofsum, ofsum += sizeoftype(field[i].type), i++);
+	//没有空位
+	table->idle_map = (IDLE_MAP*)malloc(sizeof(IDLE_MAP));
+	table->map_size = 0;//map_size是真实大小，不是数组中括号中的最大值
+	//创建TABLE数据区
+	table->data_ROM = initial_ROM;//TABLE数据区record条数初始容量为200条数
+	uint8_t* p_data = (uint8_t*)calloc(1,table->record_length * initial_ROM);
+	table->p_data = p_data;
+	//创建line_index索引
+	table->line_index = (L_INDEX*)malloc(sizeof(L_INDEX));//先建立一个line_index
+	//创建table名区
+	table->table_name = (char*)calloc(1,name_max_size);
+	memcpy(table->table_name, table_name, strlen(table_name)%name_max_size);
+	return table;
+}
 uint8_t tblh_make_table(TABLE* table, char* table_name, FIELD* field, uint32_t field_num)
 {
 	table->field_num = field_num;

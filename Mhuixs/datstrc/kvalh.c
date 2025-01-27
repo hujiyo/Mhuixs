@@ -12,11 +12,9 @@ kvalh与redis相比，keval库的键值对数据结构具有可构建关系的�
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <math.h>
 #include "Mhudef.h"
 #include "datstrc.h"
 #define err -1
-#define bits(X) (int)(log(X)/log(2))
 
 static uint32_t murmurhash(const uint8_t *data, int len, uint32_t result_bits) {
     /*
@@ -59,11 +57,45 @@ static uint32_t murmurhash(const uint8_t *data, int len, uint32_t result_bits) {
 #define hash_tong_1048576ge     1048576         //2^20
 #define hash_tong_16777216ge    16777216        //2^24
 #define hash_k 0.75  //哈希表装载因子
+
+//#include <math.h>
+//#define bits(X) (int)(log(X)/log(2))
+uint32_t bits(uint32_t X){
+    /*
+    功能：
+    1.把哈希桶的数量转化为二进制位数
+    2.根据大小等级返回对应的二进制位数
+
+    无效输入返回0
+    */
+    switch (X)    {
+    //哈希桶数量映射到二进制位数
+    case hash_tong_1024ge:return 10;
+    case hash_tong_16384ge:return 14;
+    case hash_tong_65536ge:return 16;
+    case hash_tong_1048576ge:return 20;
+    case hash_tong_16777216ge:return 24;
+
+    #define size1 0
+    #define size2 1
+    #define size3 2
+    #define size4 3
+    #define size5 4
+    //根据大小等级返回对应的二进制位数
+    case size1:return 10;
+    case size2:return 14;
+    case size3:return 16;
+    case size4:return 20;
+    case size5:return 24;
+
+    default:return 0;
+    }
+}
 /*
 哈希桶的数量决定了哈希表的大小，哈希桶的数量越大，在面对更多数据时，哈希表的性能就越好。
 但是占用的内存空间也会越大。根据键的数量来决定哈希桶的数量。
 一般来说，当 键值对数量 / 哈希桶数量 <= 0.75 时，哈希表的性能最好。
-*/                           
+*/
 
 #define init_ROM 300
 #define add_ROM 200
@@ -72,7 +104,7 @@ static uint32_t murmurhash(const uint8_t *data, int len, uint32_t result_bits) {
 typedef struct KEY{
     void* handle;//指向任意数据结构描述符
     char type;//描述符类型
-    char* name;//指向一个key名称存放的地址 
+    str* name;//指向一个key名称存放的地址 
     uint32_t* linkey_offset;//数组,存放与当前key连接的key的偏移量
     uint32_t* linkey_coef;//数组,存放与当前key连接的key的连接系数
     uint32_t linkey_num;//与当前key连接的key数量
@@ -80,7 +112,10 @@ typedef struct KEY{
 }KEY;
 typedef struct HASH_TONG{
     uint32_t numof_key;//桶内的key数量
-    uint32_t* offsetof_key;//桶内的key偏移量数组
+    uint32_t* offsetof_key;//key偏移量数组
+    /*
+    这里的偏移量是在keypool中的偏移量
+    */
 }HASH_TONG;
 
 typedef struct KVALOT{
@@ -93,18 +128,15 @@ typedef struct KVALOT{
 
     char* kvalot_name;//键值对池名称
 }KVALOT;
-
-KVALOT* kvalh_make_kvalot(char* kvalot_name,uint8_t hash_tong_num)//只能是规定的数量
+KVALOT* makeKVALOT(char* kvalot_name,uint8_t hash_tong_num)//只能是规定的数量
 {
+    /*
+    创建一个键值对池的时候可以直接自定义哈希桶数量
+    之后哈希桶的数量不会低于这个数量
+    */
     //判断hash_tong_num是否是规定的数量
-    switch(hash_tong_num){
-        case hash_tong_1024ge:
-        case hash_tong_16384ge:
-        case hash_tong_65536ge:
-        case hash_tong_1048576ge:
-        case hash_tong_16777216ge:
-        break;
-        default:return NULL;
+    if(!bits(hash_tong_num)){
+        return NULL;
     }
     KVALOT* kvalot=(KVALOT*)calloc(1,sizeof(KVALOT));
     if(kvalot==NULL){
@@ -124,19 +156,30 @@ KVALOT* kvalh_make_kvalot(char* kvalot_name,uint8_t hash_tong_num)//只能是规
         return NULL;
     }
     strcpy(kvalot->kvalot_name,kvalot_name);//复制键值对池名称
-    return 0;
+    return kvalot;
 }
-
-int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* parameter)//添加一个键值对
+int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* parameter1,void* parameter2)//添加一个键值对
 {
+    int if_exist_same_key=0;//标记是否存在相同的键名
     /*
     必须保证哈希桶的数量足够大，否则返回错误
     key_name:键名,以C字符串形式传入
     type:value类型
-    parameter:其它参数
+    parameter1:其它参数
+    parameter2:其它参数
+
+    M_BITMAP://使用第一个参数作为BITMAP的大小
+    M_TABLE://使用第一个参数作为TABLE的字段信息，第二个参数作为TABLE的字段数量  
     */
     //先判断哈希桶是不是太少了
     if(kvalot->keynum+1 >= kvalot->numof_tong * hash_k ){
+        /*
+        自动对哈希桶数量进行扩容到下一个级别
+        */
+        //...
+        //...
+        //...
+
         return err;//如果键数量大于等于哈希表数量*加载因子,增加失败
     }
     //再判断键名池有没有满，满了就对keypool_ROM进行扩容
@@ -152,14 +195,22 @@ int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* para
     }
     //对键名进行哈希，找到存储对应的哈希桶hash_index并保存    
     uint32_t hash_index=murmurhash((const uint8_t*)key_name,strlen(key_name),bits(kvalot->numof_tong));//计算哈希表索引
+    //寻找哈希桶内是否存在相同的键名
+    if(kvalot->hash_table[hash_index].numof_key!=0){
+        for(uint32_t i=0;i<kvalot->hash_table[hash_index].numof_key;i++){//遍历哈希桶内的所有键
+            if(strcmp(kvalot->keypool[kvalot->hash_table[hash_index].offsetof_key[i]].name->string,key_name)==0){//如果存在相同的键名
+                if_exist_same_key=1;
+                break;
+            }
+        }
+    }
     //hash_index先不要动，我们先试着把value和key都存放进去之后最后设置桶内参数
     //默认都是存放在键池keypool内的最后一个里
     //先为KEY成员keyname申请一段内存
-    kvalot->keypool[kvalot->keynum].name=(char*)calloc(strlen(key_name)+1,sizeof(char));//创建一个键名//键名不可更改
+    kvalot->keypool[kvalot->keynum].name=bcstr((uint8_t*)key_name,strlen(key_name));//创建一个键名//键名不可更改
     if(kvalot->keypool[kvalot->keynum].name==NULL){
         return err;
     }
-    strcpy(kvalot->keypool[kvalot->keynum].name,key_name);//复制键名
     //为KEY其他成员初始化
     kvalot->keypool[kvalot->keynum].linkey_num=0;//初始化键连接数量
     kvalot->keypool[kvalot->keynum].linkey_coef=NULL;//初始化键连接系数数组
@@ -169,7 +220,7 @@ int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* para
 
     //之后我们要根据type的类型为KEY的val_addr分别处理
     /*
-    #define M_TABLE      '0'
+    #define M_NULL       '0'
     #define M_KEYLOT     '1'
     #define M_STREAM     '2'
     #define M_LIST       '3'
@@ -177,6 +228,7 @@ int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* para
     #define M_STACK      '5'
     #define M_QUEUE      '6'
     #define M_HOOK       '7'
+    #define M_TABLE      '8'
     */
     switch (type){
         case M_STREAM://这是最简单的数据类型
@@ -185,8 +237,9 @@ int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* para
         case M_LIST:
             kvalot->keypool[kvalot->keynum].handle=makeLIST();//创建一个LIST
             break;
-        case M_BITMAP:
-            kvalot->keypool[kvalot->keynum].handle=makeBITMAP(*(uint32_t*)parameter);//创建一个BITMAP
+        case M_BITMAP://使用第一个参数作为BITMAP的大小
+            kvalot->keypool[kvalot->keynum].handle
+            = makeBITMAP(*(uint32_t*)parameter1);//创建一个BITMAP
             break;
         case M_STACK:
             kvalot->keypool[kvalot->keynum].handle=makeSTACK();//创建一个STACK
@@ -194,121 +247,77 @@ int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* para
         case M_QUEUE:
             kvalot->keypool[kvalot->keynum].handle=makeQUEUE();//创建一个QUEUE
             break;
-        case M_HOOK:
-            kvalot->keypool[kvalot->keynum].handle=makeHOOK();//创建一个HOOK
-            break;
-        case M_TABLE:
-            kvalot->keypool[kvalot->keynum].handle=makeTABLE();//创建一个TABLE
-            break;
+        case M_TABLE://使用第一个参数作为TABLE的字段信息，第二个参数作为TABLE的字段数量            
+            kvalot->keypool[kvalot->keynum].handle
+            = makeTABLE(    key_name,
+                            (FIELD*)parameter1,
+                            *(uint32_t*)parameter2
+            );
+            break;//创建一个TABLE
         case M_KEYLOT:
-            kvalot->keypool[kvalot->keynum].handle=makeKEYLOT();//创建一个KEYLOT
+            kvalot->keypool[kvalot->keynum].handle=kvalh_make_kvalot(key_name,hash_tong_1024ge);//创建一个KEYLOT
             break;
-        default:goto ERR;
+        default:
+            return err;
     }
-
     //接下来才是更新哈希桶内的数据
     kvalot->hash_table[hash_index].numof_key++;//哈希表中对应的哈希桶内键数量+1    
     //为哈希桶中键的偏移量数组申请更多内存
     uint32_t* cc_offsetof_key=kvalot->hash_table[hash_index].offsetof_key;
-    kvalot->hash_table[hash_index].offsetof_key=(uint32_t*)realloc(kvalot->hash_table[hash_index].offsetof_key,(kvalot->hash_table[hash_index].numof_key)*sizeof(uint32_t));//增加键连接系数数组
+    kvalot->hash_table[hash_index].offsetof_key=
+    (uint32_t*)realloc(kvalot->hash_table[hash_index].offsetof_key,
+                        (kvalot->hash_table[hash_index].numof_key)*sizeof(uint32_t));//增加键连接系数数组    
     if(kvalot->hash_table[hash_index].offsetof_key==NULL){
         kvalot->hash_table[hash_index].offsetof_key=cc_offsetof_key;
         kvalot->hash_table[hash_index].numof_key--;//哈希表中对应的哈希桶内键数量还原
         goto ERR;
     }
     //记录这个KEY的偏移量 ————> keypool[偏移量]
-    kvalot->hash_table[hash_index].offsetof_key[kvalot->hash_table[hash_index].numof_key-1]=kvalot->keynum;
+    kvalot->hash_table[hash_index].offsetof_key[kvalot->hash_table[hash_index].numof_key-1]
+    = kvalot->keynum;//真正的偏移量是sizeof(KEY)*kvalot->keynum <=> keypool[kvalot->keynum]
+
     kvalot->keynum++;//键数量+1
-    return 0;ERR:{
-        //清空新增KEY
-        free(kvalot->keypool[kvalot->keynum].name);
-        memset(&kvalot->keypool[kvalot->keynum],0,sizeof(KEY));        
-        return err;
-    }
-}
-uint8_t kvalh_expand_kvalot(KVALOT* kvalot,uint8_t size)
-{
 
-}
-
-/*
-
-int main() {
-    KVALOT kvalot;//定义一个 键值对池 对象
-
-    Kvalh kvalh;//定义一个操作键值对池的函数集
-    initKvalh(&kvalh);//初始化函数集
-
-    kvalh.make_kvalot(&kvalot);//创建一个键值对池
-}
-*/
-KVALOT* kvalh_make_kvalot(char* kvalot_name,uint8_t hash_tong_num)//只能是规定的数量
-{
-    //判断hash_tong_num是否是规定的数量
-    switch(hash_tong_num){
-        case hash_tong_1024ge:
-        case hash_tong_16384ge:
-        case hash_tong_65536ge:
-        case hash_tong_1048576ge:
-        case hash_tong_16777216ge:
-        break;
-        default:return NULL;
-    }
-    KVALOT* kvalot=(KVALOT*)calloc(1,sizeof(KVALOT));
-    if(kvalot==NULL){
-        return NULL;
-    }
-    kvalot->keypoolROM=init_ROM;//初始化池容量    
-    kvalot->numof_tong=hash_tong_num;//初始化哈希表数量
-    //kvalot->keynum=0;//初始化键数量
-    kvalot->keypool=(KEY*)calloc( init_ROM , sizeof(KEY) );//创建一个键值对池
-    kvalot->hash_table=(HASH_TONG*)calloc( kvalot->numof_tong , sizeof(HASH_TONG) );//创建一个哈希表    
-    kvalot->kvalot_name=(char*)calloc( short_string , sizeof(char) );//创建一个键值对池名称
-    if(!kvalot->keypool||!kvalot->hash_table||!kvalot->kvalot_name){
-        free(kvalot->keypool);
-        free(kvalot->hash_table);
-        free(kvalot->kvalot_name);
-        free(kvalot);
-        return NULL;
-    }
-    strcpy(kvalot->kvalot_name,kvalot_name);//复制键值对池名称
-    return kvalot; // 修改: 返回 kvalot 指针而不是 0
-}
-
-
-int8_t kvalh_add_key(KVALOT* kvalot,const char* key_name,uint8_t type,void* value)
-{
-}
-
-
-uint8_t kvalh_expand_kvalot(KVALOT* kvalot,uint8_t size)
-{
-    uint32_t new_numof_tong = kvalot->numof_tong * size;
-    HASH_TONG* new_hash_table = (HASH_TONG*)realloc(kvalot->hash_table, new_numof_tong * sizeof(HASH_TONG));
-    if (new_hash_table == NULL) {
-        return err;
-    }
-    kvalot->hash_table = new_hash_table;
-    kvalot->numof_tong = new_numof_tong;
-    for (uint32_t i = kvalot->numof_tong / size; i < new_numof_tong; i++) {
-        kvalot->hash_table[i].numof_key = 0;
-        kvalot->hash_table[i].offsetof_key = NULL;
-    }
     return 0;
+    
+    ERR:
+    {
+        //清空新增KEY
+        freeSTREAM(kvalot->keypool[kvalot->keynum].name);
+        memset(&kvalot->keypool[kvalot->keynum],0,sizeof(KEY));
+        return err;
+    }
 }
-
 KEY* kvalh_find_key(KVALOT* kvalot, const char* key_name)
 {
-    uint32_t hash_index = murmurhash((const uint8_t*)key_name, strlen(key_name), kvalot->numof_tong);
+    uint32_t hash_index = murmurhash((const uint8_t*)key_name, strlen(key_name),bits(kvalot->numof_tong));
     HASH_TONG* hash_tong = &kvalot->hash_table[hash_index];
     for (uint32_t i = 0; i < hash_tong->numof_key; i++) {
         KEY* key = &kvalot->keypool[hash_tong->offsetof_key[i]];
-        if (strcmp(key->name, key_name) == 0) {
+        if (strcmp(key->name->string, key_name) == 0) {
             return key;
         }
     }
     return NULL;
 }
+int kvalh_copy_kvalot(KVALOT* kvalot_tar,KVALOT* kvalot_src)
+{
+    /*
+    功能：
+    把kvalot_src的键值对复制到kvalot_tar中
+
+    相同的键名：tar会被src中的键值覆盖
+    */
+    //先对两个键值对池进行信息检查
+    if(kvalot_tar==NULL||kvalot_src==NULL){
+        return err;
+    }
+    
+
+
+}
+
+
 
 void* kvalh_get_value(KVALOT* kvalot, const char* key_name)
 {
@@ -325,8 +334,8 @@ int8_t kvalh_remove_key(KVALOT* kvalot, const char* key_name)
     HASH_TONG* hash_tong = &kvalot->hash_table[hash_index];
     for (uint32_t i = 0; i < hash_tong->numof_key; i++) {
         KEY* key = &kvalot->keypool[hash_tong->offsetof_key[i]];
-        if (strcmp(key->name, key_name) == 0) {
-            free(key->name);
+        if (strcmp(key->name->string, key_name) == 0) {
+            freeSTREAM(key->name);
             free(key->linkey_coef);
             free(key->linkey_offset);
             free(key->handle);
