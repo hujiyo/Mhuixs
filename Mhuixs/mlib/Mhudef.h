@@ -34,6 +34,9 @@ Mhuixs数据库支持的数据结构/数据操作对象:
 */
 
 //下面是Mhuixs数据库的基本数据结构（操作对象）
+
+typedef void *OBJECT,*object,*Obj;
+
 typedef enum OBJECTYPE{
     M_NULL   =    '0',
     M_KEYLOT =    '1',

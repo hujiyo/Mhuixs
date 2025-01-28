@@ -112,18 +112,7 @@ typedef struct KEY{
     str* name;//指向一个key名称存放的地址 
     uint32_t hash_index;//当前key在哈希表中的索引
 }KEY;
-/*
-遗留定义代码
-typedef struct KEY{
-    void* handle;//指向任意数据结构描述符
-    OBJECTYPE type;//描述符类型
-    str* name;//指向一个key名称存放的地址 
-    uint32_t* linkey_offset;//数组,存放与当前key连接的key的偏移量
-    uint32_t* linkey_coef;//数组,存放与当前key连接的key的连接系数
-    uint32_t linkey_num;//与当前key连接的key数量
-    uint32_t hash_index;//当前key在哈希表中的索引
-}KEY;
-*/
+
 typedef struct HASH_TONG{
     uint32_t numof_key;//桶内的key数量
     uint32_t* offsetof_key;//key偏移量数组
@@ -143,6 +132,28 @@ typedef struct KVALOT{
     str* kvalot_name;//键值对池名称
 }KVALOT;
 
+/*
+typedef struct LKEY{
+    void* handle;//指向任意数据结构描述符
+    OBJECTYPE type;//描述符类型
+    str* name;//指向一个key名称存放的地址 
+    uint32_t* linkey_offset;//数组,存放与当前key连接的key的偏移量
+    uint32_t* linkey_coef;//数组,存放与当前key连接的key的连接系数
+    uint32_t linkey_num;//与当前key连接的key数量
+    uint32_t hash_index;//当前key在哈希表中的索引
+}LKEY;
+
+typedef struct LKVALOT{
+    HASH_TONG* hash_table;//哈希表--->索引
+    uint32_t numof_tong;//哈希桶数量
+
+    LKEY* keypool;//键池
+    uint32_t keynum;//key数量
+    uint32_t keypoolROM;//池总容量
+
+    str* kvalot_name;//键值对池名称
+}LKVALOT;
+*/
 KVALOT* makeKVALOT(char* kvalot_name,uint8_t hash_tong_num)//只能是规定的数量
 {
     /*
@@ -210,13 +221,10 @@ int8_t kvalh_remove_key(KVALOT* kvalot, str* key_name)
                     void* handle;//指向任意数据结构描述符
                     char type;//描述符类型
                     str* name;//指向一个key名称存放的地址 
-                    uint32_t* linkey_offset;//数组,存放与当前key连接的key的偏移量
-                    uint32_t* linkey_coef;//数组,存放与当前key连接的key的连接系数
-                    uint32_t linkey_num;//与当前key连接的key数量
                     uint32_t hash_index;//当前key在哈希表中的索引
                 }KEY;
                 */
-                //根据type的类型为KEY的val_addr分别处理
+                //根据type的类型为KEY的value分别处理
                 switch (key->type){
                     case M_STREAM:
                         freeSTREAM(key->handle);
@@ -245,8 +253,8 @@ int8_t kvalh_remove_key(KVALOT* kvalot, str* key_name)
                         return err;
                 }
                 freeSTREAM(key->name);
-                free(key->linkey_coef);
-                free(key->linkey_offset);
+                //free(key->linkey_coef);
+                //free(key->linkey_offset);
 
                 //清空对应的哈希桶内的数据
 
@@ -326,9 +334,9 @@ int8_t kvalh_add_newkey(KVALOT* kvalot, str* key_name, uint8_t type, void* param
     //先为KEY成员keyname申请一段内存
     kvalot->keypool[kvalot->keynum].name = key_name; // 直接使用传入的str*类型
     //为KEY其他成员初始化
-    kvalot->keypool[kvalot->keynum].linkey_num=0;//初始化键连接数量
-    kvalot->keypool[kvalot->keynum].linkey_coef=NULL;//初始化键连接系数数组
-    kvalot->keypool[kvalot->keynum].linkey_offset=NULL;//初始化键连接偏移量数组
+    //kvalot->keypool[kvalot->keynum].linkey_num=0;//初始化键连接数量
+    //kvalot->keypool[kvalot->keynum].linkey_coef=NULL;//初始化键连接系数数组
+    //kvalot->keypool[kvalot->keynum].linkey_offset=NULL;//初始化键连接偏移量数组
     kvalot->keypool[kvalot->keynum].hash_index=hash_index;//复制哈希表索引
     kvalot->keypool[kvalot->keynum].type=type;//复制键类型
 
@@ -457,17 +465,66 @@ int kvalh_copy_kvalot(KVALOT* kvalot_tar,KVALOT* kvalot_src)
 
         //在kvalot_tar中添加对应键值对
         kvalh_add_newkey(kvalot_tar, src_s_key.name, src_s_key.type,NULL, NULL);
-        void* src_s_value = src_s_key.handle;
         KEY* tar_s_key = kvalh_find_key(kvalot_tar, src_s_key.name);
-        tar_s_key->handle = src_s_value;//复制链接对象
+        tar_s_key->handle = src_s_key.handle;//复制链接对象
+        free(tar_s_key);
     }
     return 0;
 }
-
 void freeKVALOT(KVALOT* kvalot)
 {
     if(kvalot==NULL){
         return;
     }
-    
+    //释放哈希表
+    for(uint32_t i=0;i<kvalot->numof_tong;i++){
+        free(kvalot->hash_table[i].offsetof_key);
+    }
+    free(kvalot->hash_table);
+
+    //释放键值对池
+    for(uint32_t i=0;i<kvalot->keynum;i++){
+        KEY key = kvalot->keypool[i];
+        freeSTREAM(key.name);
+        //释放链接对象
+        switch (key.type){
+            case M_STREAM:
+                freeSTREAM(key.handle);
+                break;
+            case M_LIST:
+                freeLIST(key.handle);
+                break;
+            case M_BITMAP:
+                freeBITMAP(key.handle);
+                break;
+            case M_STACK:
+                freeSTACK(key.handle);
+                break;
+            case M_QUEUE:
+                freeQUEUE(key.handle);
+                break;
+            case M_TABLE:
+                tblh_del_table(key.handle);
+                break;
+            case M_KEYLOT:
+                freeKVALOT(key.handle);
+                break;
+            default:
+                free(key.handle);
+                prinft("err:freeKVALOT:kvalh_remove_key:type error\n");
+                return;
+        }
+    }
+    free(kvalot->keypool);
+    //释放键值对池名称
+    freeSTREAM(kvalot->kvalot_name);
+    free(kvalot);    
+}
+
+Obj retvalue(KVALOT* kvalot,str* key_name)
+{
+    KEY* key = kvalh_find_key(kvalot, key_name);
+    Obj obj = key->handle;
+    free(key);
+    return obj;
 }
