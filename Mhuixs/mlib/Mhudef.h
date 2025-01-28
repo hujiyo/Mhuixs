@@ -45,7 +45,7 @@ typedef enum OBJECTYPE{
     M_HOOK   =    '7',
     M_TABLE  =    '8',
 }
-OBJECTYPE,  //数据结构类型对象
+OBJECTYPE,Obj_TYPE,OT,  //数据结构类型对象
 HOOKTYPE;   //钩子类型对象
 
 #define M_NULL       '0'
@@ -63,6 +63,11 @@ hook在Mhuixs中被用来：
 1.链接所有需要有权限功能的独立"数据结构"
 2.在一种数据结构中引用独立于自己的另一个数据结构
 */
+typedef struct basic_handle_struct{
+    void* handle;//指向任意数据结构描述符
+    OBJECTYPE type;//描述符类型
+}basic_handle_struct,BHS;
+
 typedef struct HOOK{
     void* handle;//指向任意数据结构描述符
     HOOKTYPE type;//描述符类型
@@ -74,6 +79,20 @@ typedef struct HOOK{
     char* name;//狗子名
 }HOOK;
 
+void* retkeyobject(void* bhs);
+/*
+    返回引用指向的数据结构对象的结构体指针
+    KEY和HOOK都是数据结构对象的引用
+
+    bhs:指向KEY或HOOK的指针
+*/
+OBJECTYPE retkeytype(void* bhs);
+/*
+    返回引用指向的数据结构对象的类型
+    KEY和HOOK都是数据结构对象的引用
+
+    bhs:指向KEY或HOOK的指针
+*/
 /*
 Mhuixs权限管理建议：
 对于人类用户：开启会话默认是guest,通过登录系统获得user权限，通过密码认证获得admin权限，再通过sudo获得root权限
