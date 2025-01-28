@@ -32,8 +32,21 @@ Mhuixs数据库支持的数据结构/数据操作对象:
 2.任何一个数据结构的使用之前为它创建一个引用hook可以增加其保护等级、链接灵活性
 3.任何hook都必须挂载在Mhuixs或其它
 */
-typedef uint8_t HOOKTYPE;//钩子类型（即钩子指向的数据结构类型）
+
 //下面是Mhuixs数据库的基本数据结构（操作对象）
+typedef enum OBJECTYPE{
+    M_NULL   =    '0',
+    M_KEYLOT =    '1',
+    M_STREAM =    '2',
+    M_LIST   =    '3',
+    M_BITMAP =    '4',
+    M_STACK  =    '5',
+    M_QUEUE  =    '6',
+    M_HOOK   =    '7',
+    M_TABLE  =    '8',
+}
+OBJECTYPE,  //数据结构类型对象
+HOOKTYPE;   //钩子类型对象
 
 #define M_NULL       '0'
 #define M_KEYLOT     '1'
