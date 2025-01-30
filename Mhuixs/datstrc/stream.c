@@ -63,11 +63,46 @@ int writeSTREAM(STREAM *stream, uint32_t pos, uint8_t *bitestream, uint32_t leng
 str* bcstr(uint8_t *string, uint32_t len)
 {
     /*
+    bcstr:将C字符串become为STREAM对象
     将C字符串转换为STREAM对象
     返回一个STREAM对象
+
+    返回的STREAM接管了C字符串的所有权
     */
     str* stream = (str*)malloc(sizeof(str));
     stream->string = string;
     stream->len = len;
+    return stream;
+}
+str* bcpstr(uint8_t *string, uint32_t len)
+{
+    /*
+    bcpstr:将C字符串copy为STREAM对象
+    返回一个STREAM对象
+    
+    返回的STREAM不接管C字符串的所有权
+    而是复制了全新的内存
+    */
+    str* stream = (str*)malloc(sizeof(str));
+    if (stream == NULL) {
+        return NULL;
+    }
+    stream->string = (uint8_t*)malloc(len);
+    if (stream->string == NULL) {
+        free(stream);
+        return NULL;
+    }
+    memcpy(stream->string, string, len);
+    stream->len = len;
+    return stream;
+}
+str* nullstr()
+{
+    /*
+    nullstr:创建一个空的STREAM对象
+    */
+    str* stream = (str*)malloc(sizeof(str));
+    stream->string = NULL;
+    stream->len = 0;
     return stream;
 }
