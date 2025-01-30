@@ -82,6 +82,18 @@ typedef struct HOOK{
     char* name;//狗子名
 }HOOK;
 
+typedef struct COMMEND{
+    uint32_t command; // 命令码
+    char*    object; // 对象名
+    uint32_t param1;      // 参数1
+    uint32_t param2;      // 参数2
+    uint32_t param3;      // 参数3
+    //提供两个指针参数，有些函数要用到的
+    uint32_t* param4;      // 参数4
+    uint32_t* param5;      // 参数5
+    uint32_t* param6;      // 参数6
+} COMMEND;
+
 void* retkeyobject(void* bhs);
 /*
     返回引用指向的数据结构对象的结构体指针

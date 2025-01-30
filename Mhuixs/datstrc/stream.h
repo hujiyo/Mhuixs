@@ -57,5 +57,16 @@ str* bcstr(uint8_t *string, uint32_t len);
 bcstr(string,len);
 返回str结构体
 */
+str* bcpstr(uint8_t *string, uint32_t len);
+/*
+bcpstr:将C字符串copy为STREAM对象
+返回一个STREAM对象
 
+返回的STREAM不接管C字符串的所有权
+而是复制了全新的内存
+*/
+str* nullstr();
+/*
+返回一个空的STREAM对象
+*/
 #endif
