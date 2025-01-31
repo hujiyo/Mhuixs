@@ -14,6 +14,7 @@ Email:hj18914255909@outlook.com
 #include "Mhudef.h"
 #include "Cmhuix.h"
 
+
 //判断是否是token的起始字符
 #define is_std_token_start_char(c)  ( \
 (c>='a' && c<='z')      ||      \
@@ -79,17 +80,23 @@ typedef struct Token{
 } Token,tok;//符号（令牌）结构体
 
 typedef struct statement{
-    tok* tokens;
-    int len;
-} statement,stmt;//语句操作结构体
+    tok** tokens;
+    int num;//token的数量
+} statement,stmt;//单语句操作结构体
 
-Token* getoken(inputstr* instr)
+typedef struct stmts{
+    stmt** stmt;
+    int num;//语句的数量
+} statements,stmts;//多语句操作结构体;
+
+Token* getoken(inputstr* instr)//返回的token记得释放
 {
     Token *token = (Token*)malloc(sizeof(Token));
 
     /*
     请保证instr合法
     pos必须在string的合法范围内
+    
     */
 
     /*
@@ -273,34 +280,82 @@ Token* getoken(inputstr* instr)
             token->type = TOKEN_KEY;
         }
         else{
+            //判断第一个字符是否是数字，如果是数字，则检查是否是规范的数字
+            if(token->content->string[0] >= '0' && token->content->string[0] <= '9'){
+                //检查是否是规范的数字
+                for(uint32_t i=0;i<token->content->len;i++){
+                    if((token->content->string[i] < '0' || token->content->string[i] > '9')&& token->content->string[i] != '.'){
+                        token->type = TOKEN_EEROR;
+                        freeSTREAM(token->content);
+                        token->content = NULL;
+                        return token;
+                    }
+                }
+                //是规范的数字
+                token->type = TOKEN_VALUES;
+                return token;
+            }
             token->type = TOKEN_NAME;
         }
     }
+
+    return token;
 }
 
-uint8_t* lexer(uint8_t* Mhuixsentence,uint32_t max_sentence_len)
+str* lexer(str* Mhuixsentence)
 {
     /*
-    功能：解析Mhuixs语句并发送到服务器执行
+    词法分析器
+    lexer会接管Mhuixsentence的内存并自动释放
+    Mhuixsentence:待处理的字符串：C语言字符串
+    */
 
-    Mhuixsentence:C标准字符串
-    */
-    /*
-    这里注意，bcstr接管所有权，而bcpstr不接管所有权
-    这边我们并没有Mhuixssentence的所有权,不能使用bcstr
-    */
-    str* input = bcpstr(Mhuixsentence,strlen(Mhuixsentence));
-    if(input == NULL){
+    //初始化inputstr
+    inputstr instr;
+    instr.string = (uint8_t*)malloc(Mhuixsentence->len);//str不计入'\0'
+    if(instr.string == NULL){
         return NULL;
     }
-    inputstr* instr = (inputstr*)malloc(sizeof(inputstr));
-    instr->string = Mhuixsentence;
-    instr->len = len;
-    instr->pos = 0;
-    instr->ed_pos = 0;
-    Token* tokens = (Token*)malloc(sizeof(Token));
-/*
-Token* lexer(const char* input) {
+    instr.len = Mhuixsentence->len;
+    instr.pos = instr.string;
+    //将Mhuixsentence的内容复制到instr.string中
+    memcpy(instr.string,Mhuixsentence->string,Mhuixsentence->len);
+    freeSTREAM(Mhuixsentence);//释放Mhuixsentence的内存
+
+    //初始化stmts
+    stmts stmts;
+    
+    //获得语句
+    for(;;){
+        //获取token
+        Token* token = getoken(&instr);
+        if(token == NULL){
+            //用户输入的字符串已经读取结束
+            goto end;
+        }
+        else if(token->type == TOKEN_EEROR){
+            //用户输入的字符串错误
+            //...
+            //...
+            //...
+            return NULL;
+        }
+        else if(token->type == TOKEN_END){
+            //一个语句解析结束
+            //解析语句是否符合规范
+            //加入stmts中
+
+        }
+        //将token添加到stmts中
+        stmts.stmt = (stmt*)realloc(stmts.stmt,stmts.num+1);
+        if(stmts.stmt == NULL){
+            return NULL;
+        }
+    }
+    
+    end://没有语法错误，已经解析为多个语句，每个语句语法正确
+
+
+
     
 }
-*/
