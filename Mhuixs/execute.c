@@ -16,13 +16,11 @@ Email:hj18914255909@outlook.com
 #include "datstrc/kvalh.h"
 #include "datstrc/list.h"
 #include "datstrc/bitmap.h"
-#include "datstrc/stack.h"
 /*
 下面的queue是完全可以被list替换的，
 在最新的速度测试中，基于strmap.h进行内存分配的list库
 的执行速度要比基于calloc和realloc的queue快一点
 */
-#include "datstrc/queue.h"
 
 
 typedef struct COMMEND{

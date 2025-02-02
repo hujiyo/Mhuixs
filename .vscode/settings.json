@@ -2,7 +2,8 @@
     "files.associations": {
         "stdlib.h": "c",
         "bitmap.h": "c",
-        "session-linux.c": "cpp"
+        "session-linux.c": "cpp",
+        "strmap.h": "c"
     },
     "marscode.codeCompletionPro": {
         "enableCodeCompletionPro": true

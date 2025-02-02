@@ -306,7 +306,7 @@ str* lexer(str* Mhuixsentence)
 {
     /*
     词法分析器
-    lexer会接管Mhuixsentence的内存并自动释放
+    lexer会接管Mhuixsentence的内存并自动释放！！！
     Mhuixsentence:待处理的字符串：C语言字符串
     */
 

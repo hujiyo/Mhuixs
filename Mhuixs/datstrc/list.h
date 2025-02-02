@@ -61,4 +61,6 @@ int pop_head(LIST* list, uint8_t* stream, uint32_t len);
 int pop_tail(LIST* list, uint8_t* stream, uint32_t len);
 //从LIST列表的尾部弹出元素
 
+uint32_t retLISTnum(LIST* list);
+
 #endif
