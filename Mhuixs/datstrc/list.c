@@ -1,4 +1,4 @@
-#include "mlibs/strmap.h"
+#include "mlib/strmap.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -189,4 +189,7 @@ int pop_tail(LIST* list, uint8_t* stream, uint32_t len)
     list->head = list->tail = list->num = 0;
 
     return 0;
+}
+uint32_t retLISTnum(LIST* list){
+    return list->num;
 }

@@ -21,16 +21,14 @@ Email:hj18914255909@outlook.com
 Mhuixs数据库支持的数据结构/数据操作对象:
 1.表-table
 2.键库-kvalot
-3.栈-stack
-4.队列-queue
-5.列表-list
-6.位图-bitmap
-7.流-stream
+3.列表-list
+4.位图-bitmap
+5.流-stream
 
 注意:
 1.数据结构是一种可以被直接引用和操作的东西<=>任何可以被hook引用的东西才是叫做数据结构
 2.任何一个数据结构的使用之前为它创建一个引用hook可以增加其保护等级、链接灵活性
-3.任何hook都必须挂载在Mhuixs或其它
+3.任何hook都必须挂载在Mhuixs上
 */
 
 //下面是Mhuixs数据库的基本数据结构（操作对象）
@@ -43,10 +41,9 @@ typedef enum OBJECTYPE{
     M_STREAM =    '2',
     M_LIST   =    '3',
     M_BITMAP =    '4',
-    M_STACK  =    '5',
-    M_QUEUE  =    '6',
-    M_HOOK   =    '7',
-    M_TABLE  =    '8',
+    M_HOOK   =    '5',
+    M_TABLE  =    '6',
+    M_KEY    =    '7',
 }
 OBJECTYPE,Obj_TYPE,OT,  //数据结构类型对象
 HOOKTYPE;   //钩子类型对象
@@ -56,10 +53,9 @@ HOOKTYPE;   //钩子类型对象
 #define M_STREAM     '2'
 #define M_LIST       '3'
 #define M_BITMAP     '4'
-#define M_STACK      '5'
-#define M_QUEUE      '6'
-#define M_HOOK       '7'
-#define M_TABLE      '8'
+#define M_HOOK       '5'
+#define M_TABLE      '6'
+#define M_KEY        '7'
 
 /*
 hook在Mhuixs中被用来：
