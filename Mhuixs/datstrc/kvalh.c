@@ -235,12 +235,6 @@ int8_t kvalh_remove_key(KVALOT* kvalot, str* key_name)
                     case M_BITMAP:
                         freeBITMAP(key->handle);
                         break;
-                    case M_STACK:
-                        freeSTACK(key->handle);
-                        break;
-                    case M_QUEUE:
-                        freeQUEUE(key->handle);
-                        break;
                     case M_TABLE:
                         tblh_del_table(key->handle);
                         break;
@@ -362,12 +356,6 @@ int8_t kvalh_add_newkey(KVALOT* kvalot, str* key_name, uint8_t type, void* param
         case M_BITMAP://使用第一个参数作为BITMAP的大小
             kvalot->keypool[kvalot->keynum].handle
             = makeBITMAP(*(uint32_t*)parameter1);//创建一个BITMAP
-            break;
-        case M_STACK:
-            kvalot->keypool[kvalot->keynum].handle=makeSTACK();//创建一个STACK
-            break;
-        case M_QUEUE:
-            kvalot->keypool[kvalot->keynum].handle=makeQUEUE();//创建一个QUEUE
             break;
         case M_TABLE://使用第一个参数作为TABLE的字段信息，第二个参数作为TABLE的字段数量            
             kvalot->keypool[kvalot->keynum].handle
@@ -496,12 +484,6 @@ void freeKVALOT(KVALOT* kvalot)
                 break;
             case M_BITMAP:
                 freeBITMAP(key.handle);
-                break;
-            case M_STACK:
-                freeSTACK(key.handle);
-                break;
-            case M_QUEUE:
-                freeQUEUE(key.handle);
                 break;
             case M_TABLE:
                 tblh_del_table(key.handle);
