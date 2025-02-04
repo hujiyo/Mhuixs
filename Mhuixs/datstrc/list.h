@@ -10,7 +10,7 @@ Email:hj18914255909@outlook.com
 #ifndef LIST_H
 #define LIST_H
 
-#include "stream.h"
+#include "stdstr.h"
 #include "mlib/strmap.h"
 
 /*
