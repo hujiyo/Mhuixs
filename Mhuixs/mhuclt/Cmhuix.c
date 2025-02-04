@@ -14,6 +14,8 @@ Email:hj18914255909@outlook.com
 #include "Mhudef.h"
 #include "Cmhuix.h"
 
+#define MAX_STATEMENTS 100
+#define MAX_TOKENS_PER_STATEMENT 10
 
 //判断是否是token的起始字符
 #define is_std_token_start_char(c)  ( \
@@ -80,12 +82,12 @@ typedef struct Token{
 } Token,tok;//符号（令牌）结构体
 
 typedef struct statement{
-    tok** tokens;
+    tok *tokens;
     int num;//token的数量
 } statement,stmt;//单语句操作结构体
 
 typedef struct stmts{
-    stmt** stmt;
+    stmt *stmt;
     int num;//语句的数量
 } statements,stmts;//多语句操作结构体;
 
@@ -135,19 +137,19 @@ Token* getoken(inputstr* instr)//返回的token记得释放
                         instr->pos++;//跳过'\'
                         switch(*instr->pos){
                             case 'n':
-                                token->content = bcpstr("\n",1);
+                                token->content = stostr("\n",1);
                                 break;
                             case 't':
-                                token->content = bcpstr("\t",1);
+                                token->content = stostr("\t",1);
                                 break;
                             case 'r':
-                                token->content = bcpstr("\r",1);
+                                token->content = stostr("\r",1);
                                 break;
                             case '0':
-                                token->content = bcpstr("\0",1);
+                                token->content = stostr("\0",1);
                                 break;
                             case '\\':
-                                token->content = bcpstr("\\",1);
+                                token->content = stostr("\\",1);
                                 break;
                             default:
                                 token->content = NULL;
@@ -166,7 +168,7 @@ Token* getoken(inputstr* instr)//返回的token记得释放
                             //不用管pos的位置，因为已经TOKEN_EEROR了
                             return token;                            
                         }
-                        token->content = bcpstr(instr->pos,1);
+                        token->content = stostr(instr->pos,1);
                         token->type =TOKEN_STREAM;
                         instr->pos+=2;
                         return token;
@@ -218,7 +220,7 @@ Token* getoken(inputstr* instr)//返回的token记得释放
 
     //已经截取到了完整的token了
     //将token的内容复制到token->content中
-    token->content = bcpstr(instr->pos,ed_pos - instr->pos);
+    token->content = stostr(instr->pos,ed_pos - instr->pos);
     //将instr->pos移动到ed_pos的位置
     instr->pos = ed_pos;
     //判断token的类型
@@ -258,12 +260,6 @@ Token* getoken(inputstr* instr)//返回的token记得释放
         else if(!strncmp(token->content->string,"STREAM",6)||!strncmp(token->content->string,"stream",6)){
             token->type = TOKEN_STREAM_TYPE;
         }
-        else if(!strncmp(token->content->string,"STACK",5)||!strncmp(token->content->string,"stack",5)){
-            token->type = TOKEN_STACK_TYPE;
-        }
-        else if(!strncmp(token->content->string,"QUEUE",5)||!strncmp(token->content->string,"queue",5)){
-            token->type = TOKEN_QUEUE_TYPE;
-        }
         else if(!strncmp(token->content->string,"FIELD",5)||!strncmp(token->content->string,"field",5)){
             token->type = TOKEN_FIELD;
         }
@@ -286,7 +282,7 @@ Token* getoken(inputstr* instr)//返回的token记得释放
                 for(uint32_t i=0;i<token->content->len;i++){
                     if((token->content->string[i] < '0' || token->content->string[i] > '9')&& token->content->string[i] != '.'){
                         token->type = TOKEN_EEROR;
-                        freeSTREAM(token->content);
+                        sfree(token->content);
                         token->content = NULL;
                         return token;
                     }
@@ -295,6 +291,7 @@ Token* getoken(inputstr* instr)//返回的token记得释放
                 token->type = TOKEN_VALUES;
                 return token;
             }
+            //既不是关键字，也不是数字，也不是字符串，也不是结束符，也不是错误，那么就是名称
             token->type = TOKEN_NAME;
         }
     }
@@ -306,7 +303,6 @@ str* lexer(str* Mhuixsentence)
 {
     /*
     词法分析器
-    lexer会接管Mhuixsentence的内存并自动释放！！！
     Mhuixsentence:待处理的字符串：C语言字符串
     */
 
@@ -320,33 +316,42 @@ str* lexer(str* Mhuixsentence)
     instr.pos = instr.string;
     //将Mhuixsentence的内容复制到instr.string中
     memcpy(instr.string,Mhuixsentence->string,Mhuixsentence->len);
-    freeSTREAM(Mhuixsentence);//释放Mhuixsentence的内存
 
     //初始化stmts
     stmts stmts;
-    stmts.stmt = NULL;
+    stmts.stmt = (stmt*)malloc(sizeof(stmt)*MAX_STATEMENTS);
     stmts.num = 0;
 
     //初始化当前语句
     stmt current_stmt;
-    current_stmt.tokens = NULL;
+    current_stmt.tokens = (tok*)malloc(sizeof(tok)*MAX_TOKENS_PER_STATEMENT);
     current_stmt.num = 0;
 
     //获得语句
     for(;;){
         //获取token
         Token* token = getoken(&instr);
-        if(token == NULL){
-            //用户输入的字符串已经读取结束
-            goto end;
-        }
-        else if(token->type == TOKEN_EEROR){
-            //用户输入的字符串错误
-            free(current_stmt.tokens);
-            for(int i = 0; i < stmts.num; i++){
-                for(int j = 0; j < stmts.stmt[i]->num; j++){
-                    freeSTREAM(stmts.stmt[i]->tokens[j]->content);
-                    free(stmts.stmt[i]->tokens[j]);
+        if(token->type == TOKEN_EEROR){
+            //用户输入的字符串错误 
+
+            //先释放当前语句的stmt
+            for(uint32_t i=0;i<current_stmt.num;i++)
+            {
+                //释放第i个token的内容
+                sfree(current_stmt.tokens[i].content);    
+            }
+            free(current_stmt.tokens);//释放当前语句的stmt
+
+            //释放stmts
+            for(int i = 0; i < stmts.num; i++)
+            {
+                //释放第i个stmt的内容
+                stmt *c_stmt = &stmts.stmt[i];
+
+                for(int j = 0; j < c_stmt->num; j++)
+                {
+                    sfree((c_stmt->tokens[j]).content);
+                    free(c_stmt->tokens[j]);
                 }
                 free(stmts.stmt[i]->tokens);
                 free(stmts.stmt[i]);
@@ -354,6 +359,10 @@ str* lexer(str* Mhuixsentence)
             free(stmts.stmt);
             return NULL;
         }
+        else if(token == NULL){
+            //用户输入的字符串已经读取结束
+            goto end;
+        }        
         else if(token->type == TOKEN_END){
             //一个语句解析结束
             //语法检查
@@ -362,7 +371,7 @@ str* lexer(str* Mhuixsentence)
                 free(current_stmt.tokens);
                 for(int i = 0; i < stmts.num; i++){
                     for(int j = 0; j < stmts.stmt[i]->num; j++){
-                        freeSTREAM(stmts.stmt[i]->tokens[j]->content);
+                        sfree(stmts.stmt[i]->tokens[j]->content);
                         free(stmts.stmt[i]->tokens[j]);
                     }
                     free(stmts.stmt[i]->tokens);
@@ -378,7 +387,7 @@ str* lexer(str* Mhuixsentence)
                 free(current_stmt.tokens);
                 for(int i = 0; i < stmts.num; i++){
                     for(int j = 0; j < stmts.stmt[i]->num; j++){
-                        freeSTREAM(stmts.stmt[i]->tokens[j]->content);
+                        sfree(stmts.stmt[i]->tokens[j]->content);
                         free(stmts.stmt[i]->tokens[j]);
                     }
                     free(stmts.stmt[i]->tokens);
@@ -392,7 +401,7 @@ str* lexer(str* Mhuixsentence)
                 free(current_stmt.tokens);
                 for(int i = 0; i < stmts.num; i++){
                     for(int j = 0; j < stmts.stmt[i]->num; j++){
-                        freeSTREAM(stmts.stmt[i]->tokens[j]->content);
+                        sfree(stmts.stmt[i]->tokens[j]->content);
                         free(stmts.stmt[i]->tokens[j]);
                     }
                     free(stmts.stmt[i]->tokens);
@@ -418,7 +427,7 @@ str* lexer(str* Mhuixsentence)
                 free(current_stmt.tokens);
                 for(int i = 0; i < stmts.num; i++){
                     for(int j = 0; j < stmts.stmt[i]->num; j++){
-                        freeSTREAM(stmts.stmt[i]->tokens[j]->content);
+                        sfree(stmts.stmt[i]->tokens[j]->content);
                         free(stmts.stmt[i]->tokens[j]);
                     }
                     free(stmts.stmt[i]->tokens);
@@ -438,7 +447,7 @@ str* lexer(str* Mhuixsentence)
     if(result == NULL){
         for(int i = 0; i < stmts.num; i++){
             for(int j = 0; j < stmts.stmt[i]->num; j++){
-                freeSTREAM(stmts.stmt[i]->tokens[j]->content);
+                sfree(stmts.stmt[i]->tokens[j]->content);
                 free(stmts.stmt[i]->tokens[j]);
             }
             free(stmts.stmt[i]->tokens);
@@ -453,7 +462,7 @@ str* lexer(str* Mhuixsentence)
         free(result);
         for(int i = 0; i < stmts.num; i++){
             for(int j = 0; j < stmts.stmt[i]->num; j++){
-                freeSTREAM(stmts.stmt[i]->tokens[j]->content);
+                sfree(stmts.stmt[i]->tokens[j]->content);
                 free(stmts.stmt[i]->tokens[j]);
             }
             free(stmts.stmt[i]->tokens);
@@ -469,7 +478,7 @@ str* lexer(str* Mhuixsentence)
             result = str_append(result, stmts.stmt[i]->tokens[j]->content);
             if(result == NULL){
                 for(int k = 0; k < stmts.stmt[i]->num; k++){
-                    freeSTREAM(stmts.stmt[i]->tokens[k]->content);
+                    sfree(stmts.stmt[i]->tokens[k]->content);
                     free(stmts.stmt[i]->tokens[k]);
                 }
                 free(stmts.stmt[i]->tokens);

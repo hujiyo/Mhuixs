@@ -227,7 +227,7 @@ int8_t kvalh_remove_key(KVALOT* kvalot, str* key_name)
                 //根据type的类型为KEY的value分别处理
                 switch (key->type){
                     case M_STREAM:
-                        freeSTREAM(key->handle);
+                        sfree(key->handle);
                         break;
                     case M_LIST:
                         freeLIST(key->handle);
@@ -246,7 +246,7 @@ int8_t kvalh_remove_key(KVALOT* kvalot, str* key_name)
                         prinft("err:kvalh_remove_key:type error\n");
                         return err;
                 }
-                freeSTREAM(key->name);
+                sfree(key->name);
                 //free(key->linkey_coef);
                 //free(key->linkey_offset);
 
@@ -348,7 +348,7 @@ int8_t kvalh_add_newkey(KVALOT* kvalot, str* key_name, uint8_t type, void* param
     */
     switch (type){
         case M_STREAM://这是最简单的数据类型
-            kvalot->keypool[kvalot->keynum].handle=makeSTREAM();//创建一个STREAM
+            kvalot->keypool[kvalot->keynum].handle=makestr();//创建一个STREAM
             break;
         case M_LIST:
             kvalot->keypool[kvalot->keynum].handle=makeLIST();//创建一个LIST
@@ -393,7 +393,7 @@ int8_t kvalh_add_newkey(KVALOT* kvalot, str* key_name, uint8_t type, void* param
     ERR:
     {
         //清空新增KEY
-        freeSTREAM(kvalot->keypool[kvalot->keynum].name);
+        sfree(kvalot->keypool[kvalot->keynum].name);
         memset(&kvalot->keypool[kvalot->keynum],0,sizeof(KEY));
         return err;
     }
@@ -473,11 +473,11 @@ void freeKVALOT(KVALOT* kvalot)
     //释放键值对池
     for(uint32_t i=0;i<kvalot->keynum;i++){
         KEY key = kvalot->keypool[i];
-        freeSTREAM(key.name);
+        sfree(key.name);
         //释放链接对象
         switch (key.type){
             case M_STREAM:
-                freeSTREAM(key.handle);
+                sfree(key.handle);
                 break;
             case M_LIST:
                 freeLIST(key.handle);
@@ -499,7 +499,7 @@ void freeKVALOT(KVALOT* kvalot)
     }
     free(kvalot->keypool);
     //释放键值对池名称
-    freeSTREAM(kvalot->kvalot_name);
+    sfree(kvalot->kvalot_name);
     free(kvalot);    
 }
 

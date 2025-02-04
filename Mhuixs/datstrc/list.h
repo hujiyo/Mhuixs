@@ -1,4 +1,5 @@
 #include <stdint.h>
+
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
@@ -9,6 +10,7 @@ Email:hj18914255909@outlook.com
 #ifndef LIST_H
 #define LIST_H
 
+#include "stream.h"
 #include "mlib/strmap.h"
 
 /*
