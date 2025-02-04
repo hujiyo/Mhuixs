@@ -11,7 +11,7 @@ Email:hj18914255909@outlook.com
 #include "kvalh.h"
 #include "tblh.h"
 #include "list.h"
-#include "stream.h"
+#include "stdstr.h"
 #include "bitmap.h"
 
 #endif
