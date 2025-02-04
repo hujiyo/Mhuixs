@@ -3,7 +3,8 @@
         "stdlib.h": "c",
         "bitmap.h": "c",
         "session-linux.c": "cpp",
-        "strmap.h": "c"
+        "strmap.h": "c",
+        "stdarg.h": "c"
     },
     "marscode.codeCompletionPro": {
         "enableCodeCompletionPro": true
