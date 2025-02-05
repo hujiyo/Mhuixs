@@ -10,14 +10,14 @@ Email:hj18914255909@outlook.com
 #include <string.h>
 #include <stdint.h>
 #include <time.h>
-#include "stream.h"
+#include "stdstr.h"
 #include "Mhudef.h"
 #include "Cmhuix.h"
 
-#define MAX_STATEMENTS 100
-#define MAX_TOKENS_PER_STATEMENT 10
+#define MAX_STATEMENTS 100 //一次性能够处理的最大语句数量
+#define MAX_TOKENS_PER_STATEMENT 10 //单个语句的最大token数量
 
-//判断是否是token的起始字符
+//判断是否是token的起始字符,不包括某些单独处理的字符
 #define is_std_token_start_char(c)  ( \
 (c>='a' && c<='z')      ||      \
 (c>='A' && c<='Z')      ||      \
@@ -29,12 +29,16 @@ Email:hj18914255909@outlook.com
 (c==';')                ||      \
 (c=='\n')                     \
 )
+
 //判断是否是token的结束字符，'不算是token的结束字符，因为'将单独处理
 #define is_std_token_end_char(c)  ( \
 (c ==' ')  || \
 (c ==';')     \
 )
 
+/*
+下面是token的所有类型的枚举
+*/
 typedef enum {
     TOKEN_HOOK,         //引用：钩子
     TOKEN_KEY,          //引用：键
@@ -70,22 +74,26 @@ typedef enum {
     TOKEN_EEROR,         // token错误,一般遇到这个token,则视为用户 语句错误
 } TokType,toktype;
 
+//用户输入的字符串将会用这个结构体来储存、处理和分析
 typedef struct inputstr{
     uint8_t *string;//待处理的字符串
     uint32_t len;
     uint8_t *pos;//指向string中待处理的字符
 }inputstr;
 
+//令牌结构体
 typedef struct Token{
     str* content;//TOKEN的字面信息
     toktype type;//TOKEN的类型
 } Token,tok;//符号（令牌）结构体
 
+//单语句结构体,由多个符合语法顺序的token组成
 typedef struct statement{
     tok *tokens;
     int num;//token的数量
 } statement,stmt;//单语句操作结构体
 
+//stmt将会被加入到stmts中进行统一处理
 typedef struct stmts{
     stmt *stmt;
     int num;//语句的数量
@@ -94,11 +102,18 @@ typedef struct stmts{
 Token* getoken(inputstr* instr)//返回的token记得释放
 {
     Token *token = (Token*)malloc(sizeof(Token));
+    /*
+    返回值:
+    成功:返回token
+    失败/字符串结束:返回NULL
+    */
+    /*
+    功能:从pos位置开始，获取下一个token并返回
+    */
 
     /*
     请保证instr合法
-    pos必须在string的合法范围内
-    
+    pos必须在string的合法范围内    
     */
 
     /*
@@ -106,7 +121,8 @@ Token* getoken(inputstr* instr)//返回的token记得释放
     语句结束:    ;
     字符串:  "   '      '只有再""内才有效
     */
-    int is_string = 0;//是否是字符串
+
+    int is_string = 0;//函数全局变量：是否是字符串
     
 
     //在原来pos的位置基础上先后寻找首个token的起始字符
@@ -303,196 +319,192 @@ str* lexer(str* Mhuixsentence)
 {
     /*
     词法分析器
+    将用户输入的字符串转换为多个stmt，之后再进行语法分析。
     Mhuixsentence:待处理的字符串：C语言字符串
+
+    返回值：str*:处理后的字符串：C语言字符串
+    NULL：出错了
     */
 
-    //初始化inputstr
+    //########################################################
+    //分词成句模块：将用户语句拆分为token后再重新组装为stmt
+    //########################################################
+
+    //初始化inputstr用来存储用户输入的Mhuixsentence字符串
     inputstr instr;
     instr.string = (uint8_t*)malloc(Mhuixsentence->len);//str不计入'\0'
     if(instr.string == NULL){
+        printf("Malloc Error\n");
         return NULL;
     }
     instr.len = Mhuixsentence->len;
     instr.pos = instr.string;
-    //将Mhuixsentence的内容复制到instr.string中
-    memcpy(instr.string,Mhuixsentence->string,Mhuixsentence->len);
+    memcpy(instr.string,Mhuixsentence->string,Mhuixsentence->len);//将Mhuixsentence的内容复制到instr.string中
 
     //初始化stmts
     stmts stmts;
     stmts.stmt = (stmt*)malloc(sizeof(stmt)*MAX_STATEMENTS);
+    if(stmts.stmt == NULL){
+        printf("Malloc Error\n");
+        free(instr.string);
+        return NULL;
+    }
     stmts.num = 0;
 
     //初始化当前语句
     stmt current_stmt;
     current_stmt.tokens = (tok*)malloc(sizeof(tok)*MAX_TOKENS_PER_STATEMENT);
+    if(current_stmt.tokens == NULL){
+        printf("Malloc Error\n");
+        free(instr.string);
+        free(stmts.stmt);
+        return NULL;
+    }
     current_stmt.num = 0;
 
+    int error = 1;
+    
     //获得语句
     for(;;){
-        //获取token
+        //获取token,每次结束循环前记得释放token->content、token本身
         Token* token = getoken(&instr);
+
         if(token->type == TOKEN_EEROR){
-            //用户输入的字符串错误 
+            //用户输入的字符串错误,则抛出“令牌错误”
+            printf("Token Error\n");
 
-            //先释放当前语句的stmt
-            for(uint32_t i=0;i<current_stmt.num;i++)
-            {
-                //释放第i个token的内容
-                sfree(current_stmt.tokens[i].content);    
-            }
-            free(current_stmt.tokens);//释放当前语句的stmt
+            //释放token
+            sfree(token->content);
+            free(token);
 
-            //释放stmts
-            for(int i = 0; i < stmts.num; i++)
-            {
-                //释放第i个stmt的内容
-                stmt *c_stmt = &stmts.stmt[i];
-
-                for(int j = 0; j < c_stmt->num; j++)
-                {
-                    sfree((c_stmt->tokens[j]).content);
-                    free(c_stmt->tokens[j]);
-                }
-                free(stmts.stmt[i]->tokens);
-                free(stmts.stmt[i]);
-            }
-            free(stmts.stmt);
-            return NULL;
+            goto ERR;
         }
         else if(token == NULL){
-            //用户输入的字符串已经读取结束
-            goto end;
-        }        
-        else if(token->type == TOKEN_END){
-            //一个语句解析结束
-            //语法检查
-            if (!is_valid_statement(current_stmt)) {
-                //语法错误
-                free(current_stmt.tokens);
-                for(int i = 0; i < stmts.num; i++){
-                    for(int j = 0; j < stmts.stmt[i]->num; j++){
-                        sfree(stmts.stmt[i]->tokens[j]->content);
-                        free(stmts.stmt[i]->tokens[j]);
-                    }
-                    free(stmts.stmt[i]->tokens);
-                    free(stmts.stmt[i]);
-                }
-                free(stmts.stmt);
-                return NULL;
-            }
 
-            //将当前语句添加到stmts中
+            //释放token
+            free(token->content);
+            free(token);
+
+            //用户输入的字符串已经读取结束
+            break;//跳出循环
+        }
+        else if(token->type == TOKEN_END){
+            //一个语句解析结束,将当前语句添加到stmts中
+            //先分配内存
             stmts.stmt = (stmt*)realloc(stmts.stmt, (stmts.num + 1) * sizeof(stmt));
             if(stmts.stmt == NULL){
-                free(current_stmt.tokens);
-                for(int i = 0; i < stmts.num; i++){
-                    for(int j = 0; j < stmts.stmt[i]->num; j++){
-                        sfree(stmts.stmt[i]->tokens[j]->content);
-                        free(stmts.stmt[i]->tokens[j]);
-                    }
-                    free(stmts.stmt[i]->tokens);
-                    free(stmts.stmt[i]);
-                }
-                free(stmts.stmt);
-                return NULL;
+                //内存不足
+                printf("Realloc Error\n");
+
+                //释放token
+                sfree(token->content);
+                free(token);
+
+                goto ERR;
             }
-            stmts.stmt[stmts.num] = (stmt*)malloc(sizeof(stmt));
-            if(stmts.stmt[stmts.num] == NULL){
-                free(current_stmt.tokens);
-                for(int i = 0; i < stmts.num; i++){
-                    for(int j = 0; j < stmts.stmt[i]->num; j++){
-                        sfree(stmts.stmt[i]->tokens[j]->content);
-                        free(stmts.stmt[i]->tokens[j]);
-                    }
-                    free(stmts.stmt[i]->tokens);
-                    free(stmts.stmt[i]);
-                }
-                free(stmts.stmt);
-                return NULL;
+            //将当前语句添加到stmts中
+            stmts.stmt[stmts.num].tokens = (tok*)calloc(current_stmt.num, sizeof(tok));
+            if(stmts.stmt[stmts.num].tokens == NULL){
+                //内存不足
+                printf("Realloc Error\n");
+
+                //释放token
+                sfree(token->content);
+                free(token);
+
+                goto ERR;
             }
-            stmts.stmt[stmts.num]->tokens = current_stmt.tokens;
-            stmts.stmt[stmts.num]->num = current_stmt.num;
+            stmts.stmt[stmts.num].num = current_stmt.num;
+            for(int i = 0; i < current_stmt.num; i++){
+                //复制token
+                stmts.stmt[stmts.num].tokens[i] = current_stmt.tokens[i];
+            }
+           
             stmts.num++;
 
             //重置当前语句
-            current_stmt.tokens = NULL;
-            current_stmt.num = 0;
+            for(int i = 0; i < current_stmt.num; i++){
+                //释放token
+                sfree(current_stmt.tokens[i].content);
+                current_stmt.tokens[i].content = NULL;
+            }
+            current_stmt.num = 0; 
         }
         else{
             //将token添加到当前语句中
-            current_stmt.tokens = (tok**)realloc(current_stmt.tokens, (current_stmt.num + 1) * sizeof(tok*));
-            if(current_stmt.tokens == NULL){
-                free(token->content);
+            tok* new_current_stmt_tokens 
+            = (tok*)realloc(current_stmt.tokens, (current_stmt.num + 1) * sizeof(tok*));
+            if(new_current_stmt_tokens == NULL){
+                //内存分配失败
+                printf("Realloc Error\n");
+
+                //释放token
+                sfree(token->content);
                 free(token);
-                free(current_stmt.tokens);
-                for(int i = 0; i < stmts.num; i++){
-                    for(int j = 0; j < stmts.stmt[i]->num; j++){
-                        sfree(stmts.stmt[i]->tokens[j]->content);
-                        free(stmts.stmt[i]->tokens[j]);
-                    }
-                    free(stmts.stmt[i]->tokens);
-                    free(stmts.stmt[i]);
-                }
-                free(stmts.stmt);
-                return NULL;
+
+                goto ERR;
             }
-            current_stmt.tokens[current_stmt.num] = token;
-            current_stmt.num++;
+            current_stmt.tokens = new_current_stmt_tokens;
+
+            current_stmt.tokens[current_stmt.num] = *token;
+            current_stmt.num++;            
         }
+        //释放token
+        sfree(token->content);
+        free(token);
+        
+        continue;
     }
     
-    end://没有语法错误，已经解析为多个语句，每个语句语法正确
-    //将stmts转换为str并返回
-    str* result = (str*)malloc(sizeof(str));
-    if(result == NULL){
-        for(int i = 0; i < stmts.num; i++){
-            for(int j = 0; j < stmts.stmt[i]->num; j++){
-                sfree(stmts.stmt[i]->tokens[j]->content);
-                free(stmts.stmt[i]->tokens[j]);
-            }
-            free(stmts.stmt[i]->tokens);
-            free(stmts.stmt[i]);
-        }
-        free(stmts.stmt);
-        return NULL;
-    }
-    result->string = (uint8_t*)malloc(1);
-    result->len = 0;
-    if(result->string == NULL){
-        free(result);
-        for(int i = 0; i < stmts.num; i++){
-            for(int j = 0; j < stmts.stmt[i]->num; j++){
-                sfree(stmts.stmt[i]->tokens[j]->content);
-                free(stmts.stmt[i]->tokens[j]);
-            }
-            free(stmts.stmt[i]->tokens);
-            free(stmts.stmt[i]);
-        }
-        free(stmts.stmt);
-        return NULL;
-    }
-    result->string[0] = '\0';
+    //如果可以执行到这里，说明整个循环结束都没有发生错误
+    //如果发生ERR跳转，那么error=1，在下面释放内存模块末尾会离开函数
+    error = 0;
 
-    for(int i = 0; i < stmts.num; i++){
-        for(int j = 0; j < stmts.stmt[i]->num; j++){
-            result = str_append(result, stmts.stmt[i]->tokens[j]->content);
-            if(result == NULL){
-                for(int k = 0; k < stmts.stmt[i]->num; k++){
-                    sfree(stmts.stmt[i]->tokens[k]->content);
-                    free(stmts.stmt[i]->tokens[k]);
-                }
-                free(stmts.stmt[i]->tokens);
-                free(stmts.stmt[i]);
-            }
-            free(stmts.stmt[i]->tokens[j]->content);
-            free(stmts.stmt[i]->tokens[j]);
+    //模块的结束，在这里统一释放掉本模块的所有内存，准备进入语法检查模块
+    //释放内存模块+错误处理
+    ERR:{
+        //先释放当前语句的stmt
+        for(uint32_t i=0;i<current_stmt.num;i++)
+        {
+            //释放第i个token的内容
+            sfree(current_stmt.tokens[i].content);
         }
-        free(stmts.stmt[i]->tokens);
-        free(stmts.stmt[i]);
-    }
-    free(stmts.stmt);
+        free(current_stmt.tokens);//释放当前语句的stmt
 
-    return result;
+        //释放stmts
+        for(int i = 0; i < stmts.num; i++)
+        {
+            //释放第i个stmt的内容
+            stmt *c_stmt = &stmts.stmt[i];
+
+            for(int j = 0; j < c_stmt->num; j++)
+            {
+                sfree((c_stmt->tokens[j]).content);
+            }
+            free(c_stmt->tokens);
+        }
+        free(stmts.stmt);//释放stmts
+
+        //释放instr.string
+        free(instr.string);
+
+        if(error){
+            return NULL;
+        }        
+    }    
+
+
+    //########################################################
+    //语法检查模块：分析每个stmt的语法是否正确
+    //########################################################
+    
+    //////////////////////////////////////////////////////////
+
+    //########################################################
+    //命令转化模块：将每个stmt转换为Mhuixs命令
+    //########################################################
+
+    //////////////////////////////////////////////////////////
 }
 
 /*

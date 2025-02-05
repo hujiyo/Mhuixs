@@ -22,12 +22,7 @@ strmap库的分配性能优异。
 同时，由于LIST的内存是连续的，对象压缩也容易。
 */
 
-typedef struct LIST{
-    STRPOOL strpool;//指向创建的内存池
-    OFFSET head;//头元素偏移量
-    OFFSET tail;//尾元素偏移量
-    uint32_t num;//元素数量
-}LIST;
+typedef struct LIST LIST;
 
 LIST* makeLIST();
 /*

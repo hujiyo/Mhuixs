@@ -92,7 +92,7 @@ int add_head(LIST* list, uint8_t* stream, uint32_t len)
     if(node_o == 0){
         return err;
     }
-    memcpy(list->strpool + node_o + sizeof(NODE_LST),stream,len);    
+    memcpy(list->strpool + node_o + sizeof(NODE_LST),stream,len);
 
     ((NODE_LST*)(list->strpool + node_o))->length = len;    
     ((NODE_LST*)(list->strpool + node_o))->pre = 0;//将节点的前一个节点设置为0 

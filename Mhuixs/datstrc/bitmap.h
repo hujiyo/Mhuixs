@@ -34,17 +34,17 @@ int setBIT(BITMAP* bitmap,uint32_t offset,uint8_t value);
 设置位图中偏移量为offset的位的值为value。
 返回值：0：成功  -1：失败
 */
-int setBITs(BITMAP* bitmap,const char* data_stream,uint32_t start,uint32_t end);
+int setBITs(BITMAP* bitmap,const char* data_stream,uint32_t st,uint32_t ed);
 /*
 将data_stream中的数据设置到位图中，从start偏移量到end偏移量。
 返回值：0：成功  -1：失败
 */
-int64_t countBIT(BITMAP* bitmap,uint32_t start,uint32_t end);
+int64_t countBIT(BITMAP* bitmap,uint32_t st,uint32_t ed);
 /*
 统计位图中从start偏移量到end偏移量之间1的个数。
 返回值：1的个数
 */
-int64_t retuoffset(BITMAP* bitmap,uint32_t start,uint32_t end);
+int64_t retuoffset(BITMAP* bitmap,uint32_t st,uint32_t ed);
 /*
 返回位图中从start偏移量到end偏移量之间第一个为1的位的偏移量。包括start和end
 返回值：偏移量  -1：未找到
