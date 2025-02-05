@@ -19,23 +19,10 @@ Email:hj18914255909@outlook.com
 #define hash_tong_1048576ge     1048576         //2^20
 #define hash_tong_16777216ge    16777216        //2^24
 
-typedef struct KEY{
-    void* handle;//指向任意数据结构描述符
-    OBJECTYPE type;//描述符类型
-    str* name;//指向一个key名称存放的地址 
-    uint32_t hash_index;//当前key在哈希表中的索引
-}KEY;
+typedef struct KEY KEY;
+typedef struct HASH_TONG HASH_TONG;
 
-typedef struct KVALOT{
-    HASH_TONG* hash_table;//哈希表--->索引
-    uint32_t numof_tong;//哈希桶数量
-
-    KEY* keypool;//键池
-    uint32_t keynum;//key数量
-    uint32_t keypoolROM;//池总容量
-
-    str* kvalot_name;//键值对池名称
-}KVALOT;
+typedef struct KVALOT KVALOT;
 
 KVALOT*     makeKVALOT          (char* kvalot_name,uint8_t hash_tong_num);
 KEY*        kvalh_find_key      (KVALOT* kvalot, str* key_name);

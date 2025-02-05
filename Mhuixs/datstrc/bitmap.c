@@ -55,7 +55,7 @@ int getBIT(BITMAP* bitmap,uint32_t offset)//偏移量从0开始
     return (first[offset/8] >> (offset%8)) & 1; // 获取指定位置的bit值 
     //内存中序号和位的对应关系：7-6-5-4-3-2-1-0 15-14-13-12-11-10-9-8
 }
-int setBIT(BITMAP* bitmap,uint32_t offset,int8_t value) 
+int setBIT(BITMAP* bitmap,uint32_t offset,uint8_t value) 
 {
     /*
     value=0 ：置0
