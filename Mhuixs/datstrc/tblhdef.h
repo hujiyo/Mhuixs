@@ -42,7 +42,6 @@ Email:hj18914255909@outlook.com
 #define s300 'l'
 #define d211		'm'		//* 年* 月* 日 4byte 2 + 1 + 1
 #define t111		'n'		// * 时 * 分 * 秒 3byte 1 + 1 + 1
-#define dt1111		'o'		// * 月 * 日 * 时 * 分 4byte 1 + 1 + 1 + 1
 #define dt211111	'p'		// * 年 * 月 * 日 * 时 * 分 * 秒 7byte 2 + 1 + 1 + 1 + 1 + 1
 
 
@@ -56,12 +55,6 @@ typedef struct tp_t111 {
 	uint8_t minute;
 	uint8_t second; 
 } tp_t111, TIME;
-typedef struct tp_dt1111 { 
-	uint8_t month;
-	uint8_t day;
-	uint8_t hour;
-	uint8_t minute;
-} tp_dt1111, DAYTIME;
 typedef struct tp_dt211111 { 
 	uint16_t year;
 	uint8_t month;
