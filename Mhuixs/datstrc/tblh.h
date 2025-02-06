@@ -9,7 +9,6 @@ Email:hj18914255909@outlook.com
 #define TBLH_H
 
 #include <stdint.h>
-#include "tblhdef.h"
 
 /*
 这个库还没有完成
@@ -19,37 +18,8 @@ Email:hj18914255909@outlook.com
 table需要增添表格恢复功能
 */
 
-typedef struct FIELD {
-    char type;
-    char name[name_max_size];
-} FIELD;
-
-typedef struct IDLE_MAP {
-    uint32_t idle_offset;
-    uint32_t idle_size;
-} IDLE_MAP;
-
-typedef struct L_INDEX {
-    uint32_t sequence;
-    uint8_t* rcd_addr;
-} L_INDEX;
-
-typedef struct TABLE {
-    FIELD* p_field; //TABLE字段区地址（通过字段数确定边界！！！）//集成索引功能 删除FIELD_INDEX索引对象
-    uint32_t field_num;//字段数
-    uint32_t* offsetofield;//最新字段偏移量方案，p_p_field[i]表示第i个字段信息结构体，它的记录偏移量就是offsetofield[i],它将始终与对应的FIELD一一对应
-    IDLE_MAP* idle_map;//“记录使用区”的“空位内存地图”
-    uint32_t map_size;//空位的数量，这个数量实际应该不会特别大，除非你在天天删除字段但是却不增添字段，这显然不可能
-
-    uint8_t* p_data;//TABLE数据区地
-    uint32_t record_length;//记录长度（记录使用区大小+字段未使用区的大小）
-    uint32_t record_usage;//记录长度（记录使用区大小：这里面包括字段删除留下的空位）
-    uint32_t record_num;//记录条数（行数）	
-    L_INDEX* line_index;//行索引
-
-    uint32_t data_ROM;//TABLE数据区record条数总容量
-    char* table_name;//table名
-} TABLE;
+typedef struct FIELD FIELD;
+typedef struct TABLE TABLE;
 
 TABLE*      makeTABLE(char* table_name, FIELD* field, uint32_t field_num);
 uint8_t     tblh_make_table     (TABLE* table, char* table_name, FIELD* field, uint32_t field_num);
