@@ -60,7 +60,6 @@ static int sizeoftype(char type) { //返回某类型在p_data池中的占用的�
 		case s300:return 300;
 		case d211:return 4;
 		case t111:return 3;
-		case dt1111:return 4;
 		case dt211111:return 7;
 		default: return err;
 	}
@@ -81,7 +80,6 @@ static int ptfsizeoftype(char type){//根据数据类型返回打印时占用的
 		case s300:return 30 + 1;//打印前30个字符
 		case d211:return 10 + 1;//2024.10.10
 		case t111:return 8 + 1;//11:11:11
-		case dt1111:return 11 + 1;//11.25.17:53
 		case dt211111:return 19 + 1;//2024.10.10.11:11:11
 	}
 	return err;
@@ -258,8 +256,6 @@ static uint8_t store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type)
 			goto YEAR;
 		case t111: 
 			goto HOUR;
-		case dt1111: 
-			goto MONTH;
 		case dt211111:
 			goto YEAR;
 
@@ -269,13 +265,15 @@ static uint8_t store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type)
 			put_tobyte(&i, p_storaddr, sizeoftype(ui2));
 			p_inputstr = strchr(p_inputstr, '.') + 1;
 			p_storaddr += sizeoftype(ui2);
-		MONTH://月
+			//月
 			*p_storaddr = strtoul((const char*)p_inputstr, NULL, 10);
 			p_storaddr++;
 			p_inputstr = strchr(p_inputstr, '.') + 1;
 			//日
 			*p_storaddr = strtoul((const char*)p_inputstr, NULL, 10);
-			if (type == d211)return 0;
+			if (type == d211){
+				return 0;
+			}
 			p_storaddr++;
 			p_inputstr = strchr(p_inputstr, '.') + 1;
 		HOUR://时
@@ -294,7 +292,6 @@ static uint8_t store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type)
 		日期
 		d211		*年*月*日 4byte 2+1+1
 		t111		*时*分*秒 3byte 1+1+1
-		dt1111		*月*日*时*分 4byte 1+1+1+1
 		dt211111	*年*月*日*时*分*秒 7byte 2+1+1+1+1+1
 		例子：2024.10.23.17:56:45
 		*/
@@ -830,7 +827,6 @@ case f8:
 		/*********************************************************************************
 		d211		'n'		// * 年* 月* 日 4byte 2 + 1 + 1
 		t111		'p'		// * 时 * 分 * 秒 3byte 1 + 1 + 1
-		dt1111		'r'		// * 月 * 日 * 时 * 分 4byte 1 + 1 + 1 + 1
 		dt211111	's'		// * 年 * 月 * 日 * 时 * 分 * 秒 7byte 2 + 1 + 1 + 1 + 1 + 1
 		时间由特别结构体进行读取
 		**********************************************************************************/
@@ -849,16 +845,6 @@ case f8:
 			tp.minute = *(inf_addr + 1);
 			tp.second = *(inf_addr + 2);
 			*(tp_t111*)buffer = tp;
-
-			return 0;
-		}
-		case dt1111: {
-			tp_dt1111 tp;
-			tp.month = *(inf_addr + 0);
-			tp.day = *(inf_addr + 1);
-			tp.hour = *(inf_addr + 2);
-			tp.minute = *(inf_addr + 3);
-			*(tp_dt1111*)buffer = tp;
 
 			return 0;
 		}
@@ -980,12 +966,6 @@ void tblh_printf_record(TABLE* table, uint32_t j, uint32_t y)
 					tp_t111 tp; 
 					tblh_getfrom_i_j(table, i, j, &tp);
 					printf("%d:%d:%d", tp.hour, tp.minute, tp.second); 
-					break;
-				}
-				case dt1111: {
-					tp_dt1111 tp; 
-					tblh_getfrom_i_j(table, i, j, &tp);
-					printf("%d.%d.%d:%d", tp.month, tp.day, tp.hour, tp.minute); 
 					break;
 				}
 				case dt211111: {
@@ -1221,7 +1201,6 @@ int tblh_join_record(TABLE* table, TABLE* table_join){//把join表加到table后
 	char cc_s300[300] = { 0 };
 	tp_d211 cc_d211;
 	tp_t111 cc_t111;
-	tp_dt1111 cc_dt1111;
 	tp_dt211111 cc_dt211111;
 	*/
 	uint8_t* cc_buffer=(uint8_t*)calloc(75,4);//保证可以读取最长的s300
