@@ -56,6 +56,12 @@ int swrite(str* stream, uint32_t pos, uint8_t *bitestream, uint32_t length); // 
 swrite(object,pos,bitestream,length);
 返回真实的写入位置pos
 */
+int sset(str* stream, uint32_t st, uint32_t ed, uint8_t byte);
+/*
+将字节流中的st到ed位置的数据设置为byte
+sset(object,st,ed,byte);
+返回写入后的字节流长度
+*/
 uint8_t* strtos(str stream); // 新增: 将str转换为C字符串
 
 #endif

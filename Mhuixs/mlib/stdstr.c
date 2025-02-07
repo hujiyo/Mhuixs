@@ -97,6 +97,24 @@ int swrite(str* stream, uint32_t pos, uint8_t *bitestream, uint32_t length)
     stream->len = pos + length;//更新长度
     return pos;
 }
+int sset(str* stream, uint32_t st, uint32_t ed, uint8_t byte)
+{
+    if (stream->string == NULL || st > ed) {
+        return err;
+    }
+    // 如果end超出当前长度，扩展字节流
+    if (ed >= stream->len) {
+        uint8_t *new_string = (uint8_t *)realloc(stream->string, ed + 1);
+        if (new_string == NULL) {
+            return err;
+        }
+        stream->string = new_string;
+        stream->len = ed + 1;        
+    }
+    // 填充指定范围的字节
+    memset(stream->string + st, byte, ed - st + 1);
+    return stream->len;
+}
 str splice(str stream0,...)
 {
     /*
