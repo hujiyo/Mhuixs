@@ -12,6 +12,7 @@ Email:hj18914255909@outlook.com
 #include <time.h>
 #include "stdstr.h"
 
+#define NOTKEYWORD -1
 
 #define MAX_STATEMENTS 100 //一次性能够处理的最大语句数量
 #define MAX_TOKENS_PER_STATEMENT 100 //单个语句的最大token数量
@@ -220,54 +221,10 @@ Token* getoken(inputstr* instr)//返回的token记得释放
         token->type = TOKEN_STREAM;
     }
     else{
-        //判断token的类型
-        if(!strncmp(token->content->string,"SET",3)||!strncmp(token->content->string,"set",3)){
-            token->type = TOKEN_SET;
-        }
-        else if(!strncmp(token->content->string,"INSERT",6)||!strncmp(token->content->string,"insert",6)){
-            token->type = TOKEN_INSERT;
-        }
-        else if(!strncmp(token->content->string,"ADD",3)||!strncmp(token->content->string,"add",3)){
-            token->type = TOKEN_ADD;
-        }
-        else if(!strncmp(token->content->string,"AT",2)||!strncmp(token->content->string,"at",2)){
-            token->type = TOKEN_AT;
-        }
-        else if(!strncmp(token->content->string,"ALTER",5)||!strncmp(token->content->string,"alter",5)){
-            token->type = TOKEN_ALTER;
-        }
-        else if(!strncmp(token->content->string,"TABLE",5)||!strncmp(token->content->string,"table",5)){
-            token->type = TOKEN_TABLE_TYPE;
-        }
-        else if(!strncmp(token->content->string,"KEYLOT",6)||!strncmp(token->content->string,"kvalot",6)
-                ||!strncmp(token->content->string,"KEYLOT",6)||!strncmp(token->content->string,"keylot",6)){
-            token->type = TOKEN_KVALOT_TYPE;
-        }
-        else if(!strncmp(token->content->string,"LIST",4)||!strncmp(token->content->string,"list",4)){
-            token->type = TOKEN_LIST_TYPE;
-        }
-        else if(!strncmp(token->content->string,"BITMAP",6)||!strncmp(token->content->string,"bitmap",6)){
-            token->type = TOKEN_BITMAP_TYPE;
-        }
-        else if(!strncmp(token->content->string,"STREAM",6)||!strncmp(token->content->string,"stream",6)){
-            token->type = TOKEN_STREAM_TYPE;
-        }
-        else if(!strncmp(token->content->string,"FIELD",5)||!strncmp(token->content->string,"field",5)){
-            token->type = TOKEN_FIELD;
-        }
-        else if(!strncmp(token->content->string,"LINE",4)||!strncmp(token->content->string,"line",4)){
-            token->type = TOKEN_LINE;
-        }
-        else if(!strncmp(token->content->string,"RANK",4)||!strncmp(token->content->string,"rank",4)){
-            token->type = TOKEN_RANK;
-        }
-        else if(!strncmp(token->content->string,"HOOK",4)||!strncmp(token->content->string,"hook",4)){
-            token->type = TOKEN_HOOK;
-        }
-        else if(!strncmp(token->content->string,"KEY",3)||!strncmp(token->content->string,"key",3)){
-            token->type = TOKEN_KEY;
-        }
-        else{
+        /*
+        callitkeyword将会自动尝试为token匹配关键字，如果失败则返回NOTKEYWORD
+        */
+        if(callitkeyword(token->content->string,token->content->len,&token->type) == NOTKEYWORD ){
             //判断第一个字符是否是数字，如果是数字，则检查是否是规范的数字
             if(token->content->string[0] >= '0' && token->content->string[0] <= '9'){
                 //检查是否是规范的数字
@@ -505,60 +462,8 @@ str* lexer(str* Mhuixsentence)
     //////////////////////////////////////////////////////////
 }
 
-typedef enum {
-    TOKEN_HOOK,         //引用：钩子
-    TOKEN_KEY,          //引用：键
-
-    TOKEN_TABLE_TYPE,        //表类型
-    TOKEN_KVALOT_TYPE,       //键库类型
-    TOKEN_LIST_TYPE,         //列表类型
-    TOKEN_BITMAP_TYPE,       //位图类型
-    TOKEN_STREAM_TYPE,       //流类型
-    TOKEN_STACK_TYPE,        //栈类型
-    TOKEN_QUEUE_TYPE,        //队列类型
-
-    TOKEN_SET,          // 设置
-    TOKEN_INSERT,       // 插入
-    TOKEN_ADD,          // 添加
-    
-    TOKEN_FIELD,        // 字段
-    TOKEN_LINE,         // 行
-    TOKEN_RANK,         // 保护等级
-
-    TOKEN_NAME,       // 引用
-    TOKEN_HANDLE_NAME,       // 引用的名称
-    TOKEN_OBJECT_NAME,       // 数据结构对象的名称
-
-    TOKEN_AT,           
-    TOKEN_ALTER,
-
-    TOKEN_VALUES,       // 数字值
-    TOKEN_STREAM,         // 字符信息
-
-    TOKEN_END,          // 结束符：语句结束符，即';'
-
-    TOKEN_EEROR,         // token错误,一般遇到这个token,则视为用户 语句错误
-} TokType,toktype;
-
-int is_valid_statement(stmt curstmt) {
-    /*
-    is_valid_statement
-    函数功能：检查当前语句是否符合语法规则
-
-    返回值：
-    0：语法错误 1：语法正确
-    */
-    
-    for(int i = 0; i < curstmt.num; i++){
-        
-    }
-    /*
-    《Mhuixs查询语言设计草案》
-    Mhuixs查询语言设计旨在提供一种全面兼容NoSQL与SQL语言，同时支持Mhuixs特性 
-    基本思路：HOOK关键字用来指定某个数据结构对象，指定完对象后就可以使用对象类型对应的关键字了，比如使用HOOK指定完TABLE类型后就可以使用SQL语言对表进行操作，再比如使用HOOK指定完KVALOT类型后就可以使用类似redis的键值对操作命令来操作它了……
-    我能想到的关键字如下：
-
-    ####下面是HOOK所有使用方法@MHU
+/*
+    ####下面是HOOK所有使用方法
     关键字【HOOK,GET,WHERE】【TABLE,KVALOT,LIST,BITMAP,STREAM】【DEL,TYPE,RANK,CLEAR】
     {
         #HOOK基础操作
@@ -577,9 +482,10 @@ int is_valid_statement(stmt curstmt) {
         GET TYPE objname; #获取指定HOOK操作对象的类型
         #HOOK高阶操作
         HOOK objname1 objname2; #启动多对象操作
-;
-    }
 
+    }
+*/
+/*
     ####下面是操作对象为TABLE时的所有语法@MHU
     关键字【TABLE】【HOOK】【INSERT,SELECT,UPDATE,GET,FIELD,SET,ADD,SWAP,DEL,RENAME,ATTRIBUTE,COORDINATE,AT,DESC,ALL】
     【[i1,int8_t],[i2,int16_t],[i4,int32_t,int],[i8,int64_t],[ui1,uint8_t],[ui2,uint16_t],[ui4,uint32_t],[ui8,uint64_t],
@@ -612,7 +518,8 @@ int is_valid_statement(stmt curstmt) {
         DESC table_name;#查看指定表表结构
         DESC;#查看所在表结构
     }
-
+*/
+/*
     ####下面是操作对象为KVALOT时的所有语法@MHU
     关键字【KVALOT】【HOOK】【SET,GET,DEL,INCR,DECR,EXISTS,SELECT,ALL,APPEND,FROM,KEY,TYPE,LEN】
     【KVALOT,STREAM,TABLE,LIST,BITMAP】
@@ -627,34 +534,37 @@ int is_valid_statement(stmt curstmt) {
         APPEND key value;# 将value追加到key的值中。
         APPEND key value pos;# 将value追加到key的值中，从指定位置开始。若pos超出key值的长度，则从key值的末尾开始追加。
         GET key1 key2 ...; #获取指定键的值
-        GET key0 FROM start end;#获取指定键的值的子字符串 
+        GET key0 FROM start TO end;#获取指定键的值的子字符串 
         DEL key1 key2 ...; #删除指定键
-        INCR KEY num; #对指定键的值进行递增操作，num为可选参数，默认递增1
-        DECR KEY num; #对指定键的值进行递减操作，num为可选参数，默认递减1
-        TYPE key1 key2 ...; #获取指定键的值的数据类型
-        LEN key1 key2 ...; #获取指定键的值的长度
+        INCR key0 num; #对指定键的值进行递增操作，num为可选参数，默认递增1
+        DECR key0 num; #对指定键的值进行递减操作，num为可选参数，默认递减1
+        GET TYPE key1 key2 ...; #获取指定键的值的数据类型
+        GET LEN key1 key2 ...; #获取指定键的值的长度
         #转入键对象操作
         KEY key0;# 进入键对象操作
     }
-
+*/
+/*
     ####下面是操作对象为STREAM时的所有语法@MHU
-    关键字【STREAM】【HOOK】【ADD,GET,RANGE,DEL】
+    关键字【STREAM】【HOOK】【ADD,GET,FROM,DEL】
     {
         HOOK STREAM mystream; #创建一个名为mystream的流对象，此时操作对象为mystream
         APPEND value; #向流中附加数据
-        APPEND value pos;# 将value追加到流中，从指定位置开始。若pos超出流的长度，则从流的末尾开始追加。
-        GET FROM start end;#获取流中指定范围的数据
-        GET pos len;#获取流中指定长度的数据
+        APPEND value AT pos;# 将value追加到流中，从指定位置开始。若pos超出流的长度，则从流的末尾开始追加。
+        GET FROM start TO end;#获取流中指定范围的数据
+        GET len AT pos;#获取流中指定长度的数据
+        GET ALL;#获取流的所有数据
         SET pos value;# 从pos处设置流中指定位置的值
         SET char FROM start TO end;# 从start到end处设置流中指定范围的值
     }
-    
+*/
+/*    
     ####下面是操作对象为LIST时的所有语法@MHU
-    关键字【LIST】【HOOK】【ADD,GET,DEL,LEN,INSERT,UPDATE,LPUSH,RPUSH,LPOP,RPOP,FROM,ALL,TO,WHOIS,AT,SET,EXISTS】
+    关键字【LIST】【HOOK】【ADD,GET,DEL,LEN,INSERT,UPDATE,LPUSH,RPUSH,LPOP,RPOP,FROM,ALL,TO,AT,SET,EXISTS】
     {
         HOOK LIST mylist; #创建一个名为mylist的列表对象，此时操作对象为mylist
         LPUSH value1 value2 ...;#在列表开头添加一个值
-        RPUSH/ADD value value2 ...;#在列表末尾添加一个值
+        RPUSH/ADD value1 value2 ...;#在列表末尾添加一个值
         LPOP/GET; #移除并返回列表开头的值
         RPOP; #移除并返回列表末尾的值
 
@@ -664,15 +574,14 @@ int is_valid_statement(stmt curstmt) {
         DEL index1 index2 ...; #删除指定索引位置的值
         DEL FROM index1 TO index2; #删除指定范围内的值
         DEL ALL;#删除所有值
-        DEL WHOIS value; #删除含有指定值的所有元素
-        LEN; #获取列表的元素个数
-        LEN index;#获取列表中指定索引位置的值
-        INSERT value AT index;/INSERT index value; #在指定索引位置插入一个值
-        SET value AT index;/SET index value; #更新列表中指定索引位置的值
-        EXISTS value1 value2 ...; #判断集合中是否存在指定值
+        GET LEN; #获取列表的元素个数
+        GET LEN index;#获取列表中指定索引位置的值的长度
+        INSERT value AT index; #在指定索引位置插入一个值
+        SET index value; #更新列表中指定索引位置的值
+        EXISTS value1 value2 ...; #判断列表是否存在指定值
     }
-
-
+*/
+/*
     ####下面是操作对象为BITMAP时的所有语法@MHU
     关键字【BITMAP】【HOOK】【SETBIT,GETBIT,COUNT,BITOP】
     {
@@ -681,13 +590,423 @@ int is_valid_statement(stmt curstmt) {
         KEY BITMAP key; #创建一个名为key的键对象，此时操作对象为key
         KEY key;# 手动切换到一个已经存在的操作对象
 
-        SET offset value;/SET value AT index; #设置位图中指定偏移量处的位值，value为0或1
-        SET FROM offset TO offset value;/SET value FROM offset TO offset; #设置位图中指定偏移量范围内的位值，value为0或1
+        SET offset value; #设置位图中指定偏移量处的位值，value为0或1
+        SET FROM offset TO offset value; #设置位图中指定偏移量范围内的位值，value为0或1
         GET offset; #获取位图中指定偏移量处的位值
         GET FROM offset TO offset;#获取位图中指定偏移量范围内的位值
         COUNT; #统计位图中值为1的位数
-        COUNT offset1 offset2; #统计位图中指定偏移量范围内值为1的位数        
-    }    
+        COUNT FROM offset1 TO offset2; #统计位图中指定偏移量范围内值为1的位数        
+    }
+*/
 
+int is_valid_statement(stmt curstmt) {
+    /*
+    is_valid_statement
+    函数功能：检查当前语句是否符合语法规则
+
+    返回值：
+    0：语法错误 1：语法正确
     */
+    
+    for(int i = 0; i < curstmt.num; i++){
+        
+    }
+    return 1;
+}
+
+
+typedef enum {
+    TOKEN_HOOK,         //引用：钩子
+    TOKEN_KEY,          //引用：键
+
+    TOKEN_TABLE_TYPE,        //表类型
+    TOKEN_KVALOT_TYPE,       //键库类型
+    TOKEN_LIST_TYPE,         //列表类型
+    TOKEN_BITMAP_TYPE,       //位图类型
+    TOKEN_STREAM_TYPE,       //流类型
+
+    TOKEN_DEL,       // 删除
+    TOKEN_GET,          // 获取
+    TOKEN_RENAME,       // 重命名
+    TOKEN_CLEAR,       // 清空
+    TOKEN_INSERT,       // 插入
+    TOKEN_UPDATE,       // 更新
+    TOKEN_SELECT,       // 选择
+    TOKEN_SWAP,       // 交换
+    TOKEN_SET,          // 设置
+    TOKEN_ADD,          // 添加
+    TOKEN_INCR,       // 自增
+    TOKEN_DECR,       // 自减
+    TOKEN_LPOP,       // 左弹出
+    TOKEN_RPOP,       // 右弹出
+    TOKEN_LPUSH,       // 左压入
+    TOKEN_RPUSH,       // 右压入
+    TOKEN_APPEND,       // 追加
+    TOKEN_COUNT,       // 计数
+
+    TOKEN_COORDINATE,       // 坐标
+    TOKEN_DESC,       // 描述
+    TOKEN_ALL,       // 全部
+    TOKEN_WHERE,       
+    TOKEN_TYPE,       // 类型
+    TOKEN_EXISTS,       // 存在
+
+    TOKEN_i1,
+    TOKEN_i2,
+    TOKEN_i4,
+    TOKEN_i8,
+    TOKEN_ui1,
+    TOKEN_ui2,
+    TOKEN_ui4,
+    TOKEN_ui8,
+    TOKEN_f4,
+    TOKEN_f8,
+    TOKEN_d211,
+    TOKEN_t111,
+    TOKEN_dt211111,
+
+    TOKEN_PKEY,         // 主键
+    TOKEN_FKEY,         // 外键
+    TOKEN_UNIQUE,       // 唯一
+    TOKEN_NOTNULL,       // 非空
+    TOKEN_DEFAULT,       // 默认值
+
+
+    TOKEN_ATTRIBUTE,       // 属性
+    
+    TOKEN_FIELD,        // 字段
+    TOKEN_RANK,         // 保护等级
+
+    
+    TOKEN_AT,
+    TOKEN_TO,
+    TOKEN_FROM,
+
+    TOKEN_NAME,       // 引用
+    TOKEN_HANDLE_NAME,       // 引用的名称
+    TOKEN_OBJECT_NAME,       // 数据结构对象的名称
+
+    TOKEN_VALUES,       // 数字值
+    TOKEN_STREAM,         // 字符信息
+
+    TOKEN_END,          // 结束符：语句结束符，即';'
+
+    TOKEN_EEROR,         // token错误,一般遇到这个token,则视为用户 语句错误
+} TokType,toktype;
+
+int callitkeyword(uint8_t* str,int len,toktype *type)
+{   
+    if(len==2){
+        if(!strncmp(str,"i1",2)){
+            *type=TOKEN_i1;
+            return 0;
+        }
+        if(!strncmp(str,"i2",2)){
+            *type=TOKEN_i2;
+            return 0;
+        }
+        if(!strncmp(str,"i4",2)){
+            *type=TOKEN_i4;
+            return 0;
+        }
+        if(!strncmp(str,"i8",2)){
+            *type=TOKEN_i8;
+            return 0;
+        }
+        if(!strncmp(str,"f4",2)){
+            *type=TOKEN_f4;
+            return 0;
+        }
+        if(!strncmp(str,"f8",2)){
+            *type=TOKEN_f8;
+            return 0;
+        }
+        if(!strncmp(str,"AT",2)){
+            *type=TOKEN_AT;
+            return 0;
+        }
+        if(!strncmp(str,"TO",2)){
+            *type=TOKEN_TO;
+            return 0;
+        }
+        return NOTKEYWORD;
+    }
+    if(len==3){
+        if(!strncmp(str,"ui1",3)){
+            *type=TOKEN_ui1;
+            return 0;
+        }
+        if(!strncmp(str,"ui2",3)){
+            *type=TOKEN_ui2;
+            return 0;
+        }
+        if(!strncmp(str,"ui4",3)){
+            *type=TOKEN_ui4;
+            return 0;
+        }
+        if(!strncmp(str,"ui8",3)){
+            *type=TOKEN_ui8;
+            return 0;
+        }
+        if(!strncmp(str,"KEY",3)){
+            *type=TOKEN_KEY;
+            return 0;
+        }
+        if(!strncmp(str,"DEL",3)){
+            *type=TOKEN_DEL;
+            return 0;
+        }
+        if(!strncmp(str,"GET",3)){
+            *type=TOKEN_GET;
+            return 0;
+        }
+        if(!strncmp(str,"SET",3)){
+            *type=TOKEN_SET;
+            return 0;
+        }
+        if(!strncmp(str,"ADD",3)){
+            *type=TOKEN_ADD;
+            return 0;
+        }
+        if(!strncmp(str,"ALL",3)){
+            *type=TOKEN_ALL;
+            return 0;
+        }
+        return NOTKEYWORD;
+    }
+    if(len==4){
+        if(!strncmp(str,"FROM",4)){
+            *type=TOKEN_FROM;
+            return 0;
+        }
+        if(!strncmp(str,"TYPE",4)){
+            *type=TOKEN_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"HOOK",4)){
+            *type=TOKEN_HOOK;
+            return 0;
+        }
+        if(!strncmp(str,"LIST",4)){
+            *type=TOKEN_LIST_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"SWAP",4)){
+            *type=TOKEN_SWAP;
+            return 0;
+        }
+        if(!strncmp(str,"INCR",4)){
+            *type=TOKEN_INCR;
+            return 0;
+        }
+        if(!strncmp(str,"DECR",4)){
+            *type=TOKEN_DECR;
+            return 0;
+        }
+        if(!strncmp(str,"LPOP",4)){
+            *type=TOKEN_LPOP;
+            return 0;
+        }
+        if(!strncmp(str,"RPOP",4)){
+            *type=TOKEN_RPOP;
+            return 0;
+        }
+        if(!strncmp(str,"DESC",4)){
+            *type=TOKEN_DESC;
+            return 0;
+        }
+        if(!strncmp(str,"TYPE",4)){
+            *type=TOKEN_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"d211",4)){
+            *type=TOKEN_d211;
+            return 0;
+        }
+        if(!strncmp(str,"t111",4)){
+            *type=TOKEN_t111;
+            return 0;
+        }
+        if(!strncmp(str,"PKEY",4)){
+            *type=TOKEN_PKEY;
+            return 0;
+        }
+        if(!strncmp(str,"FKEY",4)){
+            *type=TOKEN_FKEY;
+            return 0;
+        }
+        if(!strncmp(str,"RANK",4)){
+            *type=TOKEN_RANK;
+            return 0;
+        }
+        if(!strncmp(str,"FROM",4)){
+            *type=TOKEN_FROM;
+            return 0;
+        }
+        if(!strncmp(str,"time",4)){
+            *type=TOKEN_t111;
+            return 0;
+        }
+        if(!strncmp(str,"date",4)){
+            *type=TOKEN_d211;
+            return 0;
+        }
+        return NOTKEYWORD;
+    }
+    if(len==5){
+        if(!strncmp(str,"TABLE",5)){
+            *type=TOKEN_TABLE_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"COUNT",5)){
+            *type=TOKEN_COUNT;
+            return 0;
+        }
+        if(!strncmp(str,"CLEAR",5)){
+            *type=TOKEN_CLEAR;
+            return 0;
+        }
+        if(!strncmp(str,"WHERE",5)){
+            *type=TOKEN_WHERE;
+            return 0;
+        }
+        if(!strncmp(str,"LPUSH",5)){
+            *type=TOKEN_LPUSH;
+            return 0;
+        }
+        if(!strncmp(str,"RPUSH",5)){
+            *type=TOKEN_RPUSH;
+            return 0;
+        }
+        if(!strncmp(str,"FIELD",5)){
+            *type=TOKEN_FIELD;
+            return 0;
+        }
+        if(!strncmp(str,"float",5)){
+            *type=TOKEN_f4;
+            return 0;
+        }
+        return NOTKEYWORD;
+    }
+    if(len==6){
+        if(!strncmp(str,"BITMAP",6)){
+            *type=TOKEN_BITMAP_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"STREAM",6)){
+            *type=TOKEN_STREAM_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"EXISTS",6)){
+            *type=TOKEN_EXISTS;
+            return 0;
+        }
+        if(!strncmp(str,"SELECT",6)){
+            *type=TOKEN_SELECT;
+            return 0;
+        }
+        if(!strncmp(str,"UPDATE",6)){
+            *type=TOKEN_UPDATE;
+            return 0;
+        }
+        if(!strncmp(str,"APPEND",6)){
+            *type=TOKEN_APPEND;
+            return 0;
+        }
+        if(!strncmp(str,"UNIQUE",6)){
+            *type=TOKEN_UNIQUE;
+            return 0;
+        }
+        if(!strncmp(str,"KVALOT",6)){
+            *type=TOKEN_KVALOT_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"INSERT",6)){
+            *type=TOKEN_INSERT;
+            return 0;
+        }
+        if(!strncmp(str,"RENAME",6)){
+            *type=TOKEN_RENAME;
+            return 0;
+        }
+        if(!strncmp(str,"int8_t",6)){
+            *type=TOKEN_i1;
+            return 0;
+        }
+        if(!strncmp(str,"double",6)){
+            *type=TOKEN_f8;
+            return 0;
+        }
+        if(!strncmp(str,"stream",6)){
+            *type=TOKEN_STREAM;
+            return 0;
+        }
+        return NOTKEYWORD;
+    }
+    if(len==7){
+        if(!strncmp(str,"DEFAULT",7)){
+            *type=TOKEN_DEFAULT;
+            return 0;
+        }
+        if(!strncmp(str,"NOTNULL",7)){
+            *type=TOKEN_NOTNULL;
+            return 0;
+        }
+        if(!strncmp(str,"uint8_t",7)){
+            *type=TOKEN_ui1;
+            return 0;
+        }
+        if(!strncmp(str,"int16_t",7)){
+            *type=TOKEN_i2;
+            return 0;
+        }
+        if(!strncmp(str,"int32_t",7)){
+            *type=TOKEN_i4;
+            return 0;
+        }
+        if(!strncmp(str,"int64_t",7)){
+            *type=TOKEN_i8;
+            return 0;
+        }
+
+        return NOTKEYWORD;
+    }
+    if(len==8){
+        if(!strncmp(str,"dt211111",8)){
+            *type=TOKEN_dt211111;
+            return 0;
+        }
+        if(!strncmp(str,"uint16_t",8)){
+            *type=TOKEN_ui2;
+            return 0;
+        }
+        if(!strncmp(str,"uint32_t",8)){
+            *type=TOKEN_ui4;
+            return 0;
+        }
+        if(!strncmp(str,"uint64_t",8)){
+            *type=TOKEN_ui8;
+            return 0;
+        }
+        if(!strncmp(str,"datetime",8)){
+            *type=TOKEN_dt211111;
+            return 0;
+        }
+        return NOTKEYWORD;
+    }
+    if(len==9){
+        if(!strncmp(str,"ATTRIBUTE",9)){
+            *type=TOKEN_ATTRIBUTE;
+            return 0;
+        }
+        return NOTKEYWORD;
+    }
+    if(len==10){
+        if(!strncmp(str,"COORDINATE",10)){
+            *type=TOKEN_COORDINATE;
+            return 0;
+        }
+        return NOTKEYWORD;
+    }
+    return NOTKEYWORD;
 }
