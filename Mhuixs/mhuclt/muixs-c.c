@@ -464,7 +464,7 @@ str* lexer(str* Mhuixsentence)
 
 /*
     ####下面是HOOK所有使用方法
-    关键字【HOOK,GET,WHERE】【TABLE,KVALOT,LIST,BITMAP,STREAM】【DEL,TYPE,RANK,CLEAR】
+    关键字【HOOK,GET,WHERE】【TABLE,KVALOT,LIST,BITMAP,STREAM】【DEL,TYPE,RANK,CLEAR】【TEMP】
     {
         #HOOK基础操作
         WHERE; #返回当前操作对象的信息，返回一个json格式的字符串
@@ -482,12 +482,14 @@ str* lexer(str* Mhuixsentence)
         GET TYPE objname; #获取指定HOOK操作对象的类型
         #HOOK高阶操作
         HOOK objname1 objname2; #启动多对象操作
+        HOOK TEMP objtype objname period; #启动临时对象操作，在period个语句后自动删除
+
 
     }
 */
 /*
     ####下面是操作对象为TABLE时的所有语法@MHU
-    关键字【TABLE】【HOOK】【INSERT,SELECT,UPDATE,GET,FIELD,SET,ADD,SWAP,DEL,RENAME,ATTRIBUTE,COORDINATE,AT,DESC,ALL】
+    关键字【TABLE】【HOOK】【INSERT,SELECT,UPDATE,GET,FIELD,SET,ADD,SWAP,DEL,RENAME,ATTRIBUTE,COORDINATE,AT,DESC,ALL,WHERE】
     【[i1,int8_t],[i2,int16_t],[i4,int32_t,int],[i8,int64_t],[ui1,uint8_t],[ui2,uint16_t],[ui4,uint32_t],[ui8,uint64_t],
     [f4,float],[f8,double],[str,stream],date,time,datetime】
     【PKEY,FKEY,UNIQUE,NOTNULL,DEFAULT】
@@ -514,9 +516,15 @@ str* lexer(str* Mhuixsentence)
         GET COORDINATE x1 y1 x2 y2 ...; #获取指定坐标范围内的多行数据
         GET ALL; #获取所有数据
         #SELECT复杂查询操作
+        SELECT field_name1 field_name2... WHERE condition; #查询指定字段的行数据，condition为查询条件
+        #WHERE条件操作
+        ... WHERE (field1 >/=/<=/>=/<> value1) AND (field2 >/=/<=/>=/<> value2) OR ...;#查询条件
+        ... WHERE  
+
         #其它命令
         DESC table_name;#查看指定表表结构
         DESC;#查看所在表结构
+
     }
 */
 /*
@@ -650,6 +658,7 @@ typedef enum {
     TOKEN_WHERE,       
     TOKEN_TYPE,       // 类型
     TOKEN_EXISTS,       // 存在
+    TOKEN_TEMP,       // 临时
 
     TOKEN_i1,
     TOKEN_i2,
@@ -725,7 +734,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_AT;
             return 0;
         }
+        if(!strncmp(str,"at",2)){
+            *type=TOKEN_AT;
+            return 0;
+        }
         if(!strncmp(str,"TO",2)){
+            *type=TOKEN_TO;
+            return 0;
+        }
+        if(!strncmp(str,"to",2)){
             *type=TOKEN_TO;
             return 0;
         }
@@ -752,7 +769,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_KEY;
             return 0;
         }
+        if(!strncmp(str,"key",3)){
+            *type=TOKEN_KEY;
+            return 0;
+        }
         if(!strncmp(str,"DEL",3)){
+            *type=TOKEN_DEL;
+            return 0;
+        }
+        if(!strncmp(str,"del",3)){
             *type=TOKEN_DEL;
             return 0;
         }
@@ -760,7 +785,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_GET;
             return 0;
         }
+        if(!strncmp(str,"get",3)){
+            *type=TOKEN_GET;
+            return 0;
+        }
         if(!strncmp(str,"SET",3)){
+            *type=TOKEN_SET;
+            return 0;
+        }
+        if(!strncmp(str,"set",3)){
             *type=TOKEN_SET;
             return 0;
         }
@@ -768,7 +801,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_ADD;
             return 0;
         }
+        if(!strncmp(str,"add",3)){
+            *type=TOKEN_ADD;
+            return 0;
+        }
         if(!strncmp(str,"ALL",3)){
+            *type=TOKEN_ALL;
+            return 0;
+        }
+        if(!strncmp(str,"all",3)){
             *type=TOKEN_ALL;
             return 0;
         }
@@ -779,7 +820,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_FROM;
             return 0;
         }
+        if(!strncmp(str,"from",4)){
+            *type=TOKEN_FROM;
+            return 0;
+        }
         if(!strncmp(str,"TYPE",4)){
+            *type=TOKEN_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"type",4)){
             *type=TOKEN_TYPE;
             return 0;
         }
@@ -787,7 +836,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_HOOK;
             return 0;
         }
+        if(!strncmp(str,"hook",4)){
+            *type=TOKEN_HOOK;
+            return 0;
+        }
         if(!strncmp(str,"LIST",4)){
+            *type=TOKEN_LIST_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"list",4)){
             *type=TOKEN_LIST_TYPE;
             return 0;
         }
@@ -795,7 +852,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_SWAP;
             return 0;
         }
+        if(!strncmp(str,"swap",4)){
+            *type=TOKEN_SWAP;
+            return 0;
+        }
         if(!strncmp(str,"INCR",4)){
+            *type=TOKEN_INCR;
+            return 0;
+        }
+        if(!strncmp(str,"incr",4)){
             *type=TOKEN_INCR;
             return 0;
         }
@@ -803,7 +868,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_DECR;
             return 0;
         }
+        if(!strncmp(str,"decr",4)){
+            *type=TOKEN_DECR;
+            return 0;
+        }
         if(!strncmp(str,"LPOP",4)){
+            *type=TOKEN_LPOP;
+            return 0;
+        }
+        if(!strncmp(str,"lpop",4)){
             *type=TOKEN_LPOP;
             return 0;
         }
@@ -811,11 +884,23 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_RPOP;
             return 0;
         }
+        if(!strncmp(str,"rpop",4)){
+            *type=TOKEN_RPOP;
+            return 0;
+        }
         if(!strncmp(str,"DESC",4)){
             *type=TOKEN_DESC;
             return 0;
         }
+        if(!strncmp(str,"desc",4)){
+            *type=TOKEN_DESC;
+            return 0;
+        }
         if(!strncmp(str,"TYPE",4)){
+            *type=TOKEN_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"type",4)){
             *type=TOKEN_TYPE;
             return 0;
         }
@@ -831,7 +916,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_PKEY;
             return 0;
         }
+        if(!strncmp(str,"pkey",4)){
+            *type=TOKEN_PKEY;
+            return 0;
+        }
         if(!strncmp(str,"FKEY",4)){
+            *type=TOKEN_FKEY;
+            return 0;
+        }
+        if(!strncmp(str,"fkey",4)){
             *type=TOKEN_FKEY;
             return 0;
         }
@@ -839,16 +932,32 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_RANK;
             return 0;
         }
-        if(!strncmp(str,"FROM",4)){
-            *type=TOKEN_FROM;
+        if(!strncmp(str,"rank",4)){
+            *type=TOKEN_RANK;
             return 0;
         }
         if(!strncmp(str,"time",4)){
             *type=TOKEN_t111;
             return 0;
         }
+        if(!strncmp(str,"TIME",4)){
+            *type=TOKEN_t111;
+            return 0;
+        }
+        if(!strncmp(str,"DATE",4)){
+            *type=TOKEN_d211;
+            return 0;
+        }
         if(!strncmp(str,"date",4)){
             *type=TOKEN_d211;
+            return 0;
+        }
+        if(!strncmp(str,"TEMP",4)){
+            *type=TOKEN_TEMP;
+            return 0;
+        }
+        if(!strncmp(str,"temp",4)){
+            *type=TOKEN_EXISTS;
             return 0;
         }
         return NOTKEYWORD;
@@ -858,7 +967,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_TABLE_TYPE;
             return 0;
         }
+        if(!strncmp(str,"table",5)){
+            *type=TOKEN_TABLE_TYPE;
+            return 0;
+        }
         if(!strncmp(str,"COUNT",5)){
+            *type=TOKEN_COUNT;
+            return 0;
+        }
+        if(!strncmp(str,"count",5)){
             *type=TOKEN_COUNT;
             return 0;
         }
@@ -866,7 +983,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_CLEAR;
             return 0;
         }
+        if(!strncmp(str,"clear",5)){
+            *type=TOKEN_CLEAR;
+            return 0;
+        }
         if(!strncmp(str,"WHERE",5)){
+            *type=TOKEN_WHERE;
+            return 0;
+        }
+        if(!strncmp(str,"where",5)){
             *type=TOKEN_WHERE;
             return 0;
         }
@@ -874,7 +999,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_LPUSH;
             return 0;
         }
+        if(!strncmp(str,"lpush",5)){
+            *type=TOKEN_LPUSH;
+            return 0;
+        }
         if(!strncmp(str,"RPUSH",5)){
+            *type=TOKEN_RPUSH;
+            return 0;
+        }
+        if(!strncmp(str,"rpush",5)){
             *type=TOKEN_RPUSH;
             return 0;
         }
@@ -882,7 +1015,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_FIELD;
             return 0;
         }
+        if(!strncmp(str,"field",5)){
+            *type=TOKEN_FIELD;
+            return 0;
+        }
         if(!strncmp(str,"float",5)){
+            *type=TOKEN_f4;
+            return 0;
+        }
+        if(!strncmp(str,"FLOAT",5)){
             *type=TOKEN_f4;
             return 0;
         }
@@ -893,7 +1034,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_BITMAP_TYPE;
             return 0;
         }
+        if(!strncmp(str,"bitmap",6)){
+            *type=TOKEN_BITMAP_TYPE;
+            return 0;
+        }
         if(!strncmp(str,"STREAM",6)){
+            *type=TOKEN_STREAM_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"stream",6)){
             *type=TOKEN_STREAM_TYPE;
             return 0;
         }
@@ -901,7 +1050,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_EXISTS;
             return 0;
         }
+        if(!strncmp(str,"exists",6)){
+            *type=TOKEN_EXISTS;
+            return 0;
+        }
         if(!strncmp(str,"SELECT",6)){
+            *type=TOKEN_SELECT;
+            return 0;
+        }
+        if(!strncmp(str,"select",6)){
             *type=TOKEN_SELECT;
             return 0;
         }
@@ -909,7 +1066,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_UPDATE;
             return 0;
         }
+        if(!strncmp(str,"update",6)){
+            *type=TOKEN_UPDATE;
+            return 0;
+        }
         if(!strncmp(str,"APPEND",6)){
+            *type=TOKEN_APPEND;
+            return 0;
+        }
+        if(!strncmp(str,"append",6)){
             *type=TOKEN_APPEND;
             return 0;
         }
@@ -917,7 +1082,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_UNIQUE;
             return 0;
         }
+        if(!strncmp(str,"unique",6)){
+            *type=TOKEN_UNIQUE;
+            return 0;
+        }
         if(!strncmp(str,"KVALOT",6)){
+            *type=TOKEN_KVALOT_TYPE;
+            return 0;
+        }
+        if(!strncmp(str,"kvalot",6)){
             *type=TOKEN_KVALOT_TYPE;
             return 0;
         }
@@ -925,7 +1098,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_INSERT;
             return 0;
         }
+        if(!strncmp(str,"insert",6)){
+            *type=TOKEN_INSERT;
+            return 0;
+        }
         if(!strncmp(str,"RENAME",6)){
+            *type=TOKEN_RENAME;
+            return 0;
+        }
+        if(!strncmp(str,"rename",6)){
             *type=TOKEN_RENAME;
             return 0;
         }
@@ -937,8 +1118,8 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_f8;
             return 0;
         }
-        if(!strncmp(str,"stream",6)){
-            *type=TOKEN_STREAM;
+        if(!strncmp(str,"DOUBLE",6)){
+            *type=TOKEN_f8;
             return 0;
         }
         return NOTKEYWORD;
@@ -948,7 +1129,15 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_DEFAULT;
             return 0;
         }
+        if(!strncmp(str,"default",7)){
+            *type=TOKEN_DEFAULT;
+            return 0;
+        }
         if(!strncmp(str,"NOTNULL",7)){
+            *type=TOKEN_NOTNULL;
+            return 0;
+        }
+        if(!strncmp(str,"notnull",7)){
             *type=TOKEN_NOTNULL;
             return 0;
         }
@@ -968,7 +1157,6 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_i8;
             return 0;
         }
-
         return NOTKEYWORD;
     }
     if(len==8){
@@ -992,6 +1180,10 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_dt211111;
             return 0;
         }
+        if(!strncmp(str,"DATETIME",8)){
+            *type=TOKEN_dt211111;
+            return 0;
+        }
         return NOTKEYWORD;
     }
     if(len==9){
@@ -999,10 +1191,18 @@ int callitkeyword(uint8_t* str,int len,toktype *type)
             *type=TOKEN_ATTRIBUTE;
             return 0;
         }
+        if(!strncmp(str,"attribute",9)){
+            *type=TOKEN_ATTRIBUTE;
+            return 0;
+        }
         return NOTKEYWORD;
     }
     if(len==10){
         if(!strncmp(str,"COORDINATE",10)){
+            *type=TOKEN_COORDINATE;
+            return 0;
+        }
+        if(!strncmp(str,"coordinate",10)){
             *type=TOKEN_COORDINATE;
             return 0;
         }
