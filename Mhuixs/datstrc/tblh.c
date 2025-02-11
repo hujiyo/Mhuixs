@@ -441,6 +441,8 @@ int64_t tblh_add_record(TABLE* table, const char* record)//add总是在末尾追
 	/*
 	tblh_add_record把新记录加到p_data的末尾、line_index的索引组织，未来可能还要处理分页管理
 	函数返回 虚序列号
+
+	record的格式："字段1,字段2,字段3..."
 	*/
 
 	if (table->record_num == table->data_ROM) 	{
@@ -721,6 +723,9 @@ uint32_t tblh_add_field(TABLE* table, FIELD* field)
 }
 int8_t tblh_swap_field(TABLE* table, uint32_t i1_, uint32_t i2_)
 {
+	/*
+	tblh的独特设计使得字段交换成为非常简单的操作
+	*/
 	if (i1_ >= table->field_num || i2_ >= table->field_num){
 		return err;//验证11、12是否存
 	}
