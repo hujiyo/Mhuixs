@@ -469,57 +469,72 @@ str* lexer(str* Mhuixsentence)
 }
 
 /*
-    ####下面是HOOK所有使用方法
-    关键字【HOOK,GET,WHERE】【TABLE,KVALOT,LIST,BITMAP,STREAM】【DEL,TYPE,RANK,CLEAR】【TEMP】
-    {
-        #HOOK基础操作
-        WHERE; #返回当前操作对象的信息，返回一个json格式的字符串
-        HOOK; #回归HOOK根，此时无数据操作对象
-        HOOK objtype objname1 objname2 ...; #使用钩子创建一个操作对象
-        HOOK objname; #手动切换到一个已经存在的操作对象
-        HOOK DEL WHERE; #删除本操作对象,退回HOOK根
-        HOOK CLEAR objname1 objname2 ...;#清空当前操作对象的所有数据,但保留操作对象及其信息
-        HOOK DEL objname1 objname2 ...; #删除指定的HOOK操作对象
-        RANK WHERE rank; #设置当前对象的权限等级为rank
-        RANK objname rank; #设置指定HOOK操作对象的权限等级为rank
-        GET TYPE WHERE; #获取当前操作对象的类型
-        GET RANK WHERE; #获取当前操作对象的权限等级
-        GET RANK objname; #获取指定HOOK操作对象的权限等级
-        GET TYPE objname; #获取指定HOOK操作对象的类型
-        #TEMP临时对象操作
-        HOOK TEMP objtype objname period; #启动临时对象操作，在period个语句后自动删除
-    }
+##下面是HOOK所有使用方法
+###关键字【HOOK】【TABLE,KVALOT,LIST,BITMAP,STREAM】【DEL,TYPE,RANK,CLEAR,DESC,GET,WHERE,TEMP】【$:预处理联系符】
+{
+    #HOOK基础操作
+
+    [GET;] #标准 GET_OBJ 语句,获取当前操作对象的所有数据
+
+    [WHERE;] #标准 WHERE 语句，返回当前操作对象的基本信息，返回一个json格式的字符串
+
+    [DESC;] #标准 DESC 语句，返回当前操作对象的视图信息
+
+    [HOOK;] #标准 HOOK 语句，回归HOOK根，此时无数据操作对象
+
+    [HOOK objtype objname1 objname2 ...;] #标准 HOOK_MAKE 语句，使用钩子创建一个操作对象
+
+    [HOOK objname;] #标准 HOOK_CHECKOUT 语句，手动切换到一个已经存在的操作对象
+
+    [HOOK DEL objname1 objname2 ...;] #标准 HOOK_DEL_OGJ 语句，删除指定的HOOK操作对象,回归HOOK根，此时无数据操作对象
+        衍生&&:HOOK DEL $WHERE;#删除当前操作对象            
+
+    [HOOK CLEAR objname1 objname2 ...;]#标准 HOOK_CLEAR 语句，清空当前操作对象的所有数据,但保留操作对象及其信息
+
+    [RANK objname rank;]#标准 RANK_OBJ 语句，设置指定HOOK操作对象的权限等级为rank
+        衍生&&:RANK $WHERE rank;#设置当前对象的权限等级为rank
+    
+    [GET RANK objname;] #标准 GET_RANK 语句，获取指定HOOK操作对象的权限等级
+        衍生&&:GET RANK $WHERE; #获取当前操作对象的权限等级
+
+    [GET TYPE objname;] #标准 GET_TYPE 语句，获取指定HOOK操作对象的类型
+        衍生&&:GET TYPE $WHERE; #获取当前操作对象的类型
+
+    [TEMP GET id;]#标准 TEMP_GET 语句,创建临时数组,将这个临时数组取名为id,id<0 - 65535>
+
+    [TEMP DEL id;]#标准 TEMP_DEL 语句,删除临时数组
+
+    [TEMP WHERE id1 ==/-- id2 id3;] #标准 TEMP_WHERE 语句,取 id1 和 id2 的交集/并集放入临时数组 id3 中
+
+    [WHERE field_index >/</==/>=/!= value id;] #标准 WHERE_CONDITION_TEMP 语句 查询指定字段的行数据,放入临时数组 id 中,然后再除去重复项,相当于取并集
+
+    [GET TEMP id;]#标准 GET_TEMP 语句,获取临时数组id对应的行索引对应的行数据
+}
 */
-#define WHERE_E 1 //WHERE; #返回当前操作对象的信息，返回一个json格式的字符串 @local
-#define HOOK_E 2 //HOOK; #回归HOOK根，此时无数据操作对象
-#define HOOK_objtype_objname1_objname2_E 3 //HOOK objtype objname1 objname2 ...; #使用钩子创建操作对象
-#define HOOK_objtype_E 4 //HOOK objname; #手动切换到一个已经存在的操作对象
-#define HOOK_DEL_WHERE_E 5 //HOOK DEL WHERE; #删除本操作对象,退回HOOK根
-#define HOOK_CLEAR_objname1_objname2_E 6 //HOOK CLEAR objname1 objname2 ...;#清空当前操作对象的所有数据,但保留操作对象及其信息
-#define HOOK_DEL_objname1_objname2_E 7 //HOOK DEL objname1 objname2...; #删除指定的HOOK操作对象
-#define RANK_WHERE_rank_E 8 //RANK WHERE rank; #设置当前对象的权限等级为rank
-#define RANK_objname_rank_E 9 //RANK objname rank; #设置指定HOOK操作对象的权限等级为rank
-#define GET_TYPE_WHERE_E 10 //GET TYPE WHERE;#获取当前操作对象的类型 @local
-#define GET_RANK_WHERE_E 11 //GET RANK WHERE; #获取当前操作对象的权限等级 @local
-#define GET_RANK_objname_E 12 //GET RANK objname; #获取指定HOOK操作对象的权限等级
-#define GET_TYPE_objname_E 13 //GET TYPE objname; #获取指定HOOK操作对象的类型
-#define HOOK_TEMP_objtype_objname_period_E 14 //HOOK TEMP objtype objname period; #启动临时对象操作，在period个语句后自动删除
+#define stmtype_GET_OBJ 1
+#define stmtype_WHERE 2
+#define stmtype_DESC 3
+#define stmtype_HOOK 4
+#define stmtype_HOOK_MAKE 5
+#define stmtype_HOOK_CHECKOUT 6
+#define stmtype_HOOK_DEL_OBJ 7
+#define stmtype_HOOK_CLEAR 8
+#define stmtype_RANK_OBJ 9
+#define stmtype_GET_RANK 10
+#define stmtype_GET_TYPE 11
+#define stmtype_TEMP_GET 12
+#define stmtype_TEMP_DEL 13
+#define stmtype_TEMP_WHERE 14
+#define stmtype_WHERE_CONDITION_TEMP 15
+#define stmtype_GET_TEMP 16
 
 /*
-预处理:（1-4由第三方程序实现,mhuixs只负责解析标准语句）
-1.将注释忽略删除
-2.替换助词为空格,如',','(',')'
-3.替换$field_num为field_index
-4.将衍生语句翻译为标准语句
-5.将标准语句交给mhuixs的NAQL解析器进行解析执行
-*/
-
-/*
-####下面是操作对象为TABLE时的所有语法@MHU
-关键字【TABLE】【HOOK】【INSERT,SELECT,GET,FIELD,SET,ADD,SWAP,DEL,RENAME,ATTRIBUTE,POS,AT,DESC,ALL,WHERE】
+##下面是操作对象为TABLE时的所有语法@MHU
+###关键字【INSERT,GET,FIELD,SET,ADD,SWAP,DEL,RENAME,ATTRIBUTE,POS,WHERE】
 【[i1,int8_t],[i2,int16_t],[i4,int32_t,int],[i8,int64_t],[ui1,uint8_t],[ui2,uint16_t],[ui4,uint32_t],[ui8,uint64_t],
-[f4,float],[f8,double],[str,stream],date,time,datetime】【AND】
-【PKEY,FKEY,UNIQUE,NOTNULL,DEFAULT】【$:将字段名预处理为索引】$field_name <==> field_index(数字索引从0开始)
+[f4,float],[f8,double],[str,stream],date,time,datetime】
+【PKEY,FKEY,UNIQUE,NOTNULL,DEFAULT】
+【$:将字段名预处理为索引】$field_name <==> field_index(数字索引从0开始)
 {
     #FILED操作,不指明FIELD默认就是LINE操作
 
@@ -567,118 +582,98 @@ str* lexer(str* Mhuixsentence)
         GET FIELD field_name;#获取指定字段对应的列的数据
 
     [GET POS x1 y1 x2 y2 ...;]#标准 POS_GET 语句,获取指定坐标的数据
-
-    [GET HOOK hook_name;] #直接获取整个对象的数据
-        #SELECT复杂查询操作
-        SELECT field_name1 field_name2... WHERE condition; #查询指定字段的行数据，condition为查询条件
-        #WHERE条件操作
-        WHERE (field1 >/=/<=/>=/<> value1) AND (field2 >/=/<=/>=/<> value2) OR ...;#查询条件
-        WHERE  
-
-        #其它命令
-        DESC table_name;#查看指定表表结构
-        DESC;#查看所在表结构
-
 }
 */
-#define FIELD_ADD_E 16
-#define FIELD_INSERT_E 17
-#define FIELD_SWAP_E 18
-#define FIELD_DEL_E 19
-#define FIELD_RENAME_E 20
-#define FIELD_SET_E 21
-#define LINE_ADD_ALL_E 22
-#define LINE_ADD_PART_E 23
-#define LINE_INSERT_E 24
-#define LINE_UPDATE_E 25
-#define LINE_DEL_E 26
-#define LINE_DEL_COORDINATE_E 27
-#define LINE_SWAP_E 28
-#define GET_FIELD_E 29
-#define GET_LINE_E 30
-#define GET_COORDINATE_E 31
-#define GET_ALL_E 32
-#define SELECT_FIELD_WHERE_E 33
-
-
+#define stmtype_FIELD_ADD 17
+#define stmtype_FIELD_INSERT 18
+#define stmtype_FIELD_SWAP 19
+#define stmtype_FIELD_DEL 20
+#define stmtype_FIELD_RENAME 21
+#define stmtype_FIELD_SET 22
+#define stmtype_LINE_ADD 23
+#define stmtype_LINE_INSERT 24
+#define stmtype_LINE_SET 25
+#define stmtype_LINE_DEL 26
+#define stmtype_LINE_SWAP 27
+#define stmtype_LINE_GET 28
+#define stmtype_POS_GET 29
 /*
-    ####下面是操作对象为KVALOT时的所有语法@MHU
-    关键字【KVALOT】【HOOK】【SET,GET,DEL,INCR,DECR,EXISTS,SELECT,ALL,APPEND,FROM,KEY,TYPE,LEN】
-    【KVALOT,STREAM,TABLE,LIST,BITMAP】
-    {
-        #基础操作
-        HOOK KVALOT mykvalot; #创建一个名为mykvalot的键值对存储对象，此时操作对象为mykvalot
-        EXISTS key1 key2 ...; #判断存在几个键
-        SELECT pattern; #查找所有符合给定模式的键,注意查询的是键，不是值
-        SELECT ALL;#查找所有键
-        SET key1 value1 key2 value2 ...; #设置stream类型的键值对，若键已存在则覆盖
-        SET key1 key2 key3 ... TYPE type; #设置键值对的类型，type为KVALOT,STREAM,TABLE,LIST,BITMAP
-        APPEND key value;# 将value追加到key的值中。
-        APPEND key value pos;# 将value追加到key的值中，从指定位置开始。若pos超出key值的长度，则从key值的末尾开始追加。
-        GET key1 key2 ...; #获取指定键的值
-        GET key0 FROM start TO end;#获取指定键的值的子字符串 
-        DEL key1 key2 ...; #删除指定键
-        INCR key0 num; #对指定键的值进行递增操作，num为可选参数，默认递增1
-        DECR key0 num; #对指定键的值进行递减操作，num为可选参数，默认递减1
-        GET TYPE key1 key2 ...; #获取指定键的值的数据类型
-        GET LEN key1 key2 ...; #获取指定键的值的长度
-        #转入键对象操作
-        KEY key0;# 进入键对象操作
-    }
+##下面是操作对象为KVALOT时的所有语法@MHU
+###关键字【SET,GET,DEL,INCR,DECR,EXISTS,SELECT,ALL,APPEND,FROM,KEY,TYPE,LEN】
+【KVALOT,STREAM,TABLE,LIST,BITMAP】
+{
+    EXISTS key1 key2 ...; #判断存在几个键
+    SELECT pattern; #查找所有符合给定模式的键,注意查询的是键，不是值
+    SELECT ALL;#查找所有键
+    SET key1 value1 key2 value2 ...; #设置stream类型的键值对，若键已存在则覆盖
+    SET key1 key2 key3 ... TYPE type; #设置键值对的类型，type为KVALOT,STREAM,TABLE,LIST,BITMAP
+    APPEND key value;# 将value追加到key的值中。
+    APPEND key value pos;# 将value追加到key的值中，从指定位置开始。若pos超出key值的长度，则从key值的末尾开始追加。
+    GET key1 key2 ...; #获取指定键的值
+    GET key0 FROM start TO end;#获取指定键的值的子字符串 
+    DEL key1 key2 ...; #删除指定键
+    INCR key0 num; #对指定键的值进行递增操作，num为可选参数，默认递增1
+    DECR key0 num; #对指定键的值进行递减操作，num为可选参数，默认递减1
+    GET TYPE key1 key2 ...; #获取指定键的值的数据类型
+    GET LEN key1 key2 ...; #获取指定键的值的长度
+    #转入键对象操作
+    KEY key0;# 进入键对象操作
+}
 */
+
 /*
-    ####下面是操作对象为STREAM时的所有语法@MHU
-    关键字【STREAM】【HOOK】【ADD,GET,FROM,DEL】
-    {
-        HOOK STREAM mystream; #创建一个名为mystream的流对象，此时操作对象为mystream
-        APPEND value; #向流中附加数据
-        APPEND value AT pos;# 将value追加到流中，从指定位置开始。若pos超出流的长度，则从流的末尾开始追加。
-        GET FROM start TO end;#获取流中指定范围的数据
-        GET len AT pos;#获取流中指定长度的数据
-        GET ALL;#获取流的所有数据
-        SET pos value;# 从pos处设置流中指定位置的值
-        SET char FROM start TO end;# 从start到end处设置流中指定范围的值
-    }
+##下面是操作对象为STREAM时的所有语法@MHU
+###关键字【STREAM】【HOOK】【ADD,GET,FROM,DEL】
+{
+    HOOK STREAM mystream; #创建一个名为mystream的流对象，此时操作对象为mystream
+    APPEND value; #向流中附加数据
+    APPEND value AT pos;# 将value追加到流中，从指定位置开始。若pos超出流的长度，则从流的末尾开始追加。
+    GET FROM start TO end;#获取流中指定范围的数据
+    GET len AT pos;#获取流中指定长度的数据
+    GET ALL;#获取流的所有数据
+    SET pos value;# 从pos处设置流中指定位置的值
+    SET char FROM start TO end;# 从start到end处设置流中指定范围的值
+}
 */
 /*    
-    ####下面是操作对象为LIST时的所有语法@MHU
-    关键字【LIST】【HOOK】【ADD,GET,DEL,LEN,INSERT,LPUSH,RPUSH,LPOP,RPOP,FROM,ALL,TO,AT,SET,EXISTS】
-    {
-        HOOK LIST mylist; #创建一个名为mylist的列表对象，此时操作对象为mylist
-        LPUSH value1 value2 ...;#在列表开头添加一个值
-        RPUSH/ADD value1 value2 ...;#在列表末尾添加一个值
-        LPOP/GET; #移除并返回列表开头的值
-        RPOP; #移除并返回列表末尾的值
+##下面是操作对象为LIST时的所有语法@MHU
+###关键字【LIST】【HOOK】【ADD,GET,DEL,LEN,INSERT,LPUSH,RPUSH,LPOP,RPOP,FROM,ALL,TO,AT,SET,EXISTS】
+{
+    HOOK LIST mylist; #创建一个名为mylist的列表对象，此时操作对象为mylist
+    LPUSH value1 value2 ...;#在列表开头添加一个值
+    RPUSH/ADD value1 value2 ...;#在列表末尾添加一个值
+    LPOP/GET; #移除并返回列表开头的值
+    RPOP; #移除并返回列表末尾的值
 
-        GET index1 index2 ...; #获取指定位置的值,index:1,2..为第1,2..个元素，-1,-2,为倒数第1,2..个元素
-        GET ALL;/GET 0;#获取列表的所有元素
-        GET FROM index1 TO index2; #获取指定范围内的值
-        DEL index1 index2 ...; #删除指定索引位置的值
-        DEL FROM index1 TO index2; #删除指定范围内的值
-        DEL ALL;#删除所有值
-        GET LEN; #获取列表的元素个数
-        GET LEN index;#获取列表中指定索引位置的值的长度
-        INSERT value AT index; #在指定索引位置插入一个值
-        SET index value; #更新列表中指定索引位置的值
-        EXISTS value1 value2 ...; #判断列表是否存在指定值
-    }
+    GET index1 index2 ...; #获取指定位置的值,index:1,2..为第1,2..个元素，-1,-2,为倒数第1,2..个元素
+    GET ALL;/GET 0;#获取列表的所有元素
+    GET FROM index1 TO index2; #获取指定范围内的值
+    DEL index1 index2 ...; #删除指定索引位置的值
+    DEL FROM index1 TO index2; #删除指定范围内的值
+    DEL ALL;#删除所有值
+    GET LEN; #获取列表的元素个数
+    GET LEN index;#获取列表中指定索引位置的值的长度
+    INSERT value AT index; #在指定索引位置插入一个值
+    SET index value; #更新列表中指定索引位置的值
+    EXISTS value1 value2 ...; #判断列表是否存在指定值
+}
 */
 /*
-    ####下面是操作对象为BITMAP时的所有语法@MHU
-    关键字【BITMAP】【HOOK】【SETBIT,GETBIT,COUNT,BITOP】
-    {
-        HOOK BITMAP mybitmap; #创建一个名为mybitmap的位图对象，此时操作对象为mybitmap
-        HOOK mybitmap;# 手动切换到一个已经存在的操作对象
-        KEY BITMAP key; #创建一个名为key的键对象，此时操作对象为key
-        KEY key;# 手动切换到一个已经存在的操作对象
+##下面是操作对象为BITMAP时的所有语法@MHU
+###关键字【BITMAP】【HOOK】【SETBIT,GETBIT,COUNT,BITOP】
+{
+    HOOK BITMAP mybitmap; #创建一个名为mybitmap的位图对象，此时操作对象为mybitmap
+    HOOK mybitmap;# 手动切换到一个已经存在的操作对象
+    KEY BITMAP key; #创建一个名为key的键对象，此时操作对象为key
+    KEY key;# 手动切换到一个已经存在的操作对象
 
-        SET offset value; #设置位图中指定偏移量处的位值，value为0或1
-        SET FROM offset TO offset value; #设置位图中指定偏移量范围内的位值，value为0或1
-        GET offset; #获取位图中指定偏移量处的位值
-        GET FROM offset TO offset;#获取位图中指定偏移量范围内的位值
-        COUNT; #统计位图中值为1的位数
-        COUNT FROM offset1 TO offset2; #统计位图中指定偏移量范围内值为1的位数        
-    }
+    SET offset value; #设置位图中指定偏移量处的位值，value为0或1
+    SET FROM offset TO offset value; #设置位图中指定偏移量范围内的位值，value为0或1
+    GET offset; #获取位图中指定偏移量处的位值
+    GET FROM offset TO offset;#获取位图中指定偏移量范围内的位值
+    COUNT; #统计位图中值为1的位数
+    COUNT FROM offset1 TO offset2; #统计位图中指定偏移量范围内值为1的位数        
+}
 */
 //下面是所有的语法对应的命令ID
 
@@ -712,151 +707,6 @@ for(;;)//循环问询每一个token
             //
             
             break;
-        /*
-    ####下面是HOOK所有使用方法
-    关键字【HOOK,GET,WHERE】【TABLE,KVALOT,LIST,BITMAP,STREAM】【DEL,TYPE,RANK,CLEAR】【TEMP】
-    {
-        #HOOK基础操作
-        
-        HOOK; #回归HOOK根，此时无数据操作对象
-        HOOK objtype objname1 objname2 ...; #使用钩子创建一个操作对象
-        HOOK objname; #手动切换到一个已经存在的操作对象
-        HOOK DEL WHERE; #删除本操作对象,退回HOOK根
-        HOOK CLEAR objname1 objname2 ...;#清空当前操作对象的所有数据,但保留操作对象及其信息
-        HOOK DEL objname1 objname2 ...; #删除指定的HOOK操作对象
-        RANK WHERE rank; #设置当前对象的权限等级为rank
-        RANK objname rank; #设置指定HOOK操作对象的权限等级为rank
-        GET TYPE WHERE; #获取当前操作对象的类型
-        GET RANK; #获取当前操作对象的权限等级
-        GET RANK objname; #获取指定HOOK操作对象的权限等级
-        GET TYPE objname; #获取指定HOOK操作对象的类型
-        #HOOK高阶操作
-        HOOK objname1 objname2; #启动多对象操作
-        HOOK TEMP objtype objname period; #启动临时对象操作，在period个语句后自动删除
-
-
-    }
-*/
-/*
-    ####下面是操作对象为TABLE时的所有语法@MHU
-    关键字【TABLE】【HOOK】【INSERT,SELECT,UPDATE,GET,FIELD,SET,ADD,SWAP,DEL,RENAME,ATTRIBUTE,COORDINATE,AT,DESC,ALL,WHERE】
-    【[i1,int8_t],[i2,int16_t],[i4,int32_t,int],[i8,int64_t],[ui1,uint8_t],[ui2,uint16_t],[ui4,uint32_t],[ui8,uint64_t],
-    [f4,float],[f8,double],[str,stream],date,time,datetime】
-    【PKEY,FKEY,UNIQUE,NOTNULL,DEFAULT】
-    {
-        HOOK TABLE mytable; #创建一个名为mytable的表,此时操作对象为mytable
-        #FILED操作
-        FIELD ADD (field1_name datatype restraint,...);#从左向右添加字段
-        FIELD INSERT (field1_name datatype restraint) AT field_number; #在指定位置插入字段
-        FIELD SWAP field1_name field2_name; #交换两个字段
-        FIELD DEL field1_name field2_name ...; #删除字段
-        FIELD RENAME field1_name field2_name ...; #重命名字段
-        FIELD SET field1_name ATTRIBUTE attribute; #重新设置字段约束性属性
-        #LINE操作,不指明FIELD,默认就是整个LINE进行操作
-        ADD (line1_data,NULL,...); #在表末尾添加一行数据，数据按照字段顺序依次给出，必须包含所有字段，没有的数据则采用NULL表示占位符
-        ADD field1 value1 field2 value2 ...;#在表末尾添加一行数据，数据按照字段顺序依次给出，要求NOTNULL字段必须给出数据
-        INSERT (line1_data,NULL,...) AT line_number; #在指定行号处插入一行数据，line_number从0开始计数
-        UPDATE line_number (field1_name = value1, field2_name = value2,...); #更新指定行号的部分数据
-        DEL line_number; #删除指定行号的行数据
-        DEL COORDINATE x1 y1 x2 y2...; #删除指定坐标范围内数据
-        SWAP line_number1 line_number2; #交换两行数据
-        #GET简单查询操作
-        GET FIELD field_name;#获取指定字段对应的列的数据
-        GET line_number1 line_number2 ...; #获取指定行号的多行数据
-        GET COORDINATE x1 y1 x2 y2 ...; #获取指定坐标范围内的多行数据
-        GET ALL; #获取所有数据
-        #SELECT复杂查询操作
-        SELECT field_name1 field_name2... WHERE condition; #查询指定字段的行数据，condition为查询条件
-        #WHERE条件操作
-        ... WHERE (field1 >/=/<=/>=/<> value1) AND (field2 >/=/<=/>=/<> value2) OR ...;#查询条件
-        ... WHERE  
-
-        #其它命令
-        DESC table_name;#查看指定表表结构
-        DESC;#查看所在表结构
-
-    }
-*/
-/*
-    ####下面是操作对象为KVALOT时的所有语法@MHU
-    关键字【KVALOT】【HOOK】【SET,GET,DEL,INCR,DECR,EXISTS,SELECT,ALL,APPEND,FROM,KEY,TYPE,LEN】
-    【KVALOT,STREAM,TABLE,LIST,BITMAP】
-    {
-        #基础操作
-        HOOK KVALOT mykvalot; #创建一个名为mykvalot的键值对存储对象，此时操作对象为mykvalot
-        EXISTS key1 key2 ...; #判断存在几个键
-        SELECT pattern; #查找所有符合给定模式的键,注意查询的是键，不是值
-        SELECT ALL;#查找所有键
-        SET key1 value1 key2 value2 ...; #设置stream类型的键值对，若键已存在则覆盖
-        SET key1 key2 key3 ... TYPE type; #设置键值对的类型，type为KVALOT,STREAM,TABLE,LIST,BITMAP
-        APPEND key value;# 将value追加到key的值中。
-        APPEND key value pos;# 将value追加到key的值中，从指定位置开始。若pos超出key值的长度，则从key值的末尾开始追加。
-        GET key1 key2 ...; #获取指定键的值
-        GET key0 FROM start TO end;#获取指定键的值的子字符串 
-        DEL key1 key2 ...; #删除指定键
-        INCR key0 num; #对指定键的值进行递增操作，num为可选参数，默认递增1
-        DECR key0 num; #对指定键的值进行递减操作，num为可选参数，默认递减1
-        GET TYPE key1 key2 ...; #获取指定键的值的数据类型
-        GET LEN key1 key2 ...; #获取指定键的值的长度
-        #转入键对象操作
-        KEY key0;# 进入键对象操作
-    }
-*/
-/*
-    ####下面是操作对象为STREAM时的所有语法@MHU
-    关键字【STREAM】【HOOK】【ADD,GET,FROM,DEL】
-    {
-        HOOK STREAM mystream; #创建一个名为mystream的流对象，此时操作对象为mystream
-        APPEND value; #向流中附加数据
-        APPEND value AT pos;# 将value追加到流中，从指定位置开始。若pos超出流的长度，则从流的末尾开始追加。
-        GET FROM start TO end;#获取流中指定范围的数据
-        GET len AT pos;#获取流中指定长度的数据
-        GET ALL;#获取流的所有数据
-        SET pos value;# 从pos处设置流中指定位置的值
-        SET char FROM start TO end;# 从start到end处设置流中指定范围的值
-    }
-*/
-/*    
-    ####下面是操作对象为LIST时的所有语法@MHU
-    关键字【LIST】【HOOK】【ADD,GET,DEL,LEN,INSERT,UPDATE,LPUSH,RPUSH,LPOP,RPOP,FROM,ALL,TO,AT,SET,EXISTS】
-    {
-        HOOK LIST mylist; #创建一个名为mylist的列表对象，此时操作对象为mylist
-        LPUSH value1 value2 ...;#在列表开头添加一个值
-        RPUSH/ADD value1 value2 ...;#在列表末尾添加一个值
-        LPOP/GET; #移除并返回列表开头的值
-        RPOP; #移除并返回列表末尾的值
-
-        GET index1 index2 ...; #获取指定位置的值,index:1,2..为第1,2..个元素，-1,-2,为倒数第1,2..个元素
-        GET ALL;/GET 0;#获取列表的所有元素
-        GET FROM index1 TO index2; #获取指定范围内的值
-        DEL index1 index2 ...; #删除指定索引位置的值
-        DEL FROM index1 TO index2; #删除指定范围内的值
-        DEL ALL;#删除所有值
-        GET LEN; #获取列表的元素个数
-        GET LEN index;#获取列表中指定索引位置的值的长度
-        INSERT value AT index; #在指定索引位置插入一个值
-        SET index value; #更新列表中指定索引位置的值
-        EXISTS value1 value2 ...; #判断列表是否存在指定值
-    }
-*/
-/*
-    ####下面是操作对象为BITMAP时的所有语法@MHU
-    关键字【BITMAP】【HOOK】【SETBIT,GETBIT,COUNT,BITOP】
-    {
-        HOOK BITMAP mybitmap; #创建一个名为mybitmap的位图对象，此时操作对象为mybitmap
-        HOOK mybitmap;# 手动切换到一个已经存在的操作对象
-        KEY BITMAP key; #创建一个名为key的键对象，此时操作对象为key
-        KEY key;# 手动切换到一个已经存在的操作对象
-
-        SET offset value; #设置位图中指定偏移量处的位值，value为0或1
-        SET FROM offset TO offset value; #设置位图中指定偏移量范围内的位值，value为0或1
-        GET offset; #获取位图中指定偏移量处的位值
-        GET FROM offset TO offset;#获取位图中指定偏移量范围内的位值
-        COUNT; #统计位图中值为1的位数
-        COUNT FROM offset1 TO offset2; #统计位图中指定偏移量范围内值为1的位数        
-    }
-*/
-
     }
 }
     return 1;
