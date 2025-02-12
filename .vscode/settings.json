@@ -4,7 +4,8 @@
         "bitmap.h": "c",
         "session-linux.c": "cpp",
         "strmap.h": "c",
-        "stdarg.h": "c"
+        "stdarg.h": "c",
+        "tblh.h": "c"
     },
     "marscode.codeCompletionPro": {
         "enableCodeCompletionPro": true
