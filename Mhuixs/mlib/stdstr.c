@@ -143,6 +143,21 @@ uint8_t* strtos(str stream)
     swrite(&stream,stream.len,(uint8_t*)"\0",1);
     return (uint8_t*)stream.string;
 }
+int sappend(str* stream, uint8_t *bitestream, uint32_t length)
+{
+    if (stream->string == NULL || bitestream == NULL || length == 0) {
+        return err;
+    }
+    // 扩展内存以容纳新数据
+    uint8_t *new_string = (uint8_t *)realloc(stream->string, stream->len + length);
+    if (new_string == NULL) {
+        return err;
+    }
+    stream->string = new_string;
+    stream->len += length;
+    memcpy(stream->string + stream->len - length, bitestream, length);
+    return stream->len;
+}
 /*
 int main()
 {

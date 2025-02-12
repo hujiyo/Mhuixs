@@ -64,4 +64,12 @@ sset(object,st,ed,byte);
 */
 uint8_t* strtos(str stream); // 新增: 将str转换为C字符串
 
+int sappend(str* stream, uint8_t *bitestream, uint32_t length);
+/*
+将bitestream中的数据写入到字节流尾部，长度为length
+如果STRAEAM中没有足够的空间，则自动扩容
+sappend(object,bitestream,length);
+返回写入后的字节流长度
+*/
+
 #endif

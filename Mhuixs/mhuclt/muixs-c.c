@@ -506,9 +506,10 @@ str* lexer(str* Mhuixsentence)
 
     [TEMP WHERE id1 ==/-- id2 id3;] #标准 TEMP_WHERE 语句,取 id1 和 id2 的交集/并集放入临时数组 id3 中
 
-    [WHERE field_index >/</==/>=/!= value id;] #标准 WHERE_CONDITION_TEMP 语句 查询指定字段的行数据,放入临时数组 id 中,然后再除去重复项,相当于取并集
+    [WHERE field_index/list_index >/</==/>=/!=/~= value/pattern id;] #标准 WHERE_CONDITION_TEMP 语句 查询指定字段的行数据,放入临时数组 id 中,然后再除去重复项,相当于取并集
 
-    [GET TEMP id;]#标准 GET_TEMP 语句,获取临时数组id对应的行索引对应的行数据
+    [GET TEMP id;]#标准 GET_TEMP 语句,获取临时数组id对应的索引对应的数据,自动根据数据类型判断函数序列
+    #表：对应行 #列表：对应元素
 }
 */
 #define stmtype_GET_OBJ 1
@@ -527,7 +528,6 @@ str* lexer(str* Mhuixsentence)
 #define stmtype_TEMP_WHERE 14
 #define stmtype_WHERE_CONDITION_TEMP 15
 #define stmtype_GET_TEMP 16
-
 /*
 ##下面是操作对象为TABLE时的所有语法@MHU
 ###关键字【INSERT,GET,FIELD,SET,ADD,SWAP,DEL,RENAME,ATTRIBUTE,POS,WHERE】
@@ -599,83 +599,112 @@ str* lexer(str* Mhuixsentence)
 #define stmtype_POS_GET 29
 /*
 ##下面是操作对象为KVALOT时的所有语法@MHU
-###关键字【SET,GET,DEL,INCR,DECR,EXISTS,SELECT,ALL,APPEND,FROM,KEY,TYPE,LEN】
+###关键字【SET,GET,DEL,EXISTS,SELECT,KEY,TYPE】
 【KVALOT,STREAM,TABLE,LIST,BITMAP】
 {
-    EXISTS key1 key2 ...; #判断存在几个键
-    SELECT pattern; #查找所有符合给定模式的键,注意查询的是键，不是值
-    SELECT ALL;#查找所有键
-    SET key1 value1 key2 value2 ...; #设置stream类型的键值对，若键已存在则覆盖
-    SET key1 key2 key3 ... TYPE type; #设置键值对的类型，type为KVALOT,STREAM,TABLE,LIST,BITMAP
-    APPEND key value;# 将value追加到key的值中。
-    APPEND key value pos;# 将value追加到key的值中，从指定位置开始。若pos超出key值的长度，则从key值的末尾开始追加。
-    GET key1 key2 ...; #获取指定键的值
-    GET key0 FROM start TO end;#获取指定键的值的子字符串 
-    DEL key1 key2 ...; #删除指定键
-    INCR key0 num; #对指定键的值进行递增操作，num为可选参数，默认递增1
-    DECR key0 num; #对指定键的值进行递减操作，num为可选参数，默认递减1
-    GET TYPE key1 key2 ...; #获取指定键的值的数据类型
-    GET LEN key1 key2 ...; #获取指定键的值的长度
-    #转入键对象操作
-    KEY key0;# 进入键对象操作
+    [EXISTS key1 key2 ...;] #标准 KEY_EXISTS 语句,判断存在几个键
+
+    [SELECT pattern;] #标准 KEY_SELECT 语句，查找所有符合给定模式的键,注意查询的是键，不是值
+        衍生&&:SELECT ALL;#查找所有键
+              预处理=> SELECT *; #查找所有键
+
+    [SET TYPE type key1 key2 key3 ... ;] #标准 KEY_SET 语句，不赋值，type为KVALOT,STREAM,TABLE,LIST,BITMAP
+
+    [DEL key1 key2 ...;] #标准 KEY_DEL 语句,删除指定键
+    
+    [KEY key;]# 标准 KEY_CHECKOUT 语句,进入键对象操作
 }
 */
-
+#define stmtype_KEY_EXISTS 30
+#define stmtype_KEY_SELECT 31
+#define stmtype_KEY_SET 32
+#define stmtype_KEY_DEL 33
+#define stmtype_KEY_CHECKOUT 34
 /*
 ##下面是操作对象为STREAM时的所有语法@MHU
 ###关键字【STREAM】【HOOK】【ADD,GET,FROM,DEL】
 {
-    HOOK STREAM mystream; #创建一个名为mystream的流对象，此时操作对象为mystream
-    APPEND value; #向流中附加数据
-    APPEND value AT pos;# 将value追加到流中，从指定位置开始。若pos超出流的长度，则从流的末尾开始追加。
-    GET FROM start TO end;#获取流中指定范围的数据
-    GET len AT pos;#获取流中指定长度的数据
-    GET ALL;#获取流的所有数据
-    SET pos value;# 从pos处设置流中指定位置的值
-    SET char FROM start TO end;# 从start到end处设置流中指定范围的值
+    [APPEND value;]#标准 STREAM_APPEND 语句，将数据追加向流中附加数据
+    
+    [APPEND pos value;]#标准 STREAM_APPEND_POS 将value追加到流中，从指定位置开始。若pos超出流的长度，则从流的末尾开始追加。
+
+    [GET pos len;]#标准 STREAM_GET 语句，获取流中指定长度的数据
+
+    [SET pos value;]#标准 STREAM_SET 语句，从pos处设置流中指定位置的值
+
+    [SET pos len char;]#标准 STREAM_SET_CHAR 语句，从pos处设置流中指定位置的值,并将其长度设置为len
+
+    [GET LEN;] #标准 STREAM_GET_LEN 语句，获取流的长度
 }
 */
-/*    
-##下面是操作对象为LIST时的所有语法@MHU
+#define stmtype_STREAM_APPEND 35
+#define stmtype_STREAM_APPEND_POS 36
+#define stmtype_STREAM_GET 37
+#define stmtype_STREAM_GET_LEN 38
+#define stmtype_STREAM_SET 39
+#define stmtype_STREAM_SET_CHAR 40
+/* 
+##下面是操作对象为LIST时的所有语法
 ###关键字【LIST】【HOOK】【ADD,GET,DEL,LEN,INSERT,LPUSH,RPUSH,LPOP,RPOP,FROM,ALL,TO,AT,SET,EXISTS】
 {
-    HOOK LIST mylist; #创建一个名为mylist的列表对象，此时操作对象为mylist
-    LPUSH value1 value2 ...;#在列表开头添加一个值
-    RPUSH/ADD value1 value2 ...;#在列表末尾添加一个值
-    LPOP/GET; #移除并返回列表开头的值
-    RPOP; #移除并返回列表末尾的值
+    [LPUSH value;]#标准 LIST_LPUSH 语句，在列表开头添加一个值
 
-    GET index1 index2 ...; #获取指定位置的值,index:1,2..为第1,2..个元素，-1,-2,为倒数第1,2..个元素
-    GET ALL;/GET 0;#获取列表的所有元素
-    GET FROM index1 TO index2; #获取指定范围内的值
-    DEL index1 index2 ...; #删除指定索引位置的值
-    DEL FROM index1 TO index2; #删除指定范围内的值
-    DEL ALL;#删除所有值
-    GET LEN; #获取列表的元素个数
-    GET LEN index;#获取列表中指定索引位置的值的长度
-    INSERT value AT index; #在指定索引位置插入一个值
-    SET index value; #更新列表中指定索引位置的值
-    EXISTS value1 value2 ...; #判断列表是否存在指定值
+    [RPUSH value;]#标准 LIST_RPUSH 语句，在列表末尾添加一个值
+
+    [LPOP;]#标准 LIST_LPOP 语句，移除并返回列表开头的值
+
+    [RPOP;]#标准 LIST_RPOP 语句，移除并返回列表末尾的值
+
+
+    [GET index;] #标准 LIST_GET 语句,获取指定位置的值,index:1,2..为第1,2..个元素，-1,-2,为倒数第1,2..个元素，0:所有元素
+        衍生&&:GET ALL;#获取所有值
+
+    [DEL index;] #标准 LIST_DEL 语句，删除指定索引位置的值
+
+    [GET LEN index;]#标准 LIST_GET_INDEX_LEN 语句，获取列表中指定索引位置的值的长度
+
+    [INSERT index value;] #标准 LIST_INSERT 语句，在指定索引位置插入一个值
+
+    [SET index value;]#标准 LIST_SET 语句，更新列表中指定索引位置的值
+
+    [EXISTS value1 value2 ...;]#标准 LIST_EXISTS 语句，判断列表是否存在指定值
+
+    [GET LEN;] #标准 LIST_GET_LEN 语句，获取列表的长度
 }
 */
+#define stmtype_LIST_LPUSH 41
+#define stmtype_LIST_RPUSH 42
+#define stmtype_LIST_LPOP 43
+#define stmtype_LIST_RPOP 44
+#define stmtype_LIST_GET 45
+#define stmtype_LIST_DEL 46
+#define stmtype_LIST_GET_INDEX_LEN 47
+#define stmtype_LIST_INSERT 48
+#define stmtype_LIST_SET 49
+#define stmtype_LIST_EXISTS 50
 /*
 ##下面是操作对象为BITMAP时的所有语法@MHU
 ###关键字【BITMAP】【HOOK】【SETBIT,GETBIT,COUNT,BITOP】
 {
-    HOOK BITMAP mybitmap; #创建一个名为mybitmap的位图对象，此时操作对象为mybitmap
-    HOOK mybitmap;# 手动切换到一个已经存在的操作对象
-    KEY BITMAP key; #创建一个名为key的键对象，此时操作对象为key
-    KEY key;# 手动切换到一个已经存在的操作对象
+    [SET offset value;] #标准 BITMAP_SET 语句，设置位图中指定偏移量处的位值，value为0或1
 
-    SET offset value; #设置位图中指定偏移量处的位值，value为0或1
-    SET FROM offset TO offset value; #设置位图中指定偏移量范围内的位值，value为0或1
-    GET offset; #获取位图中指定偏移量处的位值
-    GET FROM offset TO offset;#获取位图中指定偏移量范围内的位值
-    COUNT; #统计位图中值为1的位数
-    COUNT FROM offset1 TO offset2; #统计位图中指定偏移量范围内值为1的位数        
+    [SET offset1 offset2 value;] #标准 BITMAP_SET_RANGE 语句，设置位图中指定偏移量范围内的位值，value为0或1
+
+    [GET offset;] #标准 BITMAP_GET 语句，获取位图中指定偏移量处的位值
+
+    [GET offset1 offset2;]#标准 BITMAP_GET_RANGE 语句，获取位图中指定偏移量范围内的位值
+
+    [COUNT;] #标准 BITMAP_COUNT 语句，统计位图中值为1的位数
+
+    [COUNT offset1 offset2;] #标准 BITMAP_COUNT_RANGE 语句，统计位图中指定偏移量范围内值为1的位数        
 }
 */
-//下面是所有的语法对应的命令ID
+#define stmtype_BITMAP_SET 51
+#define stmtype_BITMAP_SET_RANGE 52
+#define stmtype_BITMAP_GET 53
+#define stmtype_BITMAP_GET_RANGE 54
+#define stmtype_BITMAP_COUNT 55
+#define stmtype_BITMAP_COUNT_RANGE 56
 
 commendID is_valid_statement(stmt curstmt,stmtObj* lastobj,stmtObj* curobj) {
     /*
