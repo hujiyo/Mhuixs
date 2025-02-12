@@ -12,10 +12,7 @@ Email:hj18914255909@outlook.com
 #include <stdint.h>
 
 //含所有数据结构的头文件
-#include "datstrc/tblh.h"
-#include "datstrc/kvalh.h"
-#include "datstrc/list.h"
-#include "datstrc/bitmap.h"
+#include "datstrc.h"
 /*
 下面的queue是完全可以被list替换的，
 在最新的速度测试中，基于strmap.h进行内存分配的list库

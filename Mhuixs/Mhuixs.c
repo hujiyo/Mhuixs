@@ -25,8 +25,7 @@ table需要增添表格恢复功能
 在最新的速度测试中，基于strmap.h进行内存分配的list库
 的执行速度要比基于calloc和realloc的stack和queue快一点
 */
-#include "datstrc/stack.h"
-#include "datstrc/queue.h"
+
 
 #include "mlib/session.h"
 
