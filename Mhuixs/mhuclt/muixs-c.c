@@ -439,35 +439,12 @@ str* lexer(str* Mhuixsentence,stmtObj last_obj,uint8_t* info)
         }        
     }    
     
-    //########################################################
-    //对象识别模块：识别每个stmt的操作对象类型，需要识别出隐性操作对象
-    //########################################################
-
-    /*
-    下一句语言如果没有明确指定操作对象，
-    那么默认操作对象为当前stmt的上一句的操作对象
-    */
-    
-    for(int i = 0; i < stmts.num; i++){
-        //获取当前语句
-        stmt* curstmt = &stmts.stmt[i];
-
-        //开始寻找当前语句的操作对象
-        //switch()
-
-        
-    }
-
-
-    //########################################################
-    //语法检查模块：分析每个stmt的语法是否正确
-    //########################################################
-    
-    //////////////////////////////////////////////////////////
 
     //########################################################
     //命令转化模块：将每个stmt转换为Mhuixs命令
     //########################################################
+
+    
 
     //////////////////////////////////////////////////////////
 }
@@ -514,6 +491,8 @@ str* lexer(str* Mhuixsentence,stmtObj last_obj,uint8_t* info)
 
     [GET TEMP id;]#标准 GET_TEMP 语句,获取临时数组id对应的索引对应的数据,自动根据数据类型判断函数序列
     #表：对应行 #列表：对应元素
+
+    [BACK;]# 标准 BACK 语句,返回前一个操作对象
 }
 */
 #define stmtype_GET_OBJ 1
@@ -532,6 +511,7 @@ str* lexer(str* Mhuixsentence,stmtObj last_obj,uint8_t* info)
 #define stmtype_TEMP_WHERE 14
 #define stmtype_WHERE_CONDITION_TEMP 15
 #define stmtype_GET_TEMP 16
+#define stmtype_BACK 100
 /*
 ##下面是操作对象为TABLE时的所有语法@MHU
 ###关键字【INSERT,GET,FIELD,SET,ADD,SWAP,DEL,RENAME,ATTRIBUTE,POS,WHERE】
@@ -616,7 +596,7 @@ str* lexer(str* Mhuixsentence,stmtObj last_obj,uint8_t* info)
     [DEL key1 key2 ...;] #标准 KEY_DEL 语句,删除指定键
     
     [KEY key;]# 标准 KEY_CHECKOUT 语句,进入键对象操作
-}
+
 */
 #define stmtype_KEY_EXISTS 30
 #define stmtype_KEY_SELECT 31
@@ -640,12 +620,12 @@ str* lexer(str* Mhuixsentence,stmtObj last_obj,uint8_t* info)
     [GET LEN;] #标准 STREAM_GET_LEN 语句，获取流的长度
 }
 */
-#define stmtype_STREAM_APPEND 35
-#define stmtype_STREAM_APPEND_POS 36
-#define stmtype_STREAM_GET 37
-#define stmtype_STREAM_GET_LEN 38
-#define stmtype_STREAM_SET 39
-#define stmtype_STREAM_SET_CHAR 40
+#define stmtype_STREAM_APPEND 36
+#define stmtype_STREAM_APPEND_POS 37
+#define stmtype_STREAM_GET 38
+#define stmtype_STREAM_GET_LEN 39
+#define stmtype_STREAM_SET 40
+#define stmtype_STREAM_SET_CHAR 41
 /* 
 ##下面是操作对象为LIST时的所有语法
 ###关键字【GET,DEL,LEN,INSERT,LPUSH,RPUSH,LPOP,RPOP,SET,EXISTS】
@@ -675,16 +655,16 @@ str* lexer(str* Mhuixsentence,stmtObj last_obj,uint8_t* info)
     [GET LEN;] #标准 LIST_GET_LEN 语句，获取列表的长度
 }
 */
-#define stmtype_LIST_LPUSH 41
-#define stmtype_LIST_RPUSH 42
-#define stmtype_LIST_LPOP 43
-#define stmtype_LIST_RPOP 44
-#define stmtype_LIST_GET 45
-#define stmtype_LIST_DEL 46
-#define stmtype_LIST_GET_INDEX_LEN 47
-#define stmtype_LIST_INSERT 48
-#define stmtype_LIST_SET 49
-#define stmtype_LIST_EXISTS 50
+#define stmtype_LIST_LPUSH 42
+#define stmtype_LIST_RPUSH 43
+#define stmtype_LIST_LPOP 44
+#define stmtype_LIST_RPOP 45
+#define stmtype_LIST_GET 46
+#define stmtype_LIST_DEL 47
+#define stmtype_LIST_GET_INDEX_LEN 48
+#define stmtype_LIST_INSERT 49
+#define stmtype_LIST_SET 50
+#define stmtype_LIST_EXISTS 51
 /*
 ##下面是操作对象为BITMAP时的所有语法@MHU
 ###关键【SET,GET,COUNT】
@@ -702,12 +682,12 @@ str* lexer(str* Mhuixsentence,stmtObj last_obj,uint8_t* info)
     [COUNT offset1 offset2;] #标准 BITMAP_COUNT_RANGE 语句，统计位图中指定偏移量范围内值为1的位数        
 }
 */
-#define stmtype_BITMAP_SET 51
-#define stmtype_BITMAP_SET_RANGE 52
-#define stmtype_BITMAP_GET 53
-#define stmtype_BITMAP_GET_RANGE 54
-#define stmtype_BITMAP_COUNT 55
-#define stmtype_BITMAP_COUNT_RANGE 56
+#define stmtype_BITMAP_SET 52
+#define stmtype_BITMAP_SET_RANGE 53
+#define stmtype_BITMAP_GET 54
+#define stmtype_BITMAP_GET_RANGE 55
+#define stmtype_BITMAP_COUNT 56
+#define stmtype_BITMAP_COUNT_RANGE 57
 
 commendID is_valid_statement(stmt curstmt,stmtObj* lastobj,stmtObj* curobj) {
     /*
