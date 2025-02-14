@@ -1,6 +1,9 @@
+<<<<<<< HEAD
 # Mhuixs：正开发的迷你宝藏数据库软件 QwQ
 
-![Mhuixs logo](Mhuixs/mhuclt/logo/Mhuixs.png)
+<img src="Mhuixs/mhuclt/logo/Mhuixs.png" height="120px" />    
+
+# Mhuixs：正开发的迷你宝藏数据库软件 QwQ
 
 ## 1. 介绍 : )
 
