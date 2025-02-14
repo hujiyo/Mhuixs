@@ -1,6 +1,6 @@
 <img src="Mhuixs/mhuclt/logo/Mhuixs-logo.png" height="150px" />    
 
-# Mhuixs：正开发的迷你宝藏数据库软件 QwQ
+# 正在开发的迷你宝藏数据库软件 QwQ
 
 ## 1. 介绍 : )
 
