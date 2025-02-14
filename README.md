@@ -63,17 +63,19 @@ emial：hj18914255909@outlook.com
 - readme更新时间：2025.2.14，这是小树苗又长大了一点，记录成长的新时刻。
 
 
-## 6.NAQL语法草案:NAture-language Query Language
+## 6.NAQL草案 >~<
+
+NAQL：NAture-language Query Language
 
 旨在设计一种最接近口语的、最简单、给AI可以直接现场学会的数据查询语言。 
 
-未来我们会出一版专门提供给AI看的查询语言 “ 学习资料 ”，HAHA
+未来我们会出一版专门提供给AI看的查询语言 “ 学习资料 ”。
 
 
 
-### HOOK相关语法
+#### HOOK相关语法
 
-##### 关键字【HOOK】【TABLE,KVALOT,LIST,BITMAP,STREAM】【DEL,TYPE,RANK,CLEAR,DESC,GET,WHERE,TEMP】【$:预处理联系符】
+关键字【HOOK】【TABLE,KVALOT,LIST,BITMAP,STREAM】【DEL,TYPE,RANK,CLEAR,DESC,GET,WHERE,TEMP】【$:预处理联系符】
 
 {
 
@@ -120,9 +122,9 @@ emial：hj18914255909@outlook.com
     [GET TEMP id;]#标准 GET_TEMP 语句,获取临时数组id对应的行索引对应的行数据
 }
 
-### TABLE类语法
+#### TABLE类语法
 
-##### 关键字【INSERT,GET,FIELD,SET,ADD,SWAP,DEL,RENAME,ATTRIBUTE,POS,WHERE】
+关键字【INSERT,GET,FIELD,SET,ADD,SWAP,DEL,RENAME,ATTRIBUTE,POS,WHERE】
 【[i1,int8_t],[i2,int16_t],[i4,int32_t,int],[i8,int64_t],[ui1,uint8_t],[ui2,uint16_t],[ui4,uint32_t],[ui8,uint64_t],
 [f4,float],[f8,double],[str,stream],date,time,datetime】
 【PKEY,FKEY,UNIQUE,NOTNULL,DEFAULT】
@@ -197,9 +199,9 @@ emial：hj18914255909@outlook.com
 
 }
 
-### KVALOT类语法
+#### KVALOT类语法
 
-##### 关键字【SET,DEL,EXISTS,SELECT,KEY,TYPE】
+关键字【SET,DEL,EXISTS,SELECT,KEY,TYPE】
 
 {
 
@@ -217,9 +219,9 @@ emial：hj18914255909@outlook.com
     
 }
 
-### STREAM类语法
+#### STREAM类语法
     
-##### 关键字【APPEND,SET,GET,LEN】
+关键字【APPEND,SET,GET,LEN】
 
 {
 
@@ -236,9 +238,9 @@ emial：hj18914255909@outlook.com
     [GET LEN;] #标准 STREAM_GET_LEN 语句，获取流的长度
 }
     
-### LIST类语法
+#### LIST类语法
     
-##### 关键字【GET,DEL,LEN,INSERT,LPUSH,RPUSH,LPOP,RPOP,SET,EXISTS】
+关键字【GET,DEL,LEN,INSERT,LPUSH,RPUSH,LPOP,RPOP,SET,EXISTS】
 
 {
 
@@ -268,9 +270,9 @@ emial：hj18914255909@outlook.com
 
 }
 
-### BITMAP类语法
+#### BITMAP类语法
     
-##### 关键字【SET,GET,COUNT】
+关键字【SET,GET,COUNT】
 
 {
 
