@@ -1,4 +1,4 @@
-<img src="Mhuixs/mhuclt/logo/Mhuixs-logo.png" height="150px" />    
+<img src="Mhuixs/mhuclt/logo/Mhuixs-logo.png" height="130px" />    
 
 # 正在开发的迷你宝藏数据库软件 QwQ
 
