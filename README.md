@@ -1,8 +1,10 @@
 # Mhuixs：正开发的超迷你宝藏数据库软件QwQ
 
-## 项目介绍:)
+## 项目介绍 : )
 
-Mhuixs是一个超超超迷你的基于内存的数据库，别看它小小的，却有着大大的梦想！它努力结合关系型与非关系型数据库的优点，立志提供国产化、可集成化、较为丰富的数据结构支持，还有超厉害的简单语言特性，是不是超酷的！
+Mhuixs是一个超超超迷你的基于内存的数据库，别看它小小的，却有着大大的梦想！
+
+它努力结合关系型与非关系型数据库的优点，立志提供国产化、可集成化、较为丰富的数据结构支持，还有超厉害的简单语言特性，是不是超酷的！
 
 ## 项目背景
 
@@ -62,11 +64,14 @@ emial：hj18914255909@outlook.com
 
 旨在设计一种最接近口语的、最简单、给AI可以直接现场学会的数据查询语言。 
 
+未来我们会出一版专门提供给AI看的查询语言 “ 学习资料 ”，HAHA
+
 ## 下面是HOOK所有使用方法
 
 ### 关键字【HOOK】【TABLE,KVALOT,LIST,BITMAP,STREAM】【DEL,TYPE,RANK,CLEAR,DESC,GET,WHERE,TEMP】【$:预处理联系符】
 
 {
+
     #HOOK基础操作
     
     [GET;] #标准 GET_OBJ 语句,获取当前操作对象的所有数据
@@ -117,7 +122,9 @@ emial：hj18914255909@outlook.com
 [f4,float],[f8,double],[str,stream],date,time,datetime】
 【PKEY,FKEY,UNIQUE,NOTNULL,DEFAULT】
 【$:将字段名预处理为索引】$field_name <==> field_index(数字索引从0开始)
+
 {
+
     #FILED操作,不指明FIELD默认就是LINE操作
 
     [FIELD ADD field1_name datatype restraint field2_name datatype restraint...;]#标准 FIELD_ADD 语句
@@ -182,6 +189,7 @@ emial：hj18914255909@outlook.com
         GET FIELD field_name;#获取指定字段对应的列的数据
 
     [GET POS x1 y1 x2 y2 ...;]#标准 POS_GET 语句,获取指定坐标的数据
+
 }
 
 ## KVALOT对象操作语法
@@ -260,6 +268,7 @@ emial：hj18914255909@outlook.com
 ### 关键字【SET,GET,COUNT】
 
 {
+
     [SET offset value;] #标准 BITMAP_SET 语句，设置位图中指定偏移量处的位值，value为0或1
 
     [SET offset1 offset2 value;] #标准 BITMAP_SET_RANGE 语句，设置位图中指定偏移量范围内的位值，value为0或1
@@ -270,5 +279,6 @@ emial：hj18914255909@outlook.com
 
     [COUNT;] #标准 BITMAP_COUNT 语句，统计位图中值为1的位数
 
-    [COUNT offset1 offset2;] #标准 BITMAP_COUNT_RANGE 语句，统计位图中指定偏移量范围内值为1的位数        
+    [COUNT offset1 offset2;] #标准 BITMAP_COUNT_RANGE 语句，统计位图中指定偏移量范围内值为1的位数     
+   
 }
