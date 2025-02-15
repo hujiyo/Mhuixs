@@ -44,6 +44,7 @@ uint32_t* initfunctable(){
     uint8_t* run_temp_where(void);
     uint8_t* run_where_condition_temp(void);
     uint8_t* run_get_temp(void);
+    uint8_t* run_back(void);
 
     functable[1000] = run_get_obj;
     functable[1001] = run_where;
@@ -61,6 +62,7 @@ uint32_t* initfunctable(){
     functable[1013] = run_temp_where;
     functable[1014] = run_where_condition_temp;
     functable[1015] = run_temp_get;
+    functable[1016] = run_back;
 
     //TABLE操作相关函数
     uint8_t* run_field_add(void);
