@@ -804,263 +804,82 @@ typedef enum {
     TOKEN_EEROR,         // token错误,一般遇到这个token,则视为用户 语句错误
 } TokType,toktype;
 
-int callitkeyword(uint8_t* str,int len,toktype *type)
-{   
-    if(len==2){
-        if(!strncmp(str,"i1",2)){
-            *type=TOKEN_i1;
+typedef struct {
+    const char *keyword;
+    toktype type;
+} KeywordMap;
+
+// 初始化关键字映射数组
+const KeywordMap keywordMap[] = {
+    {"i1", TOKEN_i1},
+    {"i2", TOKEN_i2},
+    {"i4", TOKEN_i4},
+    {"i8", TOKEN_i8},
+    {"f4", TOKEN_f4},
+    {"f8", TOKEN_f8},
+    {"ui1", TOKEN_ui1},
+    {"ui2", TOKEN_ui2},
+    {"ui4", TOKEN_ui4},
+    {"ui8", TOKEN_ui8},
+    {"KEY", TOKEN_KEY}, {"key", TOKEN_KEY},
+    {"DEL", TOKEN_DEL}, {"del", TOKEN_DEL},
+    {"GET", TOKEN_GET}, {"get", TOKEN_GET},
+    {"SET", TOKEN_SET}, {"set", TOKEN_SET},
+    {"ADD", TOKEN_ADD}, {"add", TOKEN_ADD},
+    {"LEN", TOKEN_LEN}, {"len", TOKEN_LEN},
+    {"POS", TOKEN_POS}, {"pos", TOKEN_POS},
+    {"TYPE", TOKEN_TYPE}, {"type", TOKEN_TYPE},
+    {"HOOK", TOKEN_HOOK}, {"hook", TOKEN_HOOK},
+    {"LIST", TOKEN_LIST}, {"List", TOKEN_LIST},
+    {"SWAP", TOKEN_SWAP}, {"swap", TOKEN_SWAP},
+    {"LPOP", TOKEN_LPOP}, {"lpop", TOKEN_LPOP},
+    {"RPOP", TOKEN_RPOP}, {"rpop", TOKEN_RPOP},
+    {"DESC", TOKEN_DESC}, {"desc", TOKEN_DESC},
+    {"PKEY", TOKEN_PKEY}, {"pkey", TOKEN_PKEY},
+    {"FKEY", TOKEN_FKEY}, {"fkey", TOKEN_FKEY},
+    {"RANK", TOKEN_RANK}, {"rank", TOKEN_RANK},
+    {"TEMP", TOKEN_TEMP}, {"temp", TOKEN_TEMP},
+    {"TABLE", TOKEN_TABLE}, {"table", TOKEN_TABLE},
+    {"COUNT", TOKEN_COUNT}, {"count", TOKEN_COUNT},
+    {"CLEAR", TOKEN_CLEAR}, {"clear", TOKEN_CLEAR},
+    {"WHERE", TOKEN_WHERE}, {"where", TOKEN_WHERE},
+    {"LPUSH", TOKEN_LPUSH}, {"lpush", TOKEN_LPUSH},
+    {"RPUSH", TOKEN_RPUSH}, {"rpush", TOKEN_RPUSH},
+    {"FIELD", TOKEN_FIELD}, {"field", TOKEN_FIELD},
+    {"FLOAT", TOKEN_f4}, {"float", TOKEN_f4},
+    {"BITMAP", TOKEN_BITMAP}, {"bitmap", TOKEN_BITMAP},
+    {"STREAM", TOKEN_STREAM}, {"stream", TOKEN_STREAM},
+    {"EXISTS", TOKEN_EXISTS}, {"exists", TOKEN_EXISTS},
+    {"SELECT", TOKEN_SELECT}, {"select", TOKEN_SELECT},
+    {"APPEND", TOKEN_APPEND}, {"append", TOKEN_APPEND},
+    {"UNIQUE", TOKEN_UNIQUE}, {"unique", TOKEN_UNIQUE},
+    {"KVALOT", TOKEN_KVALOT}, {"kvalot", TOKEN_KVALOT},
+    {"INSERT", TOKEN_INSERT}, {"insert", TOKEN_INSERT},
+    {"RENAME", TOKEN_RENAME}, {"rename", TOKEN_RENAME},
+    {"int8_t", TOKEN_i1},
+    {"double", TOKEN_f8},
+    {"DEFAULT", TOKEN_DEFAULT}, {"default", TOKEN_DEFAULT},
+    {"NOTNULL", TOKEN_NOTNULL}, {"notnull", TOKEN_NOTNULL},
+    {"uint8_t", TOKEN_ui1},
+    {"int16_t", TOKEN_i2},
+    {"int32_t", TOKEN_i4},
+    {"int64_t", TOKEN_i8},
+    {"uint16_t", TOKEN_ui2},
+    {"uint32_t", TOKEN_ui4},
+    {"uint64_t", TOKEN_ui8},
+    {"ATTRIBUTE", TOKEN_ATTRIBUTE}, {"attribute", TOKEN_ATTRIBUTE}
+};
+
+// 计算关键字映射数组的长度
+const size_t keywordMapSize = sizeof(keywordMap) / sizeof(keywordMap[0]);
+
+int callitkeyword(uint8_t* str, int len, toktype *type) {
+    for (size_t i = 0; i < keywordMapSize; i++) {
+        const char *keyword = keywordMap[i].keyword;
+        if (strlen(keyword) == len && !strncmp((const char *)str, keyword, len)) {
+            *type = keywordMap[i].type;
             return 0;
         }
-        if(!strncmp(str,"i2",2)){
-            *type=TOKEN_i2;
-            return 0;
-        }
-        if(!strncmp(str,"i4",2)){
-            *type=TOKEN_i4;
-            return 0;
-        }
-        if(!strncmp(str,"i8",2)){
-            *type=TOKEN_i8;
-            return 0;
-        }
-        if(!strncmp(str,"f4",2)){
-            *type=TOKEN_f4;
-            return 0;
-        }
-        if(!strncmp(str,"f8",2)){
-            *type=TOKEN_f8;
-            return 0;
-        }
-        return NOTKEYWORD;
-    }
-    if(len==3){
-        if(!strncmp(str,"ui1",3)){
-            *type=TOKEN_ui1;
-            return 0;
-        }
-        if(!strncmp(str,"ui2",3)){
-            *type=TOKEN_ui2;
-            return 0;
-        }
-        if(!strncmp(str,"ui4",3)){
-            *type=TOKEN_ui4;
-            return 0;
-        }
-        if(!strncmp(str,"ui8",3)){
-            *type=TOKEN_ui8;
-            return 0;
-        }
-        if(!strncmp(str,"KEY",3) || !strncmp(str,"key",3)){
-            *type=TOKEN_KEY;
-            return 0;
-        }
-        if(!strncmp(str,"DEL",3) ||!strncmp(str,"del",3)){
-            *type=TOKEN_DEL;
-            return 0;
-        }
-        if(!strncmp(str,"GET",3) ||!strncmp(str,"get",3)){
-            *type=TOKEN_GET;
-            return 0;
-        }
-        if(!strncmp(str,"SET",3) ||!strncmp(str,"set",3)){
-            *type=TOKEN_SET;
-            return 0;
-        }
-        if(!strncmp(str,"ADD",3) ||!strncmp(str,"add",3)){
-            *type=TOKEN_ADD;
-            return 0;
-        }
-        if(!strncmp(str,"LEN",3) ||!strncmp(str,"len",3)){
-            *type=TOKEN_LEN;
-            return 0; 
-        }
-        if(!strncmp(str,"POS",3) ||!strncmp(str,"pos",3)){
-            *type=TOKEN_POS;
-            return 0;
-        }
-        return NOTKEYWORD;
-    }
-    if(len==4){
-        if(!strncmp(str,"TYPE",4) ||!strncmp(str,"type",4)){
-            *type=TOKEN_TYPE;
-            return 0;
-        }
-        if(!strncmp(str,"HOOK",4) ||!strncmp(str,"hook",4)){
-            *type=TOKEN_HOOK;
-            return 0;
-        }
-        if(!strncmp(str,"LIST",4) ||!strncmp(str,"List",4)){
-            *type=TOKEN_LIST;
-            return 0;
-        }
-        if(!strncmp(str,"SWAP",4) ||!strncmp(str,"swap",4)){
-            *type=TOKEN_SWAP;
-            return 0;
-        }
-        if(!strncmp(str,"LPOP",4) ||!strncmp(str,"lpop",4)){
-            *type=TOKEN_LPOP;
-            return 0;
-        }
-        if(!strncmp(str,"RPOP",4) ||!strncmp(str,"rpop",4)){
-            *type=TOKEN_RPOP;
-            return 0;
-        }
-        if(!strncmp(str,"DESC",4) ||!strncmp(str,"desc",4)){
-            *type=TOKEN_DESC;
-            return 0;
-        }
-        if(!strncmp(str,"TYPE",4) ||!strncmp(str,"type",4)){
-            *type=TOKEN_TYPE;
-            return 0;
-        }
-        if(!strncmp(str,"PKEY",4) ||!strncmp(str,"pkey",4)){
-            *type=TOKEN_PKEY;
-            return 0;
-        }
-        if(!strncmp(str,"FKEY",4) ||!strncmp(str,"fkey",4)){
-            *type=TOKEN_FKEY;
-            return 0;
-        }
-        if(!strncmp(str,"RANK",4) ||!strncmp(str,"rank",4)){
-            *type=TOKEN_RANK;
-            return 0;
-        }
-        if(!strncmp(str,"TEMP",4) ||!strncmp(str,"temp",4)){
-            *type=TOKEN_TEMP;
-            return 0;
-        }
-        return NOTKEYWORD;
-    }
-    if(len==5){
-        if(!strncmp(str,"TABLE",5) ||!strncmp(str,"table",5)){
-            *type=TOKEN_TABLE;
-            return 0;
-        }
-        if(!strncmp(str,"COUNT",5) ||!strncmp(str,"count",5)){
-            *type=TOKEN_COUNT;
-            return 0;
-        }
-        if(!strncmp(str,"CLEAR",5) ||!strncmp(str,"clear",5)){
-            *type=TOKEN_CLEAR;
-            return 0;
-        }
-        if(!strncmp(str,"WHERE",5) ||!strncmp(str,"where",5)){
-            *type=TOKEN_WHERE;
-            return 0;
-        }
-        if(!strncmp(str,"LPUSH",5) ||!strncmp(str,"lpush",5)){
-            *type=TOKEN_LPUSH;
-            return 0;
-        }
-        if(!strncmp(str,"RPUSH",5) ||!strncmp(str,"rpush",5)){
-            *type=TOKEN_RPUSH;
-            return 0;
-        }
-        if(!strncmp(str,"FIELD",5) ||!strncmp(str,"field",5)){
-            *type=TOKEN_FIELD;
-            return 0;
-        }
-        if(!strncmp(str,"FLOAT",5) ||!strncmp(str,"float",5)){
-            *type=TOKEN_f4;
-            return 0;
-        }
-        return NOTKEYWORD;
-    }
-    if(len==6){
-        if(!strncmp(str,"BITMAP",6) ||!strncmp(str,"bitmap",6)){
-            *type=TOKEN_BITMAP;
-            return 0;
-        }
-        if(!strncmp(str,"STREAM",6) ||!strncmp(str,"stream",6)){
-            *type=TOKEN_STREAM;
-            return 0;
-        }
-        if(!strncmp(str,"EXISTS",6) ||!strncmp(str,"exists",6)){
-            *type=TOKEN_EXISTS;
-            return 0;
-        }
-        if(!strncmp(str,"SELECT",6) ||!strncmp(str,"select",6)){
-            *type=TOKEN_SELECT;
-            return 0;
-        }
-        if(!strncmp(str,"APPEND",6) ||!strncmp(str,"append",6)){
-            *type=TOKEN_APPEND;
-            return 0;
-        }
-        if(!strncmp(str,"UNIQUE",6) ||!strncmp(str,"unique",6)){
-            *type=TOKEN_UNIQUE;
-            return 0;
-        }
-        if(!strncmp(str,"KVALOT",6) ||!strncmp(str,"kvalot",6)){
-            *type=TOKEN_KVALOT;
-            return 0;
-        }
-        if(!strncmp(str,"INSERT",6) ||!strncmp(str,"insert",6)){
-            *type=TOKEN_INSERT;
-            return 0;
-        }
-        if(!strncmp(str,"RENAME",6) ||!strncmp(str,"rename",6)){
-            *type=TOKEN_RENAME;
-            return 0;
-        }
-        if(!strncmp(str,"int8_t",6)){
-            *type=TOKEN_i1;
-            return 0;
-        }
-        if(!strncmp(str,"double",6)){
-            *type=TOKEN_f8;
-            return 0;
-        }
-        return NOTKEYWORD;
-    }
-    if(len==7){
-        if(!strncmp(str,"DEFAULT",7) ||!strncmp(str,"default",7)){
-            *type=TOKEN_DEFAULT;
-            return 0;
-        }
-        if(!strncmp(str,"NOTNULL",7) ||!strncmp(str,"notnull",7)){
-            *type=TOKEN_NOTNULL;
-            return 0;
-        }
-        if(!strncmp(str,"uint8_t",7)){
-            *type=TOKEN_ui1;
-            return 0;
-        }
-        if(!strncmp(str,"int16_t",7)){
-            *type=TOKEN_i2;
-            return 0;
-        }
-        if(!strncmp(str,"int32_t",7)){
-            *type=TOKEN_i4;
-            return 0;
-        }
-        if(!strncmp(str,"int64_t",7)){
-            *type=TOKEN_i8;
-            return 0;
-        }
-        return NOTKEYWORD;
-    }
-    if(len==8){
-        if(!strncmp(str,"uint16_t",8)){
-            *type=TOKEN_ui2;
-            return 0;
-        }
-        if(!strncmp(str,"uint32_t",8)){
-            *type=TOKEN_ui4;
-            return 0;
-        }
-        if(!strncmp(str,"uint64_t",8)){
-            *type=TOKEN_ui8;
-            return 0;
-        }
-        return NOTKEYWORD;
-    }
-    if(len==9){
-        if(!strncmp(str,"ATTRIBUTE",9) ||!strncmp(str,"attribute",9)){
-            *type=TOKEN_ATTRIBUTE;
-            return 0;
-        }
-        return NOTKEYWORD;
     }
     return NOTKEYWORD;
 }
