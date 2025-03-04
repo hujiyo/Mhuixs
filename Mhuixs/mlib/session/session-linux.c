@@ -33,11 +33,7 @@ int set_nonblocking(int sockfd)
    return 0; // 成功
 }
 
-#define PORT 18482                  //Mhuixs默认端口号，1848.2.22:《共产党宣言》发表
-#define BUFFER_SIZE 1024            // 缓冲区大小（1KB/8KB/16KB/64KB）
-#define MAX_SESSIONS 64             // 最大会话数量
-#define SESSION_backlog 8           //连接等待队列最大长度
-#define heartbeat 10                //心跳包间隔时间（单位:s）
+
 
 uint32_t _SESSIONS_CURRENT_NUM_=0; // 全局变量:当前会话总数量
 
