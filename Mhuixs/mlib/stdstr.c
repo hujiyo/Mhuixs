@@ -24,6 +24,7 @@ str stostr(uint8_t *string, uint32_t len)
     获得一个字节流对象指针,内容为string,长度为len
     stostr:将C字符串s变成to为str
 
+    重新分配内存,将C字符串s复制到stream中
     返回的str不接管C字符串的所有权
     */
     str stream;
@@ -77,7 +78,7 @@ int sread(str* stream, uint32_t pos, uint8_t *bitestream, uint32_t length)
 }
 int swrite(str* stream, uint32_t pos, uint8_t *bitestream, uint32_t length)
 {
-    if (stream->string == NULL || bitestream == NULL || length == 0) {
+    if(stream == NULL || bitestream == NULL || length == 0){
         return err;
     }
     if (pos > stream->len) {
