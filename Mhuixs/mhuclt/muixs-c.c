@@ -23,7 +23,7 @@ Email:hj18914255909@outlook.com
 下面是token的所有类型的枚举
 */
 typedef enum TokType toktype;
-typedef int commendID;//命令ID
+
 typedef enum {
     Obj_NULL,            //空对象
     Obj_TABLE,           //表对象
@@ -255,14 +255,19 @@ Token* getoken(inputstr* instr)//返回的token记得释放
 str* lexer(str* Mhuixsentence,stmtObj last_obj,uint8_t* info)
 {
     /*
-    词法分析器
-    将用户输入的字符串转换为多个stmt，之后再进行语法分析。
+    解析函数
+    1.先将用户输入的字符串转换为多个stmt
+    2.之后再进行语法分析，解析为字节码
+
     Mhuixsentence:待处理的字符串：C语言字符串
     last_obj:首个语句的操作对象类型
     info:对象信息
 
-    返回值：str*:处理后的字符串：C语言字符串
+    返回值：str*:处理后的字节码
     NULL：出错了
+
+    单个语句的字节码格式:[$~~$:语句确认符(4)][语句总长度(4)][参数1偏移量(4)][参数1类型(4)][参数2偏移量(4)][参数2类型(4)][...]
+    多个语句:[stm1][stm2][...]
     */
 
     //########################################################
@@ -438,11 +443,17 @@ str* lexer(str* Mhuixsentence,stmtObj last_obj,uint8_t* info)
             return NULL;
         }        
     }    
-    
 
     //########################################################
     //命令转化模块：将每个stmt转换为Mhuixs命令
     //########################################################
+
+    for(int i=0;i<stmts.num;i++){
+        stmt* stmt = &stmts.stmt[i];
+
+        //将stmt转换为Mhuixs命令
+
+    }
 
     
 
@@ -689,40 +700,7 @@ str* lexer(str* Mhuixsentence,stmtObj last_obj,uint8_t* info)
 #define stmtype_BITMAP_COUNT 56
 #define stmtype_BITMAP_COUNT_RANGE 57
 
-commendID is_valid_statement(stmt curstmt,stmtObj* lastobj,stmtObj* curobj) {
-    /*
-    is_valid_statement
-    函数功能：检查当前语句是否符合语法规则,返回当前语句的操作对象类型
-    用法：
-    is_valid_statement(对象语句,传入指针,传出指针);
 
-    返回值：
-    err：语法错误 正整数：语法正确
-    */
-    if(curstmt.num >  MAX_TOKENS_PER_STATEMENT){
-        return err;
-    }
-    int tokenseq = 1;
-for(;;)//循环问询每一个token
-{
-    switch (curstmt.tokens[0].type) 
-    {
-        case TOKEN_WHERE:
-            if(tokenseq == 1){
-                if(curstmt.num != 1){
-                    return err;
-                }
-                *curobj = *lastobj;//操作对象保持不变
-                //WHERE;#返回当前操作对象的信息，返回一个json格式的字符串
-                return WHERE_E;
-            }
-            //
-            
-            break;
-    }
-}
-    return 1;
-}
 /*
 【HOOK】【TABLE,KVALOT,LIST,BITMAP,STREAM】
 【DEL,TYPE,RANK,CLEAR,DESC,GET,TEMP,APPEND,LEN,LPUSH,RPUSH,LPOP,RPOP,EXISTS,COUNT】

@@ -160,5 +160,5 @@ uint32_t* initfunctable(){
     functable[6004] = run_bitmap_count;
     functable[6005] = run_bitmap_count_range;
 
-    return functable;    
+    return functable;
 }
