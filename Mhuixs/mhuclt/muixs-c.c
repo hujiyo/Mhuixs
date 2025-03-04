@@ -788,7 +788,7 @@ typedef struct {
 } KeywordMap;
 
 // 初始化关键字映射数组
-const KeywordMap keywordMap[] = {
+const KeywordMap keyword_map[] = {
     {"i1", TOKEN_i1},
     {"i2", TOKEN_i2},
     {"i4", TOKEN_i4},
@@ -849,13 +849,13 @@ const KeywordMap keywordMap[] = {
 };
 
 // 计算关键字映射数组的长度
-const size_t keywordMapSize = sizeof(keywordMap) / sizeof(keywordMap[0]);
+const size_t keyword_map_size = sizeof(keyword_map) / sizeof(keyword_map[0]);
 
 int callitkeyword(uint8_t* str, int len, toktype *type) {
-    for (size_t i = 0; i < keywordMapSize; i++) {
-        const char *keyword = keywordMap[i].keyword;
+    for (size_t i = 0; i < keyword_map_size; i++) {
+        const char *keyword = keyword_map[i].keyword;
         if (strlen(keyword) == len && !strncmp((const char *)str, keyword, len)) {
-            *type = keywordMap[i].type;
+            *type = keyword_map[i].type;
             return 0;
         }
     }
