@@ -12,8 +12,10 @@
 [GET TYPE objname;] #标准 GET_TYPE 语句，获取指定HOOK操作对象的类型
 [TEMP GET id;]#标准 TEMP_GET 语句,创建临时数组,将这个临时数组取名为id,id<0 - 65535>
 [TEMP DEL id;]#标准 TEMP_DEL 语句,删除临时数组
-[TEMP WHERE id1 ==/-- id2 id3;] #标准 TEMP_WHERE 语句,取 id1 和 id2 的交集/并集放入临时数组 id3 中
-[WHERE field_index/list_index >/</==/>=/!=/~= value/pattern id;] #标准 WHERE_CONDITION_TEMP 语句 查询指定字段的行数据,放入临时数组 id 中,然后再除去重复项,相当于取并集
+[TEMP WHERE id1 ></<> id2 id3;] #标准 TEMP_WHERE 语句,取 id1 和 id2 的交集/并集放入临时数组 id3 中
+// 交集符号:>< 并集符号:<>
+[WHERE field_index/list_index >/</==/>=/<=/!=/~= value/pattern id;] #标准 WHERE_CONDITION_TEMP 语句 查询指定字段的行数据,放入临时数组 id 中,然后再除去重复项,相当于取并集
+// 其中~= 为pattern模糊匹配,使用双引号引出,pattern为正则表达式
 [GET TEMP id;]#标准 GET_TEMP 语句,获取临时数组id对应的索引对应的数据,自动根据数据类型判断函数序列#表：对应行 #列表：对应元素
 [BACK;]# 标准 BACK 语句,返回前一个操作对象
 */
@@ -207,6 +209,8 @@ typedef enum {
     TOKEN_EEROR,         // token错误,一般遇到这个token,则视为用户 语句错误
 
     TOKEN_UNKNOWN,         // 未判断
+
+    TOKEN_SYMBOL,         // 符号
 } TokType,toktype;
 
 //令牌结构体
@@ -290,6 +294,7 @@ tok* getoken(inputstr* instr)//返回的token记得释放
     int is_char = 0;//函数全局变量：是否是单字节字符:'
     int is_word = 0;//函数全局变量：是否是名字:字母、下划线
     int is_number = 0;//函数全局变量：是否是数字:数字
+    int is_symbol = 0;//函数全局变量：是否是符号:>(>,>=,><) <(<,<=,<>) =(==) ~(~=) !(!=)
 
     /*
     typedef struct inputstr{
@@ -325,9 +330,14 @@ tok* getoken(inputstr* instr)//返回的token记得释放
                 break;
             }
         }
+        // 添加对符号的识别
+        else if(*instr->pos == '>' || *instr->pos == '<' || *instr->pos == '=' || *instr->pos == '~' || *instr->pos == '!') {
+            is_symbol = 1;//>(>,>=,><) <(<,<=,<>) =(==) ~(~=) !(!=)
+            break;
+        }
     }
 
-    if(is_number+is_word+is_char + is_string == 0){
+    if(is_number+is_word+is_char + is_string + is_symbol == 0){
         //说明没有找到token的起始字符(连结束符都没有找到)
         free(token);
         return NULL;//返回NULL表示instr已经分割完毕了  
@@ -441,7 +451,54 @@ tok* getoken(inputstr* instr)//返回的token记得释放
         instr->pos = ed_pos;
         return token;
     }
+    else if(is_symbol){//符号处理
+        //>(>,>=,><) <(<,<=,<>) =(==) ~(~=) !(!=)
+        //先确定后面还有没有字符
+        if(ed_pos >= instr->string+instr->len||(*ed_pos != '=' && *ed_pos != '<' && *ed_pos!= '>')){
+            //说明是单字节的符号
+            if(*instr->pos == '~' || *instr->pos== '!' || *instr->pos== '='){
+                //错误
+                token->type = TOKEN_EEROR;
+                return token;
+            }
+            swrite(&token->content,0,instr->pos,1);
+            token->type = TOKEN_SYMBOL;
+            instr->pos++;
+            return token;
+        }
+        //说明后面还有字符
+        if(*instr->pos == '>') {
+            if(*(instr->pos+1) == '=' ||*(instr->pos+1) == '<') {
+                swrite(&token->content,0,instr->pos,2);
+                token->type = TOKEN_SYMBOL;
+                instr->pos+=2;
+                return token;
+            }
+            //错误
+            token->type = TOKEN_EEROR;
+            return token;
+        } 
+        else if(*instr->pos == '<') {
+            if(*(instr->pos+1) == '=' ||*(instr->pos+1) == '>') {
+                swrite(&token->content,0,instr->pos,2);
+                token->type = TOKEN_SYMBOL;
+                instr->pos+=2;
+                return token;
+            }
+            //错误
+            token->type = TOKEN_EEROR;
+            return token;
+        } 
+        else if(*instr->pos == '='||*instr->pos == '~'||*instr->pos == '!') {
+            if(*(instr->pos+1) == '=') {
+                swrite(&token->content,0,instr->pos,2);
+                token->type = TOKEN_SYMBOL;
+                instr->pos+=2;
+                return token;
+            }
+            //错误
+            token->type = TOKEN_EEROR;
+            return token;
+        }else{}
+    }
 }
-
-
-
