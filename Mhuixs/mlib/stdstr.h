@@ -32,7 +32,7 @@ stostr:将C字符串s变成to为str
 返回的STREAM不接管C字符串的所有权
 只是复制了全新的内存
 */
-str splice(str stream0,...);
+str splice(const str stream0,...);
 /*
 将多个字节流对象拼接成一个字节流对象
 splice(stream0,stream1,stream2,...,end);
@@ -70,6 +70,11 @@ int sappend(str* stream, uint8_t *bitestream, uint32_t length);
 如果STRAEAM中没有足够的空间，则自动扩容
 sappend(object,bitestream,length);
 返回写入后的字节流长度
+*/
+void sprint(const str stream0,...);
+/*
+将多个字节流对象输出
+sprint(&stream0,stream1,stream2,...,end);
 */
 
 #endif

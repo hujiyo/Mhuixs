@@ -419,7 +419,8 @@ tok* getoken(inputstr* instr)//返回的token记得释放
     else if(is_word){//名字处理
         for(;ed_pos < instr->string+instr->len;ed_pos++){
             //不断判断ed_pos指向的是否是string的结束字符 ' ' ';' '\n'
-            if(*ed_pos == ' ' || *ed_pos == ';' || *ed_pos == '\n'){
+            if(*ed_pos == ' ' || *ed_pos == ';' || *ed_pos == '\n' || *ed_pos == '>' 
+                || *ed_pos == '<' || *ed_pos == '=' || *ed_pos == '~' || *ed_pos == '!'){
                 //名字结束了
                 swrite(&token->content,0,instr->pos,ed_pos-instr->pos);
                 token->type = TOKEN_UNKNOWN;
@@ -432,7 +433,8 @@ tok* getoken(inputstr* instr)//返回的token记得释放
     }
     else if(is_number){//数字处理
         for(;ed_pos < instr->string+instr->len;ed_pos++){
-            if(*ed_pos == ' ' || *ed_pos == ';' || *ed_pos == '\n'){
+            if(*ed_pos == ' ' || *ed_pos == ';' || *ed_pos == '\n' || *ed_pos == '>'
+                || *ed_pos == '<' || *ed_pos == '=' || *ed_pos == '~' || *ed_pos == '!'){
                 //数字结束了
                 swrite(&token->content,0,instr->pos,ed_pos-instr->pos);
                 token->type = TOKEN_VALUES;
@@ -502,3 +504,29 @@ tok* getoken(inputstr* instr)//返回的token记得释放
         }else{}
     }
 }
+
+
+//测试一下getoken函数
+int main(){
+    inputstr instr;
+    instr.string = "SELECT HOOK<>1234567890 \"hauigiuuia\";";
+    instr.len = strlen(instr.string);
+    instr.pos = instr.string;
+    tok *token = NULL;
+    while((token = getoken(&instr)) != NULL){
+        sprint(token->content,end);
+        free(token->content.string);
+        free(token);
+        token = NULL;
+        printf("#\n");
+    }
+    system("pause");
+}
+
+
+
+
+
+
+
+
