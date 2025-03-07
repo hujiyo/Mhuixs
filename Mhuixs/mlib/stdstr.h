@@ -18,11 +18,11 @@ str 字节流类型
 使用len来记录字节流的长度
 防止出现C语言中字符串泄露的问题
 */
-
 typedef struct str {
     uint8_t *string;//STREAM:字节流的长度
     uint32_t len;//字节流的长度
 } str,STREAM;
+
 
 str* stostr(uint8_t *string, uint32_t len);
 /*
@@ -32,23 +32,31 @@ stostr:将C字符串s变成to为str
 返回的STREAM不接管C字符串的所有权
 只是复制了全新的内存
 */
+
+
 str splice(const str stream0,...);
 /*
 将多个字节流对象拼接成一个字节流对象
 splice(stream0,stream1,stream2,...,end);
 返回一个字节流对象
 */
+
+
 void sfree(str* stream,...);
 /*
 释放一个字节流对象
 sfree(&stream0,&stream1,&stream2,&stream3,...,NULL);
 */
+
+
 int sread(str* stream, uint32_t pos, uint8_t *bitestream, uint32_t length); // 修改: 参数改为指针
 /*
 从字节流中的pos位置读取长度为length的数据，并将数据存储到bitestream中
 sread(object,pos,bitestream,length);
 返回真实的读取长度
 */
+
+
 int swrite(str* stream, uint32_t pos, uint8_t *bitestream, uint32_t length); // 修改: 参数改为指针
 /*
 将bitestream中的数据写入到字节流中的pos位置，长度为length
@@ -56,13 +64,18 @@ int swrite(str* stream, uint32_t pos, uint8_t *bitestream, uint32_t length); // 
 swrite(object,pos,bitestream,length);
 返回真实的写入位置pos
 */
+
+
 int sset(str* stream, uint32_t st, uint32_t ed, uint8_t byte);
 /*
 将字节流中的st到ed位置的数据设置为byte
 sset(object,st,ed,byte);
 返回写入后的字节流长度
 */
+
+
 uint8_t* strtos(str stream); // 新增: 将str转换为C字符串
+
 
 int sappend(str* stream, uint8_t *bitestream, uint32_t length);
 /*
@@ -71,6 +84,8 @@ int sappend(str* stream, uint8_t *bitestream, uint32_t length);
 sappend(object,bitestream,length);
 返回写入后的字节流长度
 */
+
+
 void sprint(const str stream0,...);
 /*
 将多个字节流对象输出
