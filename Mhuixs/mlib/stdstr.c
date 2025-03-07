@@ -116,7 +116,7 @@ int sset(str* stream, uint32_t st, uint32_t ed, uint8_t byte)
     memset(stream->string + st, byte, ed - st + 1);
     return stream->len;
 }
-str splice(str stream0,...)
+str splice(const str stream0,...)
 {
     /*
     将多个字节流对象拼接成一个字节流对象
@@ -158,6 +158,28 @@ int sappend(str* stream, uint8_t *bitestream, uint32_t length)
     stream->len += length;
     memcpy(stream->string + stream->len - length, bitestream, length);
     return stream->len;
+}
+void sprint(const str stream0,...){
+    /*
+    将多个字节流对象拼接成一个字节流对象,并输出到控制台
+    sprint(&stream0,stream1,stream2,stream3,...,end);
+    */
+    va_list args;//定义一个va_list类型的变量args
+    va_start(args,stream0);//初始化args,准备开始获取可变参数
+    for(int i = 0;i < stream0.len;i++){
+        printf("%c",stream0.string[i]); 
+    }
+    for(;;){
+        str temp = va_arg(args,str);//获取可变参数
+        if(temp.string == NULL && temp.len == 0){
+            break;
+        }
+        for(int i = 0;i < temp.len;i++){
+            printf("%c",temp.string[i]);
+        }
+    }
+    va_end(args);//arg置为NULL
+    return;
 }
 /*
 int main()
