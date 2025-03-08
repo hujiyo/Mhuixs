@@ -453,7 +453,7 @@ const keyword keyword_map[] = {
     {"><", TOKEN_JJ}
 };
 
-static distinguish_token_type(tok* token){
+static int distinguish_token_type(tok* token){
     /*
     根据token的content判断token的类型
     getoken函数只会进行基本的token类型判断,返回的token部分有类型判断：
@@ -463,7 +463,7 @@ static distinguish_token_type(tok* token){
     4.TOKEN_VALUES:表示值-->不做处理,返回0 
     5.TOKEN_SYMBOL:表示符号-->判断符号类型
     */
-    if(token == NULL || token->type == TOKEN_EEROR){
+    if(token == NULL || token->type == TOKEN_EEROR){//函数返回值其实无所谓
         return err;
     }
     if(token->type == TOKEN_END){
@@ -509,7 +509,23 @@ static distinguish_token_type(tok* token){
     }
 }
 
+static tok* get_token(inputstr* instr){
+    /*
+    功能:从pos位置开始，截取下一个token并返回，并做token类型判断
+    请保证instr合法,pos必须在string的合法范围内
 
+    返回值:
+    成功:返回token指针
+    失败/字符串结束:返回TOKEN_EEROR
+    instr结束:返回NULL
+    */
+    tok *token = getoken(instr);
+    if(token == NULL){//说明instr已经分割完毕了或者instr无法分割（即不合法）
+        return NULL;
+    }
+    distinguish_token_type(token);
+    return token;
+}
 
 
 
@@ -657,20 +673,55 @@ int main(){
 #define stmtype_LIST_SET 50
 #define stmtype_LIST_EXISTS 51
 /*
-[SET offset value;] #标准 BITMAP_SET 语句，设置位图中指定偏移量处的位值，value为0或1
-[SET offset1 offset2 value;] #标准 BITMAP_SET_RANGE 语句，设置位图中指定偏移量范围内的位值，value为0或1
-[GET offset;] #标准 BITMAP_GET 语句，获取位图中指定偏移量处的位值
-[GET offset1 offset2;]#标准 BITMAP_GET_RANGE 语句，获取位图中指定偏移量范围内的位值
-[COUNT;] #标准 BITMAP_COUNT 语句，统计位图中值为1的位数
-[COUNT offset1 offset2;] #标准 BITMAP_COUNT_RANGE 语句，统计位图中指定偏移量范围内值为1的位数        
+[SET index value;] #标准 BITMAP_SET 语句，设置位图中指定偏移量处的位值，value为0或1
+[SET index1 index2 value;] #标准 BITMAP_SET_RANGE 语句，设置位图中指定偏移量范围内的位值，value为0或1
+[GET index;] #标准 BITMAP_GET 语句，获取位图中指定偏移量处的位值
+[GET index1 index2;]#标准 BITMAP_GET_RANGE 语句，获取位图中指定偏移量范围内的位值
+[COUNT index1 index2;] #标准 BITMAP_COUNT_RANGE 语句，统计位图中指定偏移量范围内值为1的位数        
 */
 #define stmtype_BITMAP_SET 52
 #define stmtype_BITMAP_SET_RANGE 53
 #define stmtype_BITMAP_GET 54
 #define stmtype_BITMAP_GET_RANGE 55
-#define stmtype_BITMAP_COUNT 56
-#define stmtype_BITMAP_COUNT_RANGE 57
+#define stmtype_BITMAP_COUNT_RANGE 56
+
+typedef struct stmts{
+    str* stmt;//stmt[0]表示第一个语句,stmt[1]表示第二个语句...
+    uint32_t num;
+}stmts;
+
+stmts lexer(char* string,int len){
+    /*
+    单个语句的字节码格式:[$~~$:语句确认符(4)][语句总长度(4)][参数1长度(4)][参数1类型(4)][参数2长度(4)][参数2类型(4)][...]
+    多个语句:[stm1][stm2][...]
+    */
+    
+    //先把string转化为inputstr
+    inputstr instr;
+    instr.string = string;
+    instr.len = len;
+    instr.pos = string;
+    
+    tok *token = NULL;
+
+    //创建一个stmts结构体
+    stmts stmts = {0,NULL};
+    
+    //开始解析
+    while((token = get_token(&instr))!= NULL){
+        switch(token->type){
+            case TOKEN_EEROR:{
+                //语法错误
+                sfree(&token->content,NULL);//释放token->content
+                free(token);
+                return stmts;
+            }
+        }
 
 
+        sfree(&token->content,NULL);//释放token->content
+        free(token);
+    }
+}
 
 
