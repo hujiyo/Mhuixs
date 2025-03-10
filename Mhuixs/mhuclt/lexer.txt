@@ -736,43 +736,18 @@ str lexer(char* string,int len){
         // 语句类型
         uint32_t stm_type = 0;
         
-        // 预定义语法规则表
-        static const struct SyntaxRule {
-            uint32_t stm_type;
-            toktype pattern[4];
-            int priority;
-        } syntax_rules[] = {
-            {stmtype_GET_RANK,  {TOKEN_GET, TOKEN_RANK},  2, 1},
-            {stmtype_GET_TYPE,  {TOKEN_GET, TOKEN_TYPE},  2, 1},
-            {stmtype_GET_TEMP, {TOKEN_GET, TOKEN_TEMP}, 2, 1},
-        };
-
-        // 循环匹配语法规则
-        int max_priority = -1;
-        for (size_t r = 0; r < sizeof(syntax_rules)/sizeof(syntax_rules[0]); r++) {
-            const struct SyntaxRule *rule = &syntax_rules[r];
-            bool match = true;
-            
-            // 检查token模式匹配
-            for (int p = 0; p < rule->pattern_length; p++) {
-                if (i + p >= token_num || token[i + p].type != rule->pattern[p]) {
-                    match = false;
-                    break;
-                }
-            }
-            
-            // 优先选择最长匹配和更高优先级
-            if (match && rule->priority > max_priority) {
-                stm_type = rule->stm_type;
-                max_priority = rule->priority;
-                i += rule->pattern_length;
-            }
-        }
-
-        if (max_priority == -1) {
-            // 没有匹配规则时保持原有逻辑
-            switch(token[i].type) {
-                case TOKEN_GET:
+        // 根据第一个token判断语句类型
+        switch(token[i].type) {
+            case TOKEN_GET:
+                if(i+1 < token_num && token[i+1].type == TOKEN_RANK) {
+                    stm_type = stmtype_GET_RANK;
+                    i += 2;
+                } else if(i+1 < token_num && token[i+1].type == TOKEN_TYPE) {
+                    stm_type = stmtype_GET_TYPE;
+                    i += 2;
+                } else if(i+1 < token_num && token[i+1].type == TOKEN_TEMP) {
+                    stm_type = stmtype_GET_TEMP;
+                    i += 2;
                 } else if(i+1 < token_num && token[i+1].type == TOKEN_LEN) {
                     stm_type = stmtype_GET_LEN;
                     i += 2;
@@ -782,19 +757,33 @@ str lexer(char* string,int len){
                 }
                 break;
                 
-        // 补充其他语法规则到规则表
-        {
-            {stmtype_WHERE, {TOKEN_WHERE}, 1, 1},
-            {stmtype_DESC, {TOKEN_DESC}, 1, 1},
-            {stmtype_HOOK_DEL_OBJ, {TOKEN_HOOK, TOKEN_DEL}, 2, 2},
-            {stmtype_HOOK_CLEAR, {TOKEN_HOOK, TOKEN_CLEAR}, 2, 2},
-            {stmtype_HOOK, {TOKEN_HOOK}, 1, 1},
-            {stmtype_RANK_OBJ, {TOKEN_RANK}, 1, 1},
-        };
-
-        // 保留默认处理逻辑
-        if (max_priority == -1) {
-            switch(token[i].type) {
+            case TOKEN_WHERE:
+                stm_type = stmtype_WHERE;
+                i++;
+                break;
+                
+            case TOKEN_DESC:
+                stm_type = stmtype_DESC;
+                i++;
+                break;
+                
+            case TOKEN_HOOK:
+                if(i+1 < token_num && token[i+1].type == TOKEN_DEL) {
+                    stm_type = stmtype_HOOK_DEL_OBJ;
+                    i += 2;
+                } else if(i+1 < token_num && token[i+1].type == TOKEN_CLEAR) {
+                    stm_type = stmtype_HOOK_CLEAR;
+                    i += 2;
+                } else {
+                    stm_type = stmtype_HOOK;
+                    i++;
+                }
+                break;
+                
+            case TOKEN_RANK:
+                stm_type = stmtype_RANK_OBJ;
+                i++;
+                break;
                 
             case TOKEN_TEMP:
                 if(i+1 < token_num && token[i+1].type == TOKEN_GET) {
