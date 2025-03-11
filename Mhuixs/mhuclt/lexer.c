@@ -46,6 +46,7 @@ typedef enum {
     TOKEN_TYPE,       // 类型
     TOKEN_EXISTS,       // 存在
     TOKEN_TEMP,       // 临时
+    TOKEN_BACK,
 
     TOKEN_i1,
     TOKEN_i2,
@@ -78,6 +79,7 @@ typedef enum {
     TOKEN_NAME,       // 名字
 
     TOKEN_VALUES,       // 数据值
+    TOKEN_NUM,         // 连接
 
     TOKEN_END,          // 结束符：语句结束符，即';'
 
@@ -330,7 +332,7 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
                 || *ed_pos == '<' || *ed_pos == '=' || *ed_pos == '~' || *ed_pos == '!'){
                 //数字结束了
                 swrite(&token->content,0,instr->pos,ed_pos-instr->pos);
-                token->type = TOKEN_VALUES;
+                token->type = TOKEN_NUM;
                 instr->pos = ed_pos;
                 return token;
             }
@@ -342,7 +344,7 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
         }
         //最后一个token是数字
         swrite(&token->content,0,instr->pos,ed_pos-instr->pos);
-        token->type = TOKEN_VALUES;
+        token->type = TOKEN_NUM;
         instr->pos = ed_pos;
         return token;
     }
@@ -415,6 +417,7 @@ const keyword keyword_map[] = {
     {"ADD", TOKEN_ADD}, {"add", TOKEN_ADD},
     {"LEN", TOKEN_LEN}, {"len", TOKEN_LEN},
     {"POS", TOKEN_POS}, {"pos", TOKEN_POS},
+    {"BACK", TOKEN_BACK}, {"back", TOKEN_BACK},
     {"TYPE", TOKEN_TYPE}, {"type", TOKEN_TYPE},
     {"HOOK", TOKEN_HOOK}, {"hook", TOKEN_HOOK},
     {"LIST", TOKEN_LIST}, {"List", TOKEN_LIST},
@@ -470,7 +473,7 @@ static int distinguish_token_type(tok* token){
         sfree(&token->content,NULL);//释放token->content
         return 0;
     }
-    if(token->type == TOKEN_VALUES){
+    if(token->type == TOKEN_VALUES || token->type == TOKEN_NUM){
         return 0;
     }
     if(token->type == TOKEN_SYMBOL){
@@ -526,35 +529,6 @@ static tok* get_token(inputstr* instr){
     distinguish_token_type(token);
     return token;
 }
-
-
-
-
-
-
-
-
-
-
-
-/*
-//测试一下getoken函数
-int main(){
-    inputstr instr;
-    instr.string = "SELECT HOOK<>1234567890 \"hauigiuuia\";";
-    instr.len = strlen(instr.string);
-    instr.pos = instr.string;
-    tok *token = NULL;
-    while((token = getoken(&instr)) != NULL){
-        sprint(token->content,end);
-        sfree(&token->content);//释放token->content
-        free(token);
-        token = NULL;
-        printf("#\n");
-    }
-    system("pause");
-}
-*/
 
 /*
 [GET;] #标准 GET_OBJ 语句,获取当前操作对象的所有数据
@@ -622,7 +596,7 @@ int main(){
 #define stmtype_LINE_SET 25
 #define stmtype_LINE_DEL 26
 #define stmtype_LINE_SWAP 27
-#define stmtype_LINE_GET 28
+#define stmtype_GET 28
 #define stmtype_POS_GET 29
 /*
 [EXISTS key1 key2 ...;] #标准 KEY_EXISTS 语句,判断存在几个键
@@ -661,6 +635,7 @@ int main(){
 [SET index value;]#标准 LIST_SET 语句，更新列表中指定索引位置的值
 [EXISTS value1 value2 ...;]#标准 LIST_EXISTS 语句，判断列表是否存在指定值
 */
+/*
 #define stmtype_LIST_LPUSH 42
 #define stmtype_LIST_RPUSH 43
 #define stmtype_LIST_LPOP 44
@@ -671,6 +646,7 @@ int main(){
 #define stmtype_LIST_INSERT 49
 #define stmtype_LIST_SET 50
 #define stmtype_LIST_EXISTS 51
+*/
 /*
 [SET index value;] #标准 BITMAP_SET 语句，设置位图中指定偏移量处的位值，value为0或1
 [SET index1 index2 value;] #标准 BITMAP_SET_RANGE 语句，设置位图中指定偏移量范围内的位值，value为0或1
@@ -678,11 +654,391 @@ int main(){
 [GET index1 index2;]#标准 BITMAP_GET_RANGE 语句，获取位图中指定偏移量范围内的位值
 [COUNT index1 index2;] #标准 BITMAP_COUNT_RANGE 语句，统计位图中指定偏移量范围内值为1的位数        
 */
+/*
 #define stmtype_BITMAP_SET 52
 #define stmtype_BITMAP_SET_RANGE 53
 #define stmtype_BITMAP_GET 54
 #define stmtype_BITMAP_GET_RANGE 55
 #define stmtype_BITMAP_COUNT_RANGE 56
+*/
+
+int distinguish_stmt_type(tok* token,const int len,int* where){
+    /*
+    功能:根据第一个token到最后一个token判断语句类型,where:返回首参数位置,如果没有参数,则返回-1
+    返回值:
+    成功:返回语句类型
+    失败:返回-1
+    */
+    if(token == NULL || where == NULL ||len < 1){
+        return -1;
+    }
+    int result = -1;
+
+    int flag=0;
+
+
+    switch(token[0].type){
+        /*
+        
+        */
+        case TOKEN_GET:{
+            /*
+            多义语句：
+            [GET POS x1 y1 x2 y2 ...;]#标准 POS_GET 语句,获取指定坐标的数据
+            [GET line1_index line2_index ...;]#标准 LINE的GET 语句,获取指定行号的多行数据
+            [GET pos len;]#标准 STREAM的GET 语句，获取流中指定长度的数据
+            */
+            if(token[1].type == TOKEN_POS ){
+                //[GET POS x1 y1 x2 y2...;]#标准 POS_GET 语句,获取指定坐标的数据
+                //检查参数是否合法
+                for(int i = 2;i < len;i++){
+                    if(token[i].type != TOKEN_NUM){
+                        flag = 1;
+                    }
+                }
+                if(len%2 == 0 && len >= 4 && flag == 0){
+                    result = stmtype_POS_GET;
+                    *where = 2;//首参数位置为2
+                }                
+                goto back;
+            }
+            else if(token[1].type == TOKEN_NUM){
+                //[GET line1_index line2_index...;]#标准 LINE的GET 语句,获取指定行号的多行数据
+                //[GET pos len;]#标准 STREAM的GET 语句，获取流中指定长度的数据
+                //检查参数是否合法
+                for(int i = 1;i < len;i++){
+                    if(token[i].type!= TOKEN_NUM){
+                        flag = 1;
+                    }
+                }
+                if(flag == 0){
+                    result = stmtype_GET;
+                    *where = 1;//首参数位置为1
+                }                
+                goto back;
+            }            
+            switch(len){
+                case 1:
+                    //[GET;] #标准 GET_OBJ 语句,获取当前操作对象的所有数据
+                    result = stmtype_GET_OBJ;
+                    *where = -1;//没有参数
+                    goto back;
+                case 2:
+                    //[GET LEN;] #标准 GET_LEN 语句，获取流/列表的长度
+                    if(token[1].type == TOKEN_LEN){
+                        result = stmtype_GET_LEN;
+                        *where = -1;//没有参数
+                    }
+                    goto back;
+                case 3:
+                    //[GET RANK objname;] #标准 GET_RANK 语句，获取指定HOOK操作对象的权限等级
+                    //[GET TYPE objname;] #标准 GET_TYPE 语句，获取指定HOOK操作对象的类型
+                    //[GET TEMP id;]#标准 GET_TEMP 语句,获取临时数组id对应的索引对应的数据,自动根据数据类型判断函数序列#表：对应行 #列表：对应元素
+                    switch(token[1].type){
+                        case TOKEN_RANK:
+                            if(token[2].type == TOKEN_NAME){
+                                result = stmtype_GET_RANK;
+                                *where = 2;//首参数位置为2
+                            }
+                            goto back;
+                        case TOKEN_TYPE:
+                            if(token[2].type == TOKEN_NAME){
+                                result = stmtype_GET_TYPE;
+                                *where = 2;//首参数位置为2
+                            }
+                            goto back;
+                        case TOKEN_TEMP:
+                            if(token[2].type == TOKEN_VALUES){
+                                result = stmtype_GET_TEMP;
+                                *where = 2;
+                            }                            
+                            goto back;
+                        default:
+                            goto back;
+                    }
+                default:
+                    goto back;
+            }
+        }  
+        case TOKEN_WHERE:{
+            switch(len){
+                case 1:
+                    //[WHERE;] #标准 WHERE 语句，返回当前操作对象的基本信息，返回一个json格式的字符串
+                    result = stmtype_WHERE;
+                    *where = -1;//没有参数
+                    goto back;
+                case 4:
+                    //[WHERE field_index/list_index >/</==/>=/<=/!=/~= value/pattern id;] #标准 WHERE_CONDITION_TEMP 语句 查询指定字段的行数据,放入临时数组 id 中,然后再除去重复项,相当于取并集
+                    // 其中~= 为pattern模糊匹配,使用双引号引出,pattern为正则表达式
+                    if(token[1].type == TOKEN_NUM && 
+                        (token[2].type == TOKEN_DY ||
+                        token[2].type == TOKEN_XY ||
+                        token[2].type == TOKEN_DYDY ||
+                        token[2].type == TOKEN_XYDY ||
+                        token[2].type == TOKEN_DDY ||
+                        token[2].type == TOKEN_BDY ||
+                        token[2].type == TOKEN_YDY ||
+                        token[2].type == TOKEN_JJ ||
+                        token[2].type == TOKEN_BJ) &&
+                        token[3].type == TOKEN_VALUES &&
+                         token[4].type == TOKEN_NUM){
+                        result = stmtype_WHERE_CONDITION_TEMP;
+                        *where = 1;//首参数位置为1
+                    }
+                    goto back;
+                default:
+                    goto back;
+            }
+        }
+        case TOKEN_DESC:{
+            //[DESC;]#标准 DESC 语句，返回当前操作对象的视图信息
+            if(len == 1){
+                result = stmtype_DESC;
+                *where = -1;//没有参数
+            }
+            goto back;
+        }
+        case TOKEN_HOOK:{
+            /*
+            多义语句：
+            [HOOK objtype objname1 objname2 ...;] #标准 HOOK_MAKE 语句，使用钩子创建一个操作对象
+            [HOOK DEL objname1 objname2 ...;] #标准 HOOK_DEL_OGJ 语句，删除指定的HOOK操作对象,回归HOOK根，此时无数据操作对象
+            [HOOK CLEAR objname1 objname2 ...;]#标准 HOOK_CLEAR 语句，清空当前操作对象的所有数据,但保留操作对象及其信息
+            */
+            if(token[1].type == TOKEN_TABLE||
+                token[1].type == TOKEN_KVALOT||
+                token[1].type == TOKEN_BITMAP||
+                token[1].type == TOKEN_STREAM||
+                token[1].type == TOKEN_LIST){
+                //[HOOK objtype objname1 objname2...;] #标准 HOOK_MAKE 语句，使用钩子创建一个操作对象
+                //检查参数是否合法
+                for(int i = 2;i < len;i++){
+                    if(token[i].type!= TOKEN_NAME){
+                        flag = 1;
+                    }
+                }
+                if(flag == 0){
+                    result = stmtype_HOOK_MAKE;
+                    *where = 2;//首参数位置为2
+                }
+                goto back;                
+            }
+            else if(token[1].type == TOKEN_DEL || token[1].type == TOKEN_CLEAR){
+                //[HOOK DEL objname1 objname2...;] #标准 HOOK_DEL_OGJ 语句，删除指定的HOOK操作对象,回归HOOK根，此时无数据操作对象
+                //[HOOK CLEAR objname1 objname2...;]#标准 HOOK_CLEAR 语句，清空当前操作对象的所有数据,但保留操作对象及其信息
+                //检查参数是否合法
+                for(int i = 2;i < len;i++){
+                    if(token[i].type!= TOKEN_NAME){
+                        flag = 1;
+                    }
+                }
+                if(flag == 0){
+                    if(token[1].type == TOKEN_DEL){
+                        result = stmtype_HOOK_DEL_OBJ;
+                    }
+                    else if(token[1].type == TOKEN_CLEAR){
+                        result = stmtype_HOOK_CLEAR;
+                    }
+                    *where = 2;//首参数位置为2
+                }
+                goto back;
+            }
+            switch(len){
+                case 1:
+                    //[HOOK;] #标准 HOOK 语句，回归HOOK根，此时无数据操作对象
+                    result = stmtype_HOOK;
+                    *where = -1;//没有参数
+                    goto back;
+                case 2:
+                    //[HOOK objname;] #标准 HOOK_CHECKOUT 语句，手动切换到一个已经存在的操作对象
+                    if(token[1].type == TOKEN_NAME){
+                        result = stmtype_HOOK_CHECKOUT;
+                        *where = 2;//首参数位置为2
+                    }
+                    goto back;
+                default:
+                    goto back;                    
+            }
+        }
+        case TOKEN_RANK:{
+            //[RANK objname rank;]#标准 RANK_OBJ 语句，设置指定HOOK操作对象的权限等级为rank
+            if(len == 3 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_NUM){
+                result = stmtype_RANK_OBJ;
+                *where = 2;//首参数位置为2
+            }
+            goto back;
+        }
+        case TOKEN_TEMP:{
+            /*
+            [TEMP GET id;]#标准 TEMP_GET 语句,创建临时数组,将这个临时数组取名为id,id是0 - 65535之间的整数
+            [TEMP DEL id;]#标准 TEMP_DEL 语句,删除临时数组
+            [TEMP WHERE id1 ></<> id2 id3;] #标准 TEMP_WHERE 语句,取 id1 和 id2 的交集/并集放入临时数组 id3 中
+            // 交集符号:>< 并集符号:<>
+            */
+            if((token[1].type == TOKEN_GET || token[1].type == TOKEN_DEL) && token[2].type == TOKEN_NUM){
+                if(token[1].type == TOKEN_GET){
+                    result = stmtype_TEMP_GET;
+                }
+                else if(token[1].type == TOKEN_DEL){
+                    result = stmtype_TEMP_DEL;
+                }
+                *where = 2;//首参数位置为2 
+            }
+            else if(token[1].type == TOKEN_WHERE && token[2].type == TOKEN_NUM &&
+                 (token[3].type == TOKEN_JJ ||token[3].type == TOKEN_BJ)
+                    && token[4].type == TOKEN_NUM && token[5].type == TOKEN_NUM){
+                result = stmtype_TEMP_WHERE;
+                *where = 2;//首参数位置为2
+            }
+            goto back;
+        }
+        case TOKEN_BACK:{
+            //[BACK;]# 标准 BACK 语句,返回前一个操作对象
+            if(len == 1){
+                result = stmtype_BACK;
+                *where = -1;//没有参数
+            }
+            goto back;
+        }
+        case TOKEN_EXISTS:{
+            //[EXISTS objname1 objname2...;] #标准 EXISTS 语句,判断存在几个HOOK或者键对象
+            for(int i = 1;i < len;i++){
+                if(token[i].type!= TOKEN_NAME || token[i].type != TOKEN_VALUES){
+                    flag = 1;
+                }
+            }
+            if(len >= 2 && flag == 0){
+                result = stmtype_KEY_EXISTS;
+                *where = 2;//首参数位置为2
+            }
+            goto back;
+        }
+        case TOKEN_SELECT:{
+            //[SELECT pattern;] #标准 SELECT 语句，查找所有符合给定模式的键,注意查询的是键，不是值
+            if(len == 2 && token[1].type == TOKEN_VALUES){
+                result = stmtype_KEY_SELECT;
+                *where = 2;//首参数位置为2
+            }
+            goto back;
+        }
+        case TOKEN_KEY:{
+            /*
+            [KEY type objname1 objname2 objname3 ... ;] #标准 KEY_MAKE 语句，不赋值，type为KVALOT,STREAM,TABLE,LIST,BITMAP
+            [KEY DEL objname1 objname2 ...;] #标准 KEY_DEL 语句,删除指定键
+            [KEY key;]# 标准 KEY_CHECKOUT 语句,进入键对象操作
+            */
+            if(token[1].type == TOKEN_TABLE||
+                token[1].type == TOKEN_KVALOT||
+                token[1].type == TOKEN_BITMAP||
+                token[1].type == TOKEN_STREAM||
+                token[1].type == TOKEN_LIST){
+                //[KEY type objname1 objname2 objname3... ;] #标准 KEY_MAKE 语句，不赋值，type为KVALOT,STREAM,TABLE,LIST,BITMAP
+                //检查参数是否合法
+                for(int i = 2;i < len;i++){
+                    if(token[i].type!= TOKEN_NAME){
+                        flag = 1;
+                    }
+                }
+                if(flag == 0){
+                    result = stmtype_KEY_MAKE;
+                    *where = 2;//首参数位置为2
+                }
+                goto back;
+            }
+            else if(token[1].type == TOKEN_DEL){
+                //[KEY DEL objname1 objname2...;] #标准 KEY_DEL 语句,删除指定键
+                //检查参数是否合法
+                for(int i = 2;i < len;i++){
+                    if(token[i].type!= TOKEN_NAME){
+                        flag = 1;
+                    }
+                }
+                if(flag == 0){
+                    result = stmtype_KEY_DEL;
+                    *where = 2;//首参数位置为2
+                }
+                goto back;
+            }
+            else if(token[1].type == TOKEN_CHECKOUT){
+                //[KEY key;]# 标准 KEY_CHECKOUT 语句,进入键对象操作
+                if(len == 2 && token[1].type == TOKEN_NAME){
+                    result = stmtype_KEY_CHECKOUT;
+                    *where = 2;//首参数位置为2
+                }
+                goto back;
+            }
+            goto back;            
+        }
+        /*
+        [KEY type objname1 objname2 objname3 ... ;] #标准 KEY_MAKE 语句，不赋值，type为KVALOT,STREAM,TABLE,LIST,BITMAP
+        [KEY DEL objname1 objname2 ...;] #标准 KEY_DEL 语句,删除指定键
+        [KEY key;]# 标准 KEY_CHECKOUT 语句,进入键对象操作
+
+        [FIELD ADD field1_name datatype restraint field2_name datatype restraint...;]#标准 FIELD_ADD 语句
+        [FIELD INSERT field_index field_name datatype restraint;]#标准 FIELD_INSERT 语句只支持单次插入一个字段
+        [FIELD SWAP field1_index field2_index field3_index ...;]#标准 FIELD_SWAP 语句,1先后分别与2,3,...交换  
+        [FIELD DEL field1_index field2_index ...;]#标准 FIELD_DEL 语句,删除指定字段
+        [FIELD RENAME field_index field_name;]#标准 FIELD_RENAME 语句,重命名字段,只支持一次操作一个字段
+        [FIELD SET field_index ATTRIBUTE attribute;]#标准 FIELD_SET 语句,设置字段约束性属性   
+
+        [ADD value1 value2...;]#标准 LINE_ADD 语句
+
+        [INSERT line_index value1 value2 ...]#标准 LINE_INSERT 语句
+
+        [SET line1_index field1_index value1 line2_index field2_index value2 ...;]#标准 LINE_SET 语句
+        [SET index value;]#标准 STREAM_SET 语句，从index处设置流中指定位置的值
+        [SET pos len char;]#标准 STREAM_SET_CHAR 语句，从pos处设置流中指定位置的值,并将其长度设置为len
+
+        [DEL line1_index line2_index...;]#标准 LINE_DEL 语句
+
+        [SWAP line1_index line2_index ...;]#标准 LINE_SWAP 语句
+
+        [APPEND value;]#标准 STREAM_APPEND 语句，将数据追加向流中附加数据
+        [APPEND pos value;]#标准 STREAM_APPEND_POS 将value追加到流中，从指定位置开始。若pos超出流的长度，则从流的末尾开始追加。
+        */
+        
+        case TOKEN_NUM:
+            if(i == 0){
+                result = stmtype_BACK;
+                break;
+            }
+            else{
+                result = -1;
+                break;
+            }
+        default:
+            result = -1;
+            break;
+    }
+
+    back:
+    return result;
+}
+
+
+
+
+
+
+
+/*
+//测试一下getoken函数
+int main(){
+    inputstr instr;
+    instr.string = "SELECT HOOK<>1234567890 \"hauigiuuia\";";
+    instr.len = strlen(instr.string);
+    instr.pos = instr.string;
+    tok *token = NULL;
+    while((token = getoken(&instr)) != NULL){
+        sprint(token->content,end);
+        sfree(&token->content);//释放token->content
+        free(token);
+        token = NULL;
+        printf("#\n");
+    }
+    system("pause");
+}
+*/
 
 
 str lexer(char* string,int len){
@@ -706,6 +1062,7 @@ str lexer(char* string,int len){
     while((cc_token = get_token(&instr))!= NULL){
         tok* new_token = realloc(token,(token_num+1)*sizeof(tok));//拓展内存
         if(cc_token->type == TOKEN_EEROR || new_token == NULL ){
+            l:
             //说明语法错误或内存分配失败,先释放内存
             for(uint32_t i = 0;i<token_num;i++){
                 sfree(&token[i].content,NULL);//释放每一个token的content
@@ -719,237 +1076,96 @@ str lexer(char* string,int len){
         token[token_num] = *cc_token;
         token_num++;
     }
+    //如果结尾不是TOKEN_END,就说明语法错误
+    if(token[token_num-1].type != TOKEN_END) goto l;
 
     // 第二步：识别语句类型并生成字节码
     str stream = end; // 初始化输出流
-    
-    // 遍历token数组，识别语句
-    for(uint32_t i = 0; i < token_num; ) {
-        // 语句确认符
-        uint8_t stm_marker[4] = {'$','~','~','$'};
-        sappend(&stream, stm_marker, 4);
-        
-        // 语句总长度（先占位，后面更新）
-        uint32_t stm_len_pos = stream.len;
-        sappend(&stream, (uint8_t*)&(uint32_t){0}, 4);
-        
-        // 语句类型
-        uint32_t stm_type = 0;
-        
-        // 预定义语法规则表
-        static const struct SyntaxRule {
-            uint32_t stm_type;
-            toktype pattern[4];
-            int priority;
-        } syntax_rules[] = {
-            {stmtype_GET_RANK,  {TOKEN_GET, TOKEN_RANK},  2, 1},
-            {stmtype_GET_TYPE,  {TOKEN_GET, TOKEN_TYPE},  2, 1},
-            {stmtype_GET_TEMP, {TOKEN_GET, TOKEN_TEMP}, 2, 1},
-        };
-
-        // 循环匹配语法规则
-        int max_priority = -1;
-        for (size_t r = 0; r < sizeof(syntax_rules)/sizeof(syntax_rules[0]); r++) {
-            const struct SyntaxRule *rule = &syntax_rules[r];
-            bool match = true;
-            
-            // 检查token模式匹配
-            for (int p = 0; p < rule->pattern_length; p++) {
-                if (i + p >= token_num || token[i + p].type != rule->pattern[p]) {
-                    match = false;
-                    break;
-                }
-            }
-            
-            // 优先选择最长匹配和更高优先级
-            if (match && rule->priority > max_priority) {
-                stm_type = rule->stm_type;
-                max_priority = rule->priority;
-                i += rule->pattern_length;
-            }
+    for(int i=0;i<token_num;){
+        int st=i,ed=i;
+        while(token[i].type !=TOKEN_END){
+            ed++;
+        }
+        //截取到一个语句
+        int stmt_len=ed-st+1;
+        int where=-1;//初始化参数位置
+        int stmt_type=distinguish_stmt_type(&token[st],ed-st+1,&where);
+        if(stmt_type == -1){
+            //说明语法错误
+            sfree(&stream,NULL);
+            goto l;
         }
 
-        if (max_priority == -1) {
-            // 没有匹配规则时保持原有逻辑
-            switch(token[i].type) {
-                case TOKEN_GET:
-                } else if(i+1 < token_num && token[i+1].type == TOKEN_LEN) {
-                    stm_type = stmtype_GET_LEN;
-                    i += 2;
-                } else {
-                    stm_type = stmtype_GET_OBJ;
-                    i++;
-                }
-                break;
-                
-        // 补充其他语法规则到规则表
-        {
-            {stmtype_WHERE, {TOKEN_WHERE}, 1, 1},
-            {stmtype_DESC, {TOKEN_DESC}, 1, 1},
-            {stmtype_HOOK_DEL_OBJ, {TOKEN_HOOK, TOKEN_DEL}, 2, 2},
-            {stmtype_HOOK_CLEAR, {TOKEN_HOOK, TOKEN_CLEAR}, 2, 2},
-            {stmtype_HOOK, {TOKEN_HOOK}, 1, 1},
-            {stmtype_RANK_OBJ, {TOKEN_RANK}, 1, 1},
-        };
+        //....
 
-        // 保留默认处理逻辑
-        if (max_priority == -1) {
-            switch(token[i].type) {
-                
-            case TOKEN_TEMP:
-                if(i+1 < token_num && token[i+1].type == TOKEN_GET) {
-                    stm_type = stmtype_TEMP_GET;
-                    i += 2;
-                } else if(i+1 < token_num && token[i+1].type == TOKEN_DEL) {
-                    stm_type = stmtype_TEMP_DEL;
-                    i += 2;
-                } else if(i+1 < token_num && token[i+1].type == TOKEN_WHERE) {
-                    stm_type = stmtype_TEMP_WHERE;
-                    i += 2;
-                }
-                break;
-                
-            case TOKEN_FIELD:
-                if(i+1 < token_num && token[i+1].type == TOKEN_ADD) {
-                    stm_type = stmtype_FIELD_ADD;
-                    i += 2;
-                } else if(i+1 < token_num && token[i+1].type == TOKEN_INSERT) {
-                    stm_type = stmtype_FIELD_INSERT;
-                    i += 2;
-                } else if(i+1 < token_num && token[i+1].type == TOKEN_SWAP) {
-                    stm_type = stmtype_FIELD_SWAP;
-                    i += 2;
-                } else if(i+1 < token_num && token[i+1].type == TOKEN_DEL) {
-                    stm_type = stmtype_FIELD_DEL;
-                    i += 2;
-                } else if(i+1 < token_num && token[i+1].type == TOKEN_RENAME) {
-                    stm_type = stmtype_FIELD_RENAME;
-                    i += 2;
-                } else if(i+1 < token_num && token[i+1].type == TOKEN_SET) {
-                    stm_type = stmtype_FIELD_SET;
-                    i += 2;
-                }
-                break;
-                
-            case TOKEN_ADD:
-                stm_type = stmtype_LINE_ADD;
-                i++;
-                break;
-                
-            case TOKEN_INSERT:
-                stm_type = stmtype_LINE_INSERT;
-                i++;
-                break;
-                
-            case TOKEN_SET:
-                stm_type = stmtype_LINE_SET;
-                i++;
-                break;
-                
-            case TOKEN_DEL:
-                stm_type = stmtype_LINE_DEL;
-                i++;
-                break;
-                
-            case TOKEN_SWAP:
-                stm_type = stmtype_LINE_SWAP;
-                i++;
-                break;
-                
-            case TOKEN_EXISTS:
-                stm_type = stmtype_KEY_EXISTS;
-                i++;
-                break;
-                
-            case TOKEN_SELECT:
-                stm_type = stmtype_KEY_SELECT;
-                i++;
-                break;
-                
-            case TOKEN_KEY:
-                stm_type = stmtype_KEY_CHECKOUT;
-                i++;
-                break;
-                
-            case TOKEN_APPEND:
-                if(i+1 < token_num && token[i+1].type == TOKEN_POS) {
-                    stm_type = stmtype_STREAM_APPEND_POS;
-                    i += 2;
-                } else {
-                    stm_type = stmtype_STREAM_APPEND;
-                    i++;
-                }
-                break;
-                
-            case TOKEN_LPUSH:
-                stm_type = stmtype_LIST_LPUSH;
-                i++;
-                break;
-                
-            case TOKEN_RPUSH:
-                stm_type = stmtype_LIST_RPUSH;
-                i++;
-                break;
-                
-            case TOKEN_LPOP:
-                stm_type = stmtype_LIST_LPOP;
-                i++;
-                break;
-                
-            case TOKEN_RPOP:
-                stm_type = stmtype_LIST_RPOP;
-                i++;
-                break;
-                
-            case TOKEN_COUNT:
-                stm_type = stmtype_BITMAP_COUNT_RANGE;
-                i++;
-                break;
-                
-            default:
-                // 未知语句类型
-                for(uint32_t j = 0; j < token_num; j++) {
-                    sfree(&token[j].content, NULL);
-                }
-                free(token);
-                return end;
-        }
-        
-        // 写入语句类型
-        sappend(&stream, (uint8_t*)&stm_type, 4);
-        
-        // 处理参数
-        while(i < token_num && token[i].type != TOKEN_END) {
-            // 参数长度
-            uint32_t param_len = token[i].content.len;
-            sappend(&stream, (uint8_t*)&param_len, 4);
-            
-            // 参数类型
-            uint32_t param_type = token[i].type;
-            sappend(&stream, (uint8_t*)&param_type, 4);
-            
-            // 参数内容
-            sappend(&stream, (uint8_t*)token[i].content.string, param_len);
-            
-            i++;
-        }
-        
-        // 更新语句总长度
-        uint32_t stm_len = stream.len - stm_len_pos - 4;
-        memcpy(stream.string + stm_len_pos, &stm_len, 4);
-        
-        // 跳过语句结束符
-        if(i < token_num && token[i].type == TOKEN_END) {
-            i++;
-        }
+
+
+        i=ed+2;//跳过TOKEN_END
     }
     
-    // 释放token数组
-    for(uint32_t i = 0; i < token_num; i++) {
-        sfree(&token[i].content, NULL);
-    }
-    free(token);
     
-    return stream;
 
 }
+/*
+[GET;] #标准 GET_OBJ 语句,获取当前操作对象的所有数据
+[GET RANK objname;] #标准 GET_RANK 语句，获取指定HOOK操作对象的权限等级
+[GET TYPE objname;] #标准 GET_TYPE 语句，获取指定HOOK操作对象的类型
+[GET TEMP id;]#标准 GET_TEMP 语句,获取临时数组id对应的索引对应的数据,自动根据数据类型判断函数序列#表：对应行 #列表：对应元素
+[GET LEN;] #标准 GET_LEN 语句，获取流/列表的长度
+[GET line1_index line2_index ...;]#标准 LINE_GET 语句,获取指定行号的多行数据
+[GET POS x1 y1 x2 y2 ...;]#标准 POS_GET 语句,获取指定坐标的数据
+[GET pos len;]#标准 STREAM_GET 语句，获取流中指定长度的数据
+
+[WHERE;] #标准 WHERE 语句，返回当前操作对象的基本信息，返回一个json格式的字符串
+[WHERE field_index/list_index >/</==/>=/<=/!=/~= value/pattern id;] #标准 WHERE_CONDITION_TEMP 语句 查询指定字段的行数据,放入临时数组 id 中,然后再除去重复项,相当于取并集
+// 其中~= 为pattern模糊匹配,使用双引号引出,pattern为正则表达式
+
+[DESC;] #标准 DESC 语句，返回当前操作对象的视图信息
+
+[HOOK;] #标准 HOOK 语句，回归HOOK根，此时无数据操作对象
+[HOOK objtype objname1 objname2 ...;] #标准 HOOK_MAKE 语句，使用钩子创建一个操作对象
+[HOOK objname;] #标准 HOOK_CHECKOUT 语句，手动切换到一个已经存在的操作对象
+[HOOK DEL objname1 objname2 ...;] #标准 HOOK_DEL_OGJ 语句，删除指定的HOOK操作对象,回归HOOK根，此时无数据操作对象
+[HOOK CLEAR objname1 objname2 ...;]#标准 HOOK_CLEAR 语句，清空当前操作对象的所有数据,但保留操作对象及其信息
+
+[RANK objname rank;]#标准 RANK_OBJ 语句，设置指定HOOK操作对象的权限等级为rank
+
+[TEMP GET id;]#标准 TEMP_GET 语句,创建临时数组,将这个临时数组取名为id,id是0 - 65535之间的整数
+[TEMP DEL id;]#标准 TEMP_DEL 语句,删除临时数组
+[TEMP WHERE id1 ></<> id2 id3;] #标准 TEMP_WHERE 语句,取 id1 和 id2 的交集/并集放入临时数组 id3 中
+// 交集符号:>< 并集符号:<>
+
+[BACK;]# 标准 BACK 语句,返回前一个操作对象
+
+[EXISTS objname1 objname2...;] #标准 EXISTS 语句,判断存在几个HOOK或者键对象
+
+[SELECT pattern;] #标准 SELECT 语句，查找所有符合给定模式的键名或HOOK名
+
+[KEY type objname1 objname2 objname3 ... ;] #标准 KEY_MAKE 语句，不赋值，type为KVALOT,STREAM,TABLE,LIST,BITMAP
+[KEY DEL objname1 objname2 ...;] #标准 KEY_DEL 语句,删除指定键
+[KEY key;]# 标准 KEY_CHECKOUT 语句,进入键对象操作
+
+[FIELD ADD field1_name datatype restraint field2_name datatype restraint...;]#标准 FIELD_ADD 语句
+[FIELD INSERT field_index field_name datatype restraint;]#标准 FIELD_INSERT 语句只支持单次插入一个字段
+[FIELD SWAP field1_index field2_index field3_index ...;]#标准 FIELD_SWAP 语句,1先后分别与2,3,...交换  
+[FIELD DEL field1_index field2_index ...;]#标准 FIELD_DEL 语句,删除指定字段
+[FIELD RENAME field_index field_name;]#标准 FIELD_RENAME 语句,重命名字段,只支持一次操作一个字段
+[FIELD SET field_index ATTRIBUTE attribute;]#标准 FIELD_SET 语句,设置字段约束性属性   
+
+[ADD value1 value2...;]#标准 LINE_ADD 语句
+
+[INSERT line_index value1 value2 ...]#标准 LINE_INSERT 语句
+
+[SET line1_index field1_index value1 line2_index field2_index value2 ...;]#标准 LINE_SET 语句
+[SET index value;]#标准 STREAM_SET 语句，从index处设置流中指定位置的值
+[SET pos len char;]#标准 STREAM_SET_CHAR 语句，从pos处设置流中指定位置的值,并将其长度设置为len
+
+[DEL line1_index line2_index...;]#标准 LINE_DEL 语句
+
+[SWAP line1_index line2_index ...;]#标准 LINE_SWAP 语句
+
+[APPEND value;]#标准 STREAM_APPEND 语句，将数据追加向流中附加数据
+[APPEND pos value;]#标准 STREAM_APPEND_POS 将value追加到流中，从指定位置开始。若pos超出流的长度，则从流的末尾开始追加。
+
+
+*/
