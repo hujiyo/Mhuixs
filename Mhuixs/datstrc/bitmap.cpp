@@ -27,7 +27,44 @@ BITMAP 结构
 // source: 源地址起始指针
 // source_first_bit: 源地址起始位（从0开始计数）
 // len: 需要拷贝的位数
-extern"C" void bitcpy(uint8_t* destination, uint8_t dest_first_bit,const uint8_t* source, uint8_t source_first_bit,uint32_t len) {
+extern"C" void bitcpy(uint8_t* destination, uint8_t dest_first_bit, const uint8_t* source, uint8_t source_first_bit, uint32_t len) {
+    if (!len) return;
+    #define MIN(a, b) ((a) < (b) ? (a) : (b))
+    #define MAX(a, b) ((a) > (b) ? (a) : (b))
+
+    // 计算源和目标的起始字节及位偏移
+    uint32_t s_byte = source_first_bit / 8;
+    uint8_t s_bit = source_first_bit % 8;
+    uint32_t d_byte = dest_first_bit / 8;
+    uint8_t d_bit = dest_first_bit % 8;
+
+    // 逐位复制逻辑（优化跨字节处理）
+    while (len > 0) {
+        // 计算当前可复制的最大位数
+        uint8_t bits_to_copy = MIN(8 - MAX(s_bit, d_bit), len);
+        
+        // 从源字节提取指定位
+        uint8_t src_byte = source[s_byte];
+        uint8_t src_bits = (src_byte >> s_bit) & ((1 << bits_to_copy) - 1);
+        
+        // 构造目标掩码并写入
+        uint8_t mask = ((1 << bits_to_copy) - 1) << d_bit;
+        destination[d_byte] = (destination[d_byte] & ~mask) | (src_bits << d_bit);
+        
+        // 更新偏移和剩余长度
+        len -= bits_to_copy;
+        s_bit += bits_to_copy;
+        d_bit += bits_to_copy;
+        
+        // 处理跨字节
+        if (s_bit >= 8) s_bit -= 8,s_byte++;
+        if (d_bit >= 8) d_bit -= 8,d_byte++;
+    }
+    #undef MIN
+    #undef MAX
+}
+/*
+void bitcpy(uint8_t* destination, uint8_t dest_first_bit,const uint8_t* source, uint8_t source_first_bit,uint32_t len) {
     //该代码安全性尚未得到保证
     if (!len) return;
     #define MIN(a, b) ((a) < (b) ? (a) : (b))
@@ -116,7 +153,7 @@ extern"C" void bitcpy(uint8_t* destination, uint8_t dest_first_bit,const uint8_t
     }
     #undef MIN // 结束宏的作用域
 }
-
+*/
 #define bitmap_debug
 
 /*
@@ -273,13 +310,14 @@ class BITMAP  {
             if(offset >= *(uint32_t*)this->bitmap && this->rexpand(offset+1)==merr) state++;
             return BIT(*this,offset);
         }
-        
         int valid();
         int set(uint32_t offset,uint8_t value);
         int set(uint32_t offset, uint32_t len, uint8_t value);
         int set(uint32_t offset,uint32_t len,const char* data_stream,char zero_value);
         uint32_t size();
         uint32_t count(uint32_t st_offset,uint32_t ed_offset);
+        int64_t find(uint8_t value,uint32_t start,uint32_t end);
+        void ptf();
 };
 inline int BITMAP::rexpand(uint32_t size) {
     uint32_t old_bite_num = (*(uint32_t*)this->bitmap + 7)/8 + sizeof(uint32_t);
@@ -392,10 +430,15 @@ inline uint32_t BITMAP::count(uint32_t st_offset,uint32_t ed_offset)//包括star
 }
 
 
-
-void ptf(BITMAP& bitmap){//测试用函数
-    for(uint32_t i=0;i<bitmap.size();i++){
-        printf("%d",(int)bitmap[i]);
+// 打印位图的二进制表示
+void BITMAP::ptf(){//测试用函数
+    if (state != 0) { // 检查对象是否有效
+        printf("BITMAP is in invalid state!\n");
+        return;
+    }
+    uint8_t* first = bitmap + sizeof(uint32_t); // 指向数据区
+    for(uint32_t i=0;i<*(uint32_t*)bitmap;i++){
+        printf("%d", first[i/8] & (1 << (i%8)) ? 1 : 0); 
     }
     printf("\n");
     return;
@@ -408,7 +451,7 @@ int main(){
     bitmap[2] = 1;
     bitmap[3] = 0;
     bitmap[4] = 1;
-    ptf(bitmap);//10101
+    bitmap.ptf();//10101
     BITMAP bitmap1(5);
     //bitmap1[0] = bitmap[0] ;//报错？
     bitmap1[0] = bitmap[0]+bitmap[1];
@@ -418,16 +461,13 @@ int main(){
     BITMAP bitmap2(3);
     bitmap1 += bitmap;//报错
     bitmap2 = bitmap1;
-    ptf(bitmap2);
+    bitmap2.ptf();
 }
 
 
-/*
-int64_t retuoffset(BITMAP* bitmap,uint32_t start,uint32_t end)//包括start和end,返回范围内第一个1的位置
+
+int64_t BITMAP::find(uint8_t value,uint32_t start,uint32_t end)//包括start和end,返回范围内第一个1的位置
 {
-    if(bitmap == NULL){
-        return merr;
-    }
     if(start > end || end >= *(uint32_t*)bitmap || start >= *(uint32_t*)bitmap){
         return merr;
     }
@@ -470,7 +510,7 @@ int64_t retuoffset(BITMAP* bitmap,uint32_t start,uint32_t end)//包括start和en
     }
     return merr; // 如果没有找到，则返回err
 }
-
+/*
 void printBITMAP(BITMAP* bitmap)
 {
     if(bitmap == NULL){
