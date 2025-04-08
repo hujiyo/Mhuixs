@@ -1,7 +1,9 @@
-#include "strmap.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include "memap.hpp"
+#include "stdstr.hpp"
+#include "list.hpp"
 #define err -1
 
 /*
@@ -37,41 +39,21 @@ typedef struct NODE_LST{
 }NODE_LST;
 #pragma pack(4)
 
-class LIST{
-private:
-    STRPOOL strpool;//先声明一个数组内存池
-    OFFSET head;//头节点偏移量
-    OFFSET tail;//尾节点偏移量
-    uint32_t num;//节点数量
-    int state = 0;//对象状态,成员函数通过改变对象状态来表示对象的异常状态。
-public:
-    LIST();
-    LIST(int block_size,int block_num);
-    ~LIST();
-
-    int lpush(uint8_t* stream,uint32_t len);
-    int rpush(uint8_t* stream,uint32_t len);
-    int lpop();
-    int rpop();
-    int iserr();
-
-};
-
-LIST::LIST():head(0),tail(0),num(0),strpool(build_strpool(BLOCK_SIZE, BLOCK_NUM))
+LIST::LIST():head(0),tail(0),num(0),strpool(BLOCK_SIZE, BLOCK_NUM)
 {
     //先为队列分配内存池
-    if(this->strpool == NULL){
+    if(strpool.iserr()){
         #ifdef bitmap_debug
-        printf("build_strpool error\n");
+        printf("MEMAP error\n");
         #endif
         state++;
     }
     return;
 }
-LIST::LIST(int block_size,int block_num):strpool(build_strpool(block_size, block_num)),head(0),tail(0),num(0)
+LIST::LIST(int block_size,int block_num):strpool(block_size, block_num),head(0),tail(0),num(0)
 {
     //先为队列分配内存池
-    if(this->strpool == NULL){
+    if(strpool.iserr()){
         #ifdef bitmap_debug
         printf("build_strpool error\n");
         #endif
@@ -81,117 +63,120 @@ LIST::LIST(int block_size,int block_num):strpool(build_strpool(block_size, block
 }
 LIST::~LIST(){    
     //释放内存池
-    free(this->strpool);
+    strpool.~MEMAP();
 }
 
-int LIST::lpush(uint8_t* stream,uint32_t len)
+int LIST::lpush(str &s)
 {
-    if(stream == NULL || len == 0 ){
-        return err;
+    if(this == NULL ||s.string == NULL || s.len == 0 ){
+        return merr;
     }
     //先生成一个节点
-    OFFSET node_o = STRmalloc(this->strpool,len + sizeof(NODE_LST));
+    OFFSET node_o = strpool.smalloc(s.len + sizeof(NODE_LST));
     if(node_o == 0){
-        return err;
+        return merr;
     }
-    memcpy(this->strpool + node_o + sizeof(NODE_LST),stream,len);
+    memcpy(this->strpool.strpool + node_o + sizeof(NODE_LST),s.string,s.len);
 
-    ((NODE_LST*)(list->strpool + node_o))->length = len;    
-    ((NODE_LST*)(list->strpool + node_o))->pre = 0;//将节点的前一个节点设置为0 
+    ((NODE_LST*)(this->strpool.strpool + node_o))->length = s.len;    
+    ((NODE_LST*)(this->strpool.strpool + node_o))->pre = 0;//将节点的前一个节点设置为0 
 
-    if(list->num == 0){
-        list->tail = node_o;
-        list->head = node_o;
-        ((NODE_LST*)(list->strpool + node_o))->next = 0;
-        list->num++;
+    if(this->num == 0){
+        this->tail = node_o;
+        this->head = node_o;
+        ((NODE_LST*)(this->strpool.strpool + node_o))->next = 0;
+        this->num++;
         return 0;
     }
-    ((NODE_LST*)(list->strpool + node_o))->next = list->head;
-    ((NODE_LST*)(list->strpool + list->head))->pre = node_o;
+    ((NODE_LST*)(this->strpool.strpool + node_o))->next = this->head;
+    ((NODE_LST*)(this->strpool.strpool + this->head))->pre = node_o;
 
-    list->head = node_o;//将头节点设置为新节点
-    list->num++;//最后将队列的长度加1
+    this->head = node_o;//将头节点设置为新节点
+    this->num++;//最后将队列的长度加1
     return 0;
 }
-int add_tail(LIST* list, uint8_t* stream, uint32_t len)
+int LIST::rpush(str &s)
 {
-    if(list == NULL || stream == NULL || len == 0){
-        return err;
+    if(this == NULL || s.string == NULL || s.len == 0){
+        return merr;
     }
     //先生成一个节点
-    OFFSET node_o = STRmalloc(list->strpool,len + sizeof(NODE_LST));
+    OFFSET node_o = strpool.smalloc(s.len + sizeof(NODE_LST));
     if(node_o == 0){
-        return err;
+        return merr;
     }
-    memcpy(list->strpool + node_o + sizeof(NODE_LST),stream,len);
-    ((NODE_LST*)(list->strpool + node_o))->length = len;
-    ((NODE_LST*)(list->strpool + node_o))->next = 0;//将节点的后一个节点设置为0
+    memcpy(this->strpool.strpool + node_o + sizeof(NODE_LST),s.string,s.len);
+    ((NODE_LST*)(this->strpool.strpool + node_o))->length = s.len;
+    ((NODE_LST*)(this->strpool.strpool + node_o))->next = 0;//将节点的后一个节点设置为0
 
-    if(list->num == 0){
-        list->tail = node_o;
-        list->head = node_o;
-        ((NODE_LST*)(list->strpool + node_o))->pre = 0;
-        list->num++;
+    if(this->num == 0){
+        this->tail = node_o;
+        this->head = node_o;
+        ((NODE_LST*)(this->strpool.strpool + node_o))->pre = 0;
+        this->num++;
         return 0;
     }
-    ((NODE_LST*)(list->strpool + node_o))->pre = list->tail;   
-    ((NODE_LST*)(list->strpool + list->tail))->next = node_o;
+    ((NODE_LST*)(this->strpool.strpool + node_o))->pre = this->tail;   
+    ((NODE_LST*)(this->strpool.strpool + this->tail))->next = node_o;
 
-    list->tail = node_o;//将尾节点设置为新节点
-    list->num++;//最后将队列的长度加1
+    this->tail = node_o;//将尾节点设置为新节点
+    this->num++;//最后将队列的长度加1
     return 0;
 }
-int pop_head(LIST* list, uint8_t* stream, uint32_t len)
+int LIST::lpop()
 {
-    if(list == NULL || stream == NULL || len == 0 ){
-        return err;
+    if(this == NULL){
+        return merr;
     }
-    if(list->num == 0){
-        return err;
+    if(this->num == 0){
+        return merr;
     }
     //将头节点的数据复制到stream中
-    uint32_t length = ((NODE_LST*)(list->strpool + list->head))->length;
-    memcpy(stream,list->strpool + list->head + sizeof(NODE_LST),(length>len)?len:length);
+    uint32_t length = ((NODE_LST*)(this->strpool.strpool + this->head))->length;
+    memcpy(this->strpool.strpool + this->head + sizeof(NODE_LST),this->strpool.strpool + this->head + sizeof(NODE_LST),length);
 
     //将头节点的后一个节点的前一个节点设置为0
-    if(list->num > 1){    
-        ((NODE_LST*)(list->strpool + ((NODE_LST*)(list->strpool + list->head))->next))->pre = 0;
-        OFFSET old_node = list->head;
-        list->head = ((NODE_LST*)(list->strpool + list->head))->next;
-        STRfree(list->strpool,old_node,length + sizeof(NODE_LST));
-        list->num--;
+    if(this->num > 1){    
+        ((NODE_LST*)(this->strpool.strpool + ((NODE_LST*)(this->strpool.strpool + this->head))->next))->pre = 0;
+        OFFSET old_node = this->head;
+        this->head = ((NODE_LST*)(this->strpool.strpool + this->head))->next;
+        this->strpool.sfree(old_node,length + sizeof(NODE_LST));
+        this->num--;
         return 0;
     }
-    STRfree(list->strpool,list->head,length + sizeof(NODE_LST));
-    list->head = list->tail = list->num = 0;
+    this->strpool.sfree(this->head,length + sizeof(NODE_LST));
+    this->head = this->tail = this->num = 0;
     return 0;
 }
-int pop_tail(LIST* list, uint8_t* stream, uint32_t len)
+int LIST::rpop()
 {
-    if(list == NULL || stream == NULL || len == 0){
-        return err;
+    if(this == NULL){
+        return merr;
     }
-    if(list->tail == 0){
-        return err;
+    if(this->num == 0){
+        return merr;
     }
     //将尾节点的数据复制到stream中
-    uint32_t length = ((NODE_LST*)(list->strpool + list->tail))->length;
-    memcpy(stream,list->strpool + list->tail + sizeof(NODE_LST),(length>len)?len:length);
+    uint32_t length = ((NODE_LST*)(this->strpool.strpool + this->tail))->length;
+    memcpy(this->strpool.strpool + this->tail + sizeof(NODE_LST),this->strpool.strpool + this->tail + sizeof(NODE_LST),length);
 
     //将尾节点的前一个节点的后一个节点设置为0
-    if(list->num > 1){
-        ((NODE_LST*)(list->strpool + ((NODE_LST*)(list->strpool + list->tail))->pre))->next = 0;
-        OFFSET old_node = list->tail;
-        list->tail = ((NODE_LST*)(list->strpool + list->tail))->pre;
-        STRfree(list->strpool,old_node,length + sizeof(NODE_LST));
-        list->num--;
+    if(this->num > 1){
+        ((NODE_LST*)(this->strpool.strpool + ((NODE_LST*)(this->strpool.strpool + this->tail))->pre))->next = 0;
+        OFFSET old_node = this->tail;
+        this->tail = ((NODE_LST*)(this->strpool.strpool + this->tail))->pre;
+        this->strpool.sfree(old_node,length + sizeof(NODE_LST));
+        this->num--;
         return 0;
     }
-    STRfree(list->strpool,list->tail,length + sizeof(NODE_LST));
-    list->head = list->tail = list->num = 0;
+    this->strpool.sfree(this->tail,length + sizeof(NODE_LST));
+    this->head = this->tail = this->num = 0;
 
     return 0;
 }
-uint32_t retLISTnum(LIST* list){
-    return list->num;
+int LIST::iserr(){
+    if(this == NULL ||this->state != 0){
+        return merr; 
+    }
+    return 0;
 }
