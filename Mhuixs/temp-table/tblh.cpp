@@ -1,35 +1,18 @@
-﻿/*
-#版权所有 (c) Mhuixs-team 2024
-#许可证协议:
-#任何人或组织在未经版权所有者同意的情况下禁止使用、修改、分发此作品
-start from 2024.11
-Email:hj18914255909@outlook.com
-*/
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#define err -1
-
+#define merr -1
 #define TENTATIVE 0
-
 #define _max_(a,b) ((a)>(b)?(a):(b))
-/*
-使用宏时要小心，尤其是当宏参数是++、--时。
-例如，max(a++, b++)可能会导致未定义行为，
-因为两个自增操作都会被执行，而且顺序未定义。
-unsigned int max(unsigned int a,unsigned int b){
-	return (a>b)?a:b;
-}
-*/
 
 #define long_record      400  //定义了多大才算是一个长记录
 #define short_record_s_vacancy_rate 1.5  //短记录的留余空间占比
 #define long_record_s_vacancy_rate 1.2	//长记录的留余空间占比
-#define initial_ROM 200		//初始记录的总空间ROM
+#define begin_ROM 200		//初始记录的总空间ROM
 #define add_ROM 100			//每次扩展记录空间
 #define record_add_ROM 300		//每次扩展每条记录的空间
-#define name_max_size 50		//字段名 占用字节数
+#define format_name_length 50		//字段名 占用字节数
 
 #define separater ','		//定义字段分隔符
 
@@ -38,41 +21,105 @@ unsigned int max(unsigned int a,unsigned int b){
 #define short_string 50
 #define long_string 300
 //数据类型位 占用1字节
-#define i1	'a'		// -128~127
-#define i2	'b'		// -32768~32767
-#define i4	'c'		// -2147483648~2147483647
-#define i8	'd'		// -9223372036854775808~9223372036854775807
-#define ui1	'e'		// 0~255
-#define ui2	'f'		// 0~65535
-#define ui4	'g'		// 0~4294967295
-#define ui8	'h'		// 0~18446744073709551615
-#define f4	'i'		
-#define f8	'j'	
-#define s50 'k'		
-#define s300 'l'
-#define d211		'm'		//* 年* 月* 日 4byte 2 + 1 + 1
-#define t111		'n'		// * 时 * 分 * 秒 3byte 1 + 1 + 1
-#define dt211111	'p'		// * 年 * 月 * 日 * 时 * 分 * 秒 7byte 2 + 1 + 1 + 1 + 1 + 1
+#define I1	'a'		// -128~127
+#define I2	'b'		// -32768~32767
+#define I4	'c'		// -2147483648~2147483647
+#define I8	'd'		// -9223372036854775808~9223372036854775807
+#define UI1	'e'		// 0~255
+#define UI2	'f'		// 0~65535
+#define UI4	'g'		// 0~4294967295
+#define UI8	'h'		// 0~18446744073709551615
+#define F4	'i'		
+#define F8	'j'	
+#define STR 'k'		
+#define DATE		'l'		//* 年* 月* 日 4byte 2 + 1 + 1
+#define TIME		'm'		// * 时 * 分 * 秒 3byte 1 + 1 + 1
 
+struct str{
+    uint8_t *string;//STREAM:字节流的长度
+    uint32_t len;//字节流的长度
+    int state;//状态码
+    str(char* s):len(strlen(s)),state(0),string((uint8_t*)malloc(strlen(s))){
+		if(string == NULL){
+			#ifdef bitmap_debug
+			printf("str init malloc error\n");
+			#endif
+			len = 0;
+			state++;
+		}
+		memcpy(string, s, len);
+		return;
+	}
+	str(uint8_t *s, uint32_t len):len(len),state(0),string((uint8_t*)malloc(len)){
+		if(string == NULL){
+			#ifdef bitmap_debug
+			printf("str init malloc error\n");
+			#endif
+			len = 0;
+			state++;
+			return;
+		}
+		memcpy(string, s, len);
+		return;
+	}
+    str(str& s):len(s.len),state(s.state),string((uint8_t*)malloc(s.len)){
+		if(string == NULL){
+			#ifdef bitmap_debug
+			printf("str init malloc error\n");
+			#endif
+			len = 0;
+			state++;
+			return;
+		}
+		memcpy(string, s.string, s.len);
+		return;
+	}
+	~str(){
+		free(string);
+	}
+};
+struct Date {
+    int date;// 存储格式：YYYYMMDD
 
-typedef struct tp_d211 { 
-	uint16_t year;
-	uint8_t month;
-	uint8_t day; 
-} tp_d211, DATE;
-typedef struct tp_t111 { 
-	uint8_t hour;
-	uint8_t minute;
-	uint8_t second;
-} tp_t111, TIME;
-typedef struct tp_dt211111 { 
-	uint16_t year;
-	uint8_t month;
-	uint8_t day;
-	uint8_t hour;
-	uint8_t minute;
-	uint8_t second;
-}tp_dt211111, DAYTIME;
+    static bool is_valid(int y, int m, int d) {// 辅助函数：检查是否为合法日期
+        if (y < 1 || y > 9999 || m < 1 || m > 12 || d < 1) return false;
+        int days_in_month[] = {0,31,28,31,30,31,30,31,31,30,31,30,31};
+        if (m == 2 && (y%4 == 0 && y%100 != 0) || (y%400 == 0)) days_in_month[2] = 29;
+        return d <= days_in_month[m];
+    }
+
+    Date(int y=1970, int m=1, int d=1) { set(y, m, d); }
+    int year()  const { return date / 10000; }
+    int month() const { return (date / 100) % 100; }
+    int day()   const { return date % 100; }
+    void set(int y, int m, int d) {
+        if (is_valid(y, m, d))date = y*10000 + m*100 + d;
+        else date = 19700101;  // 非法日期设为默认值
+    }
+};
+struct Time {
+    int time;  //存储格式：HHMMSS
+    // 辅助函数：检查时间合法性
+    static bool is_valid(int h, int m, int s) {
+        return (h >= 0 && h < 24) && 
+               (m >= 0 && m < 60) && 
+               (s >= 0 && s < 60);
+    }
+    
+    // 构造函数（默认00:00:00）
+    Time(int h=0, int m=0, int s=0) { set(h, m, s); }
+    // 基本访问函数
+    int hour()   const { return time / 10000; }
+    int minute() const { return (time / 100) % 100; }
+    int second() const { return time % 100; }
+    // 设置时间（非法时间设为00:00:00）
+    void set(int h, int m, int s) {
+        if (is_valid(h, m, s))
+            time = h * 10000 + m * 100 + s;
+        else
+            time = 0;  // 非法时间重置为00:00:00
+    }
+};
 
 typedef struct LINE_INDEX {
 	uint32_t sequence;//LINE_INDEX[j].sequence中j表示(虚)顺序，sequence表示(实)顺序
@@ -86,7 +133,7 @@ typedef struct IDLE_MAP {
 
 typedef struct FIELD {
 	char type;
-	char name[name_max_size];//字段名 注意\0结尾
+	char name[format_name_length];//字段名 注意\0结尾
 }FIELD;
 
 class TABLE {
@@ -123,8 +170,8 @@ public:
 
 	int8_t getfrom_i_j(uint32_t i, uint32_t j, void* buffer);
 	uint8_t reset_table_name(char* table_name);
-	void printf_table(uint32_t start_line);
-	void printf_record(uint32_t line_j,uint32_t start_line);
+	void print_table(uint32_t start_line);
+	void print_record(uint32_t line_j,uint32_t start_line);
 	//下面三个有bug，但是我找不到哪里有问题
 	void save_table(char* file_path);
 	int8_t load_table(char* file_path);
@@ -135,75 +182,41 @@ private:
 	uint8_t* address_of_i_j(TABLE *table,uint32_t i,uint32_t j);
 };
 
-typedef struct TBL_HEAD{	
-	uint32_t field_num;	
-	uint32_t map_size;
-	uint32_t record_length;
-	uint32_t record_usage;
-	uint32_t record_num;	
-	uint32_t data_ROM;
-	uint32_t offset_of_table_name;
-	uint32_t offset_of_field;
-	uint32_t offset_of_offsetofield;
-	uint32_t offset_of_idle_map;
-	uint32_t offset_of_line_index;
-	uint32_t offset_of_data;
-}TBL_HEAD;
-
-static void gotoxy(uint32_t x, uint32_t y)
-{
-	//原点为（0，0）
-	printf("\033[%d;%dH", ++y, ++x);
+static void cpstr(uint8_t* start, uint8_t* end, uint8_t* target){
+	for (int i = 1; i < (end - start); *target = *(start + i), target++, i++);//复制start和end "中间" 的信息到target中
+}
+static void gotoxy(uint32_t x, uint32_t y){
+	printf("\033[%d;%dH", ++y, ++x);//原点为（0，0）
 }
 static int sizeoftype(char type) { //返回某类型在p_data池中的占用的字节数	
 	switch (type){
-		case i1:return 1;
-		case i2:return 2;
-		case i4:return 4;
-		case i8:return 8;
-		case ui1:return 1;
-		case ui2:return 2;
-		case ui4:return 4;
-		case ui8:return 8;
-		case f4:return 4;
-		case f8:return 8;
-		case s50:return 50;
-		case s300:return 300;
-		case d211:return 4;
-		case t111:return 3;
-		case dt211111:return 7;
-		default: return err;
+		case I1:case UI1:return 1;
+		case I2:case UI2:return 2;
+		case I4:case UI4:case F4:case STR:case DATE:case TIME:return 4;
+		case I8:case UI8:case F8:return 8;
+		default: return merr;
 	}
 }
 static int ptfsizeoftype(char type){//根据数据类型返回打印时占用的字节数
 	switch (type){
-		case i1:return 4 + 1;//-128占用4个位数，加一表示至少1个空格
-		case i2:return 6 + 1;//-32768占用6个位数
-		case i4:return 11 + 1;//-2147483648占用11个位数
-		case i8:return 20 + 1;//-9223372036854775808占用20个位数
-		case ui1:return 3 + 1;//255占用3个位数
-		case ui2:return 5 + 1;//65535占用5个位数
-		case ui4:return 10 + 1;//4294967295占用10个位数
-		case ui8:return 20 + 1;//18446744073709551615占用20个位数
-		case f4:return 7 + 1;//总位数不超过7位
-		case f8:return 15 + 1;//总位数不超过15位
-		case s50:return 10 + 1;//打印前10个字符
-		case s300:return 30 + 1;//打印前30个字符
-		case d211:return 10 + 1;//2024.10.10
-		case t111:return 8 + 1;//11:11:11
-		case dt211111:return 19 + 1;//2024.10.10.11:11:11
+		case I1:return 4 + 1;//-128占用4个位数，加一表示至少1个空格
+		case I2:return 6 + 1;//-32768占用6个位数
+		case I4:return 11 + 1;//-2147483648占用11个位数
+		case I8:return 20 + 1;//-9223372036854775808占用20个位数
+		case UI1:return 3 + 1;//255占用3个位数
+		case UI2:return 5 + 1;//65535占用5个位数
+		case UI4:return 10 + 1;//4294967295占用10个位数
+		case UI8:return 20 + 1;//18446744073709551615占用20个位数
+		case F4:return 7 + 1;//总位数不超过7位
+		case F8:return 15 + 1;//总位数不超过15位
+		case STR:return 10 + 1;//打印前10个字符
+		case DATE:return 10 + 1;//2024.10.10
+		case TIME:return 8 + 1;//11:11:11
+		default: return merr;
 	}
-	return err;
 }
-static void cpstr(uint8_t* start, uint8_t* end, uint8_t* target)
-{
-	/*
-	复制start和end "中间" 的信息到target中
-	*/
-	for (int i = 1; i < (end - start); *target = *(start + i), target++, i++);
-}
-void TABLE::flash_line_index(TABLE* table)
-{
+
+void TABLE::flash_line_index(TABLE* table){
 	/*
 	当p_data或record_length改变
 	调用此函数以更新line_index的快速指针
@@ -220,72 +233,7 @@ void TABLE::flash_line_index(TABLE* table)
 
 	line_index[0].rcd_addr = new_p_data;//第一行的地址
 }
-static void put_tobyte(void* void_inf, uint8_t* pbyte, uint8_t size)
-{
-	/*
-	把字节数为size的void_inf存放在pbyte指向的size个字节中
-	*/
-	if (size == 1) { //void_inf必须本身是对齐的(原生C变量)，这样不会字节未对齐
-		*pbyte = *(uint8_t*)void_inf;
-	}
-	else if (size == 2) {
-		uint16_t inf = *(uint16_t*)void_inf;//把void_inf解释为指向无符号变量的地址，规避了算数位移而使用逻辑位移
-		*(pbyte + 0) = inf;
-		*(pbyte + 1) = inf >> 8;
-	}
-	else if (size == 4) {
-		uint32_t inf = *(uint32_t*)void_inf;
-		*(pbyte + 0) = inf;	
-		*(pbyte + 1) = inf >> 8;
-		*(pbyte + 2) = inf >> 16; 
-		*(pbyte + 3) = inf >> 24;
-	}
-	else if (size == 8) {
-		uint64_t inf = *(uint64_t*)void_inf;
-		*(pbyte + 0) = inf;	
-		*(pbyte + 1) = inf >> 8;
-		*(pbyte + 2) = inf >> 16; 
-		*(pbyte + 3) = inf >> 24;
-		*(pbyte + 4) = inf >> 32; 
-		*(pbyte + 5) = inf >> 40;
-		*(pbyte + 6) = inf >> 48; 
-		*(pbyte + 7) = inf >> 56;
-	}
-}
-static void get_frombyte(void* void_inf, const uint8_t* pbyte, uint8_t size)
-{
-	/*
-	读取i1,i2,i4,i8,ui1,ui2,ui4,ui8,f4,f8类型数据
-	*/
-	if (size == 1) {//注释请对照put_tobyte
-		*(uint8_t*)void_inf = *pbyte;
-	}
-	else if (size == 2) {//tblh核心函数,无需考虑错误处理
-		uint16_t inf = (*pbyte) |
-		 (*(pbyte + 1) << 8);
-		*(uint16_t*)void_inf = inf;
-	}
-	else if (size == 4) {
-		uint32_t inf = (*pbyte) |
-		(*(pbyte + 1) << 8) |
-		(*(pbyte + 2) << 16) |
-		(*(pbyte + 3) << 24);
-		*(uint32_t*)void_inf = inf;
-	}
-	else if (size == 8) {
-		uint64_t inf = ((int64_t)*pbyte) | 
-		(((int64_t) * (pbyte + 1)) << 8) | 
-		(((int64_t) * (pbyte + 2)) << 16) | 
-		(((int64_t) * (pbyte + 3)) << 24) |
-		(((int64_t) * (pbyte + 4)) << 32) | 
-		(((int64_t) * (pbyte + 5)) << 40) | 
-		(((int64_t) * (pbyte + 6)) << 48) | 
-		(((int64_t) * (pbyte + 7)) << 56);
-		*(uint64_t*)void_inf = inf;
-	}
-}
-static uint8_t store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type)
-{
+static uint8_t store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type){
 	/*
 	tblh_add_record函数的底层储存函数
 	把字符串类型p_inputdata按照type类型进行自动储存
@@ -294,137 +242,72 @@ static uint8_t store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type)
 	put_tobyte存储C语言标准数据类型
 	storage_field_data存储SQlh标准数据类型
 	*/
-	uint32_t i = 0;
-	switch (type)
-	{
-		case i1:
-			*p_storaddr = (int8_t)atoi((const char*)p_inputstr);//这里可以考虑使用更快速的函数atoi
+	switch (type){
+		case I1:
+			*p_storaddr = atoi((const char*)p_inputstr);//这里可以考虑使用更快速的函数atoi
 			return 0;
-		case i2: {//标签后不能直接声明变量，用大括号括起来
-			int16_t i = (int16_t)atoi((const char*)p_inputstr);//在后期调试时，这里可以尝试改成atoi
-			put_tobyte(&i, p_storaddr, sizeoftype(i2));
+		case I2: {
+			int16_t i = atoi((const char*)p_inputstr);//在后期调试时，这里可以尝试改成atoi
+			memcpy(p_storaddr,&i,sizeoftype(I2));
 			return 0;
 		}
-		case i4: {
-			int32_t i = (int32_t)atoi((const char*)p_inputstr);
-			put_tobyte(&i, p_storaddr, sizeoftype(i4));
+		case I4:case DATE:case TIME: {
+			int32_t i = atoi((const char*)p_inputstr);
+			memcpy(p_storaddr,&i,sizeoftype(type));
 			return 0;
 		}		   
-		case i8: {
-			int64_t i = (int64_t)strtoll((const char*)p_inputstr, NULL, 10);//长字节使用strtoll
-			put_tobyte(&i, p_storaddr, sizeoftype(i8));
+		case I8: {
+			int64_t i = strtoll((const char*)p_inputstr, NULL, 10);//长字节使用strtoll
+			memcpy(p_storaddr,&i,sizeoftype(I8));
 			return 0;
 		}			
-		case ui1:
-			*p_storaddr = (int8_t)atoi((const char*)p_inputstr);
+		case UI1:
+			*p_storaddr = atoi((const char*)p_inputstr);
 			return 0;
-		case ui2: {
-			uint16_t i = (int8_t)atoi((const char*)p_inputstr);
-			put_tobyte(&i, p_storaddr, sizeoftype(ui2));
+		case UI2: {
+			uint16_t i = atoi((const char*)p_inputstr);
+			memcpy(p_storaddr,&i,sizeoftype(UI2));
 			return 0;
 		}				
-		case ui4: {
+		case UI4: {
 			uint32_t i = strtoul((const char*)p_inputstr, NULL, 10);
-			put_tobyte(&i, p_storaddr, sizeoftype(ui4));
+			memcpy(p_storaddr,&i,sizeoftype(UI4));
 			return 0;
 		}				
-		case ui8: {
+		case UI8: {
 			uint64_t i = strtoull((const char*)p_inputstr, NULL, 10);
-			put_tobyte(&i, p_storaddr, sizeoftype(ui8));
+			memcpy(p_storaddr,&i,sizeoftype(UI8));
 			return 0;
 		}				
-		case f4: {
+		case F4: {
 			float i = strtof((const char*)p_inputstr, NULL);
-			put_tobyte(&i, p_storaddr, sizeoftype(f4));
+			memcpy(p_storaddr,&i,sizeoftype(F4));
 			return 0;
 		}			
-		case f8: {
+		case F8: {
 			double i = strtod((const char*)p_inputstr, NULL);
-			put_tobyte(&i, p_storaddr, sizeoftype(f8));
-			return 0;
-		}			
-		case s50:
-			for (int i = 0; i < short_string; i++) {
-				if (*p_inputstr == separater || *p_inputstr == '\0'){
-					return 0;//当遇到separater和'\0'就跳出循环
-				}
-				*p_storaddr = *p_inputstr;
-				p_storaddr++; 
-				p_inputstr++;
-			}
-			return 0;
-		case s300:
-			for (int i = 0; i < long_string; i++) 
-			{
-				if (*p_inputstr == separater || *p_inputstr == '\0'){
-					return 0;
-				}
-				*p_storaddr = *p_inputstr;
-				p_storaddr++; 
-				p_inputstr++;
-			}
-			return 0;
-		case d211:
-			goto YEAR;
-		case t111: 
-			goto HOUR;
-		case dt211111:
-			goto YEAR;
-
-		YEAR://年
-		{
-			i = strtoul((const char*)p_inputstr, NULL, 10);//这里可以用更简单得atoi
-			put_tobyte(&i, p_storaddr, sizeoftype(ui2));
-			p_inputstr = strchr(p_inputstr, '.') + 1;
-			p_storaddr += sizeoftype(ui2);
-			//月
-			*p_storaddr = strtoul((const char*)p_inputstr, NULL, 10);
-			p_storaddr++;
-			p_inputstr = strchr(p_inputstr, '.') + 1;
-			//日
-			*p_storaddr = strtoul((const char*)p_inputstr, NULL, 10);
-			if (type == d211){
-				return 0;
-			}
-			p_storaddr++;
-			p_inputstr = strchr(p_inputstr, '.') + 1;
-		HOUR://时
-			*p_storaddr = strtoul((const char*)p_inputstr, NULL, 10);
-			p_storaddr++;
-			p_inputstr = strchr(p_inputstr, ':') + 1;
-			//分
-			*p_storaddr = strtoul((const char*)p_inputstr, NULL, 10);
-			p_storaddr++;
-			p_inputstr = strchr(p_inputstr, ':') + 1;
-			//秒
-			*p_storaddr = strtoul((const char*)p_inputstr, NULL, 10);
+			memcpy(p_storaddr,&i,sizeoftype(F8));
 			return 0;
 		}
-		/*
-		日期
-		d211		*年*月*日 4byte 2+1+1
-		t111		*时*分*秒 3byte 1+1+1
-		dt211111	*年*月*日*时*分*秒 7byte 2+1+1+1+1+1
-		例子：2024.10.23.17:56:45
-		*/
+		case STR:{
+			str* s = (str*)malloc(sizeof(str));//创建一个str用来存储数据
+			s->len=strlen(p_inputstr);
+			s->string=(uint8_t*)malloc(s->len);
+			memcpy(s->string,p_inputstr,s->len);
+			memcpy(p_storaddr,s,sizeoftype(STR));
+			return 0;
+		}
 	}
 	return 1;
 }
 TABLE::TABLE(char* table_name, FIELD* field, uint32_t field_num):
-p_field(NULL),
-field_num(field_num),
-offsetofield(NULL),
-idle_map(NULL),
-map_size(0),//map_size是真实大小，不是数组中括号中的最大值
-p_data(NULL),
-record_length(TENTATIVE),
-record_usage(TENTATIVE),
-record_num(0),
-line_index(NULL),
-data_ROM(initial_ROM),//TABLE数据区record条数初始容量为200条数
-table_name(NULL),
-state(0)
-{
+p_field(NULL),field_num(field_num),
+offsetofield(NULL),idle_map(NULL),
+map_size(0),/*map_size是真实大小，不是数组中括号中的最大值*/p_data(NULL),
+record_length(TENTATIVE),record_usage(TENTATIVE),
+record_num(0),line_index(NULL),
+data_ROM(begin_ROM),/*/TABLE数据区record条数初始容量为200条数*/table_name(NULL),
+state(0){
 	//初始化table基础信息
 	uint32_t record_usage = 0;
 	for (uint32_t i = 0; i < field_num; record_usage += sizeoftype(field[i].type), i++);
@@ -434,14 +317,18 @@ state(0)
 		(record_usage < long_record) ? short_record_s_vacancy_rate : long_record_s_vacancy_rate
 	);
 
-	//创建p_head区,并创建对应的偏移量索引
+	// 创建p_head区,并创建对应的偏移量索引
 	this->p_field = (FIELD*)calloc(field_num , sizeof(FIELD));//字段区域
-	this->offsetofield = (uint32_t*)malloc(field_num * sizeof(uint32_t*));//字段偏移量索引
+	// 下面这行存在错误：sizeof(uint32_t*)应改为sizeof(uint32_t)
+	// 原始代码：
+	// this->offsetofield = (uint32_t*)malloc(field_num * sizeof(uint32_t*));//字段偏移量索引
+	// 修正后：
+	this->offsetofield = (uint32_t*)malloc(field_num * sizeof(uint32_t));//字段偏移量索引
 	this->idle_map = (IDLE_MAP*)malloc(sizeof(IDLE_MAP));//记录使用区的空位内存地图
-	this->p_data = (uint8_t*)calloc(1,this->record_length * initial_ROM);//创建TABLE数据区
+	this->p_data = (uint8_t*)calloc(1,this->record_length * begin_ROM);//创建TABLE数据区
 	this->line_index = (L_INDEX*)malloc(sizeof(L_INDEX));//先建立一个line_index	
-	this->table_name = (char*)calloc(1,name_max_size);//创建table名区
-	if(!this->p_field||!this->offsetofield||!this->idle_map||!this->p_data||!this->line_index||!this->table_name){
+	this->table_name = (char*)calloc(1,format_name_length);//创建table名区
+	if(!this->p_field+!this->offsetofield+!this->idle_map+!this->p_data+!this->line_index+!this->table_name){
 		free(this->p_field);
 		free(this->offsetofield);
 		free(this->idle_map);
@@ -465,8 +352,7 @@ state(0)
 		i++
 	);
 
-	//写入table_name
-	memcpy(this->table_name, table_name, strlen(table_name)%name_max_size);
+	reset_table_name(table_name);
 	return;
 }
 int64_t TABLE::add_record(const char* record)//add总是在末尾追加
@@ -489,7 +375,7 @@ int64_t TABLE::add_record(const char* record)//add总是在末尾追加
 		//不用担心有空位没有利用，记录条数永远等于实际记录条数
 		this->p_data = (uint8_t*)realloc(this->p_data, this->record_length * (this->data_ROM + add_ROM));
 		if (this->p_data == NULL){
-			return err;
+			return merr;
 		}
 		//更新p_data后要注意要刷新line_index#######!!!!!!!!!!!!!!!!!!!!!!###############################
 		flash_line_index(this);
@@ -507,7 +393,7 @@ int64_t TABLE::add_record(const char* record)//add总是在末尾追加
 	this->line_index = (L_INDEX*)realloc(this->line_index, this->record_num * sizeof(L_INDEX));
 	if (this->line_index == NULL){
 		free(this->p_data);
-		return err;
+		return merr;
 	}
 	this->line_index[this->record_num - 1].sequence = this->record_num - 1;//虚顺序也是表格的最后一个//序号都是从0开始，所以这里-1
 	this->line_index[this->record_num - 1].rcd_addr = new_record_address;//记录记录首地址
@@ -552,7 +438,7 @@ int8_t TABLE::rmv_record(uint32_t j)//删除虚序号及其对应的record
 
 	//判断j记录是否存在
 	if (j >= this->record_num){
-		return err;
+		return merr;
 	}
 	memset(this->line_index[j].rcd_addr, 0, this->record_length);//清空j记录
 
@@ -588,7 +474,7 @@ int8_t TABLE::swap_record(uint32_t j1, uint32_t j2)//函数用于交换两条记
 {
 	//tblh的实现方法是虚序列号对应的索引的交换
 	if (j1 >= this->record_num || j2 >= this->record_num){
-		return err;//验证j1、j2是否存（j1，j2一定是正数）
+		return merr;//验证j1、j2是否存（j1，j2一定是正数）
 	}
 	//交换j1和j2的索引
 	L_INDEX cache = this->line_index[j1];
@@ -613,7 +499,7 @@ int8_t TABLE::rmv_field(uint32_t i)
 {
 	//判断i是否合法
 	if (i >= this->field_num){
-		return err;
+		return merr;
 	}
 	/*
 	由于字段的长度不一，再者对整列数据进行移动填补效率实在太低了
@@ -630,7 +516,7 @@ int8_t TABLE::rmv_field(uint32_t i)
 		//增加this中的idle_map的大小
 		this->idle_map = (IDLE_MAP*)realloc(this->idle_map, ++this->map_size * sizeof(IDLE_MAP));//map_size++;
 		if(this->idle_map == NULL){
-			return err;
+			return merr;
 		}
 		this->idle_map[this->map_size - 1].idle_size = sizeoftype(this->p_field[i].type);//获得删除字段的大小
 		this->idle_map[this->map_size - 1].idle_offset = this->offsetofield[i];//得到空闲位置的偏移量
@@ -678,7 +564,7 @@ uint32_t TABLE::add_field(FIELD* field){
 	this->field_num++;
 	this->p_field = (FIELD*)realloc(this->p_field, this->field_num * sizeof(FIELD));
 	if(this->p_field == NULL){
-		return err;
+		return merr;
 	}
 	this->p_field[this->field_num - 1] = field[0];//加星号，field是一个结构体变量名(field[0]<=>*field)
 	this->offsetofield = (uint32_t*)realloc(this->offsetofield, this->field_num * sizeof(uint32_t));
@@ -712,7 +598,8 @@ uint32_t TABLE::add_field(FIELD* field){
 		if (this->record_length - this->record_usage <= new_field_size) 
 		{
 			//如果剩余空间不够，增加分配p_data的空间
-			uint32_t old_record_length = this->record_length;
+			uint32_t old_record_length = this->record_length;//缓存旧的record_length
+			//计算新的record_length
 			this->record_length += record_add_ROM;
 			//重新分配p_data，注意：修改了p_data,字段索引的偏移量并不会改变，但是line_index的索引需要重新分配
 			this->p_data = (uint8_t*)realloc(this->p_data, this->record_length * this->data_ROM);
@@ -765,7 +652,7 @@ int8_t TABLE::swap_field(uint32_t i1_, uint32_t i2_)
 	tblh的独特设计使得字段交换成为非常简单的操作
 	*/
 	if (i1_ >= this->field_num || i2_ >= this->field_num){
-		return err;//验证11、12是否存
+		return merr;//验证11、12是否存
 	}
 	//交换i1和i2的索引
 	FIELD cache = this->p_field[i1_];
@@ -781,7 +668,7 @@ int8_t TABLE::insert_field(FIELD* field, uint32_t i)
 {
 	uint32_t sep = this->add_field(field);
 	if (i >= sep){
-		return err;//如果非法插入还是默认在最后插入
+		return merr;//如果非法插入还是默认在最后插入
 	}
 	FIELD cache = this->p_field[sep];
 	uint32_t cache_offset = this->offsetofield[sep];
@@ -805,90 +692,18 @@ int8_t TABLE::getfrom_i_j(uint32_t i, uint32_t j, void* buffer)
 	//找到（i,j）的地址
 	uint8_t* inf_addr = this->p_data + j * this->record_length + this->offsetofield[i];
 	//根据type类型进行格式化输出
-	switch (type)
-	{
-		//i1,i2,i4,i8,ui1,ui2,ui4,ui8,f4,f8直接对应C语言中的数据类型
-/*******************************************
-case i1:
-	*(int8_t*)buffer = *(int8_t*)inf_addr; 
-	return 0;
-case i2:
-	get_frombyte(buffer, inf_addr, 2); 
-	return 0;
-case i4:
-	get_frombyte(buffer, inf_addr, 4); 
-	return 0;
-case i8:
-	get_frombyte(buffer, inf_addr, 8); 
-	return 0;
-case ui1:
-	*(uint8_t*)buffer = *(uint8_t*)inf_addr; 
-	return 0;
-case ui2:
-	get_frombyte(buffer, inf_addr, 2); 
-	return 0;
-case ui4:
-	get_frombyte(buffer, inf_addr, 4); 
-	return 0;
-case ui8:
-	get_frombyte(buffer, inf_addr, 8); 
-	return 0;
-case f4:
-	get_frombyte(buffer, inf_addr, 4); 
-	return 0;
-case f8:
-	get_frombyte(buffer, inf_addr, 8); 
-	return 0;
-********************************************/
-		case i1:case i2:case i4:case i8:			
-		case ui1:case ui2:case ui4:case ui8:			
-		case f4:case f8:
-			get_frombyte(buffer, inf_addr, sizeoftype(type)); 
+	switch (type){
+		case I1:case I2:case I4:case I8:			
+		case UI1:case UI2:case UI4:case UI8:			
+		case F4:case F8:case DATE:case TIME:
+			memcpy(buffer, inf_addr, sizeoftype(type)); 
 			return 0;
-		case s50:
-			memcpy(buffer, inf_addr, 50); 
+		case STR:
+			str* p=(str*)inf_addr;
+			memcpy(buffer,p->string,p->len); 
 			return 0;
-		case s300:
-			memcpy(buffer, inf_addr, 300); 
-			return 0;
-		/*********************************************************************************
-		d211		'n'		// * 年* 月* 日 4byte 2 + 1 + 1
-		t111		'p'		// * 时 * 分 * 秒 3byte 1 + 1 + 1
-		dt211111	's'		// * 年 * 月 * 日 * 时 * 分 * 秒 7byte 2 + 1 + 1 + 1 + 1 + 1
-		时间由特别结构体进行读取
-		**********************************************************************************/
-		case d211: {
-			tp_d211 tp;
-			get_frombyte(&tp.year, inf_addr, sizeof(uint16_t));//读取年
-			tp.month = *(inf_addr + 2);
-			tp.day = *(inf_addr + 3);
-			*(tp_d211*)buffer = tp;
-
-			return 0;
-		}
-		case t111: {
-			tp_t111 tp;
-			tp.hour = *(inf_addr + 0);
-			tp.minute = *(inf_addr + 1);
-			tp.second = *(inf_addr + 2);
-			*(tp_t111*)buffer = tp;
-
-			return 0;
-		}
-		case dt211111: {
-			tp_dt211111 tp;
-			get_frombyte(&tp.year, inf_addr, sizeof(uint16_t));
-			tp.month = *(inf_addr + 2);
-			tp.day = *(inf_addr + 3);
-			tp.hour = *(inf_addr + 4);
-			tp.minute = *(inf_addr + 5);
-			tp.second = *(inf_addr + 6);
-			*(tp_dt211111*)buffer = tp;
-
-			return 0;
-		}
 	}
-	return err;
+	return merr;
 }
 uint8_t TABLE::copymemfrom_i_j(TABLE* table, uint32_t i, uint32_t j, void* buffer)
 {
@@ -897,7 +712,6 @@ uint8_t TABLE::copymemfrom_i_j(TABLE* table, uint32_t i, uint32_t j, void* buffe
 	内置函数，和tblh_getfrom_i_j相比，本函数直接在TABLE所管辖的数据内存区域直接复制到buffer中
 	本函数不会根据数据类型自动返回相应的格式化数据
 	*/
-
 	//先获得第i个字段的类型、偏移量的信息
 	char type = table->p_field[i].type;
 	//找到（i,j）的地址
@@ -906,11 +720,10 @@ uint8_t TABLE::copymemfrom_i_j(TABLE* table, uint32_t i, uint32_t j, void* buffe
 
 	return 0;
 }
-uint8_t* TABLE::address_of_i_j(TABLE *table,uint32_t i,uint32_t j)
-{
+uint8_t* TABLE::address_of_i_j(TABLE *table,uint32_t i,uint32_t j){
 	return table->p_data + j * table->record_length + table->offsetofield[i];
 }
-void TABLE::printf_record(uint32_t j, uint32_t y)
+void TABLE::print_record(uint32_t j, uint32_t y)
 {
 	//初始化ptfmap得到打印地图
 	uint32_t* ptfmap = (uint32_t*)malloc(sizeof(uint32_t) * this->field_num);
@@ -923,89 +736,82 @@ void TABLE::printf_record(uint32_t j, uint32_t y)
 			gotoxy(ptfmap[i], y);//定位到打印位置			
 			uint8_t* inf_addr = this->line_index[j].rcd_addr+this->offsetofield[i];//确定数据位置
 			switch (this->p_field[i].type) {
-				case i1:
+				case I1:
 					printf("%d", *(int8_t*)inf_addr); 
 					break;
-				case i2: {
+				case I2: {
 					int16_t tp; 
-					get_frombyte(&tp, inf_addr, sizeoftype(i2));
+					memcpy(&tp, inf_addr, sizeoftype(I2));
 					printf("%d", tp); 
 					break;
 				}
-				case i4: {
-					int32_t tp; 
-					get_frombyte(&tp, inf_addr, sizeoftype(i4));
+				case I4: {
+					int32_t tp;
+					memcpy(&tp, inf_addr, sizeoftype(I4));
 					printf("%d", tp); 
 					break;
 				}
-				case i8: {
+				case I8: {
 					int64_t tp; 
-					get_frombyte(&tp, inf_addr, sizeoftype(i8));
+					memcpy(&tp, inf_addr, sizeoftype(I8));
 					printf("%lld" /*PRIx64*/, tp); 
 					break;//"lld"报错，不知道为什么
 				}
-				case ui1:
+				case UI1:
 					printf("%d", *(uint8_t*)inf_addr); 
 					break;
-				case ui2: {
+				case UI2: {
 					uint16_t tp; 
-					get_frombyte(&tp, inf_addr, sizeoftype(ui2));
+					memcpy(&tp, inf_addr, sizeoftype(UI2));
 					printf("%d", tp); 
 					break;
 				}
-				case ui4: {
+				case UI4: {
 					uint32_t tp; 
-					get_frombyte(&tp, inf_addr, sizeoftype(ui4));
+					memcpy(&tp, inf_addr, sizeoftype(UI4));
 					printf("%d", tp); 
 					break;
 				}
-				case ui8: {
+				case UI8: {
 					uint64_t tp; 
-					get_frombyte(&tp, inf_addr, sizeoftype(ui8));
+					memcpy(&tp, inf_addr, sizeoftype(UI8));
 					printf("%llu"/* PRIu64*/, tp); 
 					break;
 				}
-				case f4: {
+				case F4: {
 					float tp; 
-					get_frombyte(&tp, inf_addr, sizeoftype(f4));
+					memcpy(&tp, inf_addr, sizeoftype(F4));
 					printf("%.7g", tp); 
 					break;
 				}
-				case f8: {
+				case F8: {
 					double tp; 
-					get_frombyte(&tp, inf_addr, sizeoftype(f8));
+					memcpy(&tp, inf_addr, sizeoftype(F8));
 					printf("%.15g", tp); 
 					break;
 				}
-				case s50:
-					printf("%.10s", inf_addr); 
+				case STR:
+					void* str_p;
+					memcpy(str_p,inf_addr,sizeoftype(STR));
+					printf("%.10s",((str*)str_p)->string); 
 					break;
-				case s300:
-					printf("%.30s", inf_addr); 
-					break;
-				case d211: {
-					tp_d211 tp; 
-					getfrom_i_j(i, j, &tp);
-					printf("%d.%d.%d", tp.year, tp.month, tp.day); 
-					break;
-				}
-				case t111: {
-					tp_t111 tp; 
-					getfrom_i_j(i, j, &tp);
-					printf("%d:%d:%d", tp.hour, tp.minute, tp.second); 
+				case DATE: {
+					Date tp;
+					memcpy(&tp, inf_addr, sizeoftype(I4));
+					printf("%d.%d.%d", tp.year(), tp.month(), tp.day()); 
 					break;
 				}
-				case dt211111: {
-					tp_dt211111 tp; 
+				case TIME: {
+					Time tp; 
 					getfrom_i_j(i, j, &tp);
-					printf("%d.%d.%d.%d:%d:%d", tp.year, tp.month, tp.day, tp.hour, tp.minute, tp.second); 
+					printf("%d:%d:%d", tp.hour(), tp.minute(), tp.second()); 
 					break;
 				}
 			}
 		}
 	free(ptfmap);
 }
-void TABLE::printf_table(uint32_t start_line)
+void TABLE::print_table(uint32_t start_line)
 {
 	uint32_t y = start_line;
 
@@ -1030,248 +836,68 @@ void TABLE::printf_table(uint32_t start_line)
 
 	//打印数据
 	for (uint32_t j = 0; j < this->record_num; y++, j++) {
-		this->printf_record(j, y);
+		this->print_record(j, y);
 	}
 	free(ptfmap);
 }
 uint8_t TABLE::reset_table_name(char* table_name)
 {
-	memset(this->table_name, 0, name_max_size);//先归0
-	memcpy(this->table_name, table_name, strlen(table_name));
+	memset(this->table_name, 0, format_name_length);//先归0
+	memcpy(this->table_name, table_name, strlen(table_name)%format_name_length);
 	return 0;
 }
 TABLE::~TABLE()
 {
 	//删除表，此时表必须make或者load之后才能使用
-	this->field_num=0;
-	this->map_size=0;	
-	this->record_length=0;
-	this->record_usage=0;
-	this->record_num=0;	
-	this->data_ROM=0;
-	this->state=0;
-	free(this->p_field);	
+	this->field_num=0,this->map_size=0,this->record_length=0,this->record_usage=0,
+	this->record_num=0,this->data_ROM=0,this->state=0;
+	free(this->p_field);
 	free(this->p_data);
 	free(this->line_index);
 	free(this->offsetofield);
 	free(this->idle_map);
 	free(this->table_name);
-	this->p_field=NULL;
-	this->p_data=NULL;
-	this->line_index=NULL;
-	this->offsetofield=NULL;
-	this->idle_map=NULL;
-	this->table_name=NULL;
+	this->p_field=NULL,this->p_data=NULL,this->line_index=NULL,
+	this->offsetofield=NULL,this->idle_map=NULL,this->table_name=NULL;
 	return;
 }
-void TABLE::save_table(char* file_path){//保存表，不改变表的内容
-	//只需要提供文件夹路径,文件名就是表名
-	FILE* file=fopen(file_path,"wb");
-	if(file==NULL){
-		printf("Err:failed to open\"%s\"\n",file_path);return;
-	}
 
-	TBL_HEAD head;//先写入文件头
-	head.field_num=this->field_num;
-	head.map_size=this->map_size;
-	head.record_length=this->record_length;
-	head.record_usage=this->record_usage;
-	head.record_num=this->record_num;
-	head.data_ROM=this->data_ROM;
-	head.offset_of_table_name=TBL_HEAD_SIZE;
-	head.offset_of_field=head.offset_of_table_name+name_max_size;
-	head.offset_of_offsetofield=head.offset_of_field+this->field_num*sizeof(FIELD);
-	head.offset_of_idle_map=head.offset_of_offsetofield+this->field_num*sizeof(uint32_t);
-	head.offset_of_line_index=head.offset_of_idle_map+this->map_size*sizeof(IDLE_MAP);
-	head.offset_of_data=head.offset_of_line_index+this->record_num*sizeof(LINE_INDEX);
-
-	fseek(file,0,SEEK_SET);
-	fwrite(&head,sizeof(TBL_HEAD),1,file);
-
-	//写入表名
-	fseek(file,head.offset_of_table_name,SEEK_SET);
-	fwrite(this->table_name,1,name_max_size,file);
-
-	//写入字段
-	fseek(file,head.offset_of_field,SEEK_SET);
-	fwrite(this->p_field,sizeof(FIELD),this->field_num,file);
-
-	//写入字段偏移
-	fseek(file,head.offset_of_offsetofield,SEEK_SET);
-	fwrite(this->offsetofield,sizeof(uint32_t),this->field_num,file);
-
-	//写入空闲表
-	fseek(file,head.offset_of_idle_map,SEEK_SET);
-	fwrite(this->idle_map,sizeof(IDLE_MAP),this->map_size,file);
-
-	//写入索引表
-	fseek(file,head.offset_of_line_index,SEEK_SET);
-	fwrite(this->line_index,sizeof(LINE_INDEX),this->record_num,file);
-
-	//写入数据
-	fseek(file,head.offset_of_data,SEEK_SET);
-	fwrite(this->p_data,1,this->record_num *this->record_length,file);
-
-	fclose(file);
-}
-int8_t TABLE::load_table(char* file_path)
-{
-	//加载表，删除原表内容
-	//先释放原有空间
-	this->~TABLE();
-
-	FILE* file=fopen(file_path,"rb");
-	if(file==NULL){
-		printf("Err:failed to open\"%s\"\n",file_path);
-		return err;
-	}
-
-	//读取文件头
-	TBL_HEAD head;
-	fseek(file,0,SEEK_SET);
-	fread(&head,sizeof(TBL_HEAD),1,file);
-
-	//初始化表
-	this->field_num=head.field_num;
-	this->map_size=head.map_size;
-	this->record_length=head.record_length;
-	this->record_usage=head.record_usage;
-	this->record_num=head.record_num;
-	this->data_ROM=head.data_ROM;
-
-	//申请空间
-	this->p_field = (FIELD*)calloc(head.field_num,sizeof(FIELD));
-	this->offsetofield = (uint32_t*)calloc(head.field_num,sizeof(uint32_t) );
-	this->idle_map = (IDLE_MAP*)calloc( head.map_size,sizeof(IDLE_MAP));
-	this->line_index = (LINE_INDEX*)calloc( head.record_num,sizeof(LINE_INDEX) );
-	this->p_data = (uint8_t*)calloc( head.data_ROM,sizeof(uint8_t) );
-	this->table_name = (char*)calloc( name_max_size,sizeof(char) );
-
-	if(this->p_field==NULL||
-	this->offsetofield==NULL||
-	this->idle_map==NULL||
-	this->line_index==NULL||
-	this->p_data==NULL||
-	this->table_name==NULL){
-		free(this->p_field);
-		free(this->offsetofield);
-		free(this->idle_map);
-		free(this->line_index);
-		free(this->p_data);
-		free(this->table_name);
-		printf("Err:failed to calloc\n");
-		return err;
-	}
-
-	//读取表名
-	fseek(file,head.offset_of_table_name,SEEK_SET);
-	fread(this->table_name,1,name_max_size,file);
-
-	//读取字段
-	fseek(file,head.offset_of_field,SEEK_SET);
-	fread(this->p_field,sizeof(FIELD),head.field_num,file);
-
-	//读取字段偏移
-	fseek(file,head.offset_of_offsetofield,SEEK_SET);
-	fread(this->offsetofield,sizeof(uint32_t),head.field_num,file);
-
-	//读取空闲表
-	fseek(file,head.offset_of_idle_map,SEEK_SET);
-	fread(this->idle_map,sizeof(IDLE_MAP),head.map_size,file);
-
-	//读取索引表
-	fseek(file,head.offset_of_line_index,SEEK_SET);
-	fread(this->line_index,sizeof(LINE_INDEX),head.record_num,file);
-
-	//读取数据
-	fseek(file,head.offset_of_data,SEEK_SET);
-	fread(this->p_data,1,this->record_length*this->record_num,file);
-
-	fclose(file);
-	return 0;
-}
-
-int TABLE::join_record(TABLE* table_join){//把join表加到table后面
-	//先检查字段类型是否相同
-	for (uint32_t i = 0; i < this->field_num; i++) {
-		if (this->p_field[i].type != table_join->p_field[i].type) return err;
-	}
-	//不用检查字段名是否相同，直接把join表的内容加到table后面
-	/*
-	接下来我们来确定table的容量够不够
-	*/
-	if (this->record_num + table_join->record_num >= this->data_ROM) {	//记录数容量满了:扩展//不用担心有空位没有利用，记录条数永远等于实际记录条数
-		this->p_data = (uint8_t*)realloc(this->p_data, this->record_length * (this->data_ROM + table_join->record_num));
-		//更新p_data后要注意要刷新line_index
-		flash_line_index(this);
-		this->data_ROM += table_join->record_num;
-	}
-	memset(this->p_data + this->record_num*this->record_length ,0,table_join->record_num*this->record_length);
-	//下面是一些临时变量的提前声明
-	/*
-	int8_t cc_i1 = 0;
-	int16_t cc_i2 = 0;
-	int32_t cc_i4 = 0;
-	int64_t cc_i8 = 0;
-	uint8_t cc_ui1 = 0;
-	uint16_t cc_ui2 = 0;
-	uint32_t cc_ui4 = 0;
-	uint64_t cc_ui8 = 0;
-	float cc_f4 = 0;
-	double cc_f8 = 0;
-	char cc_s50[50] = { 0 };
-	char cc_s300[300] = { 0 };
-	tp_d211 cc_d211;
-	tp_t111 cc_t111;
-	tp_dt211111 cc_dt211111;
-	*/
-	uint8_t* cc_buffer=(uint8_t*)calloc(75,4);//保证可以读取最长的s300
-	uint32_t cc_table_join_record_num = table_join->record_num;
-	uint32_t cc_table_join_field_num = table_join->field_num;
-	uint32_t cc_table_record_num = this->record_num;
-
-	for (uint32_t j = 0; j < cc_table_join_record_num; j++) 
-	{
-		for(uint32_t i = 0; i < cc_table_join_field_num; i++) {
-			memcpy(address_of_i_j(this,i,j+cc_table_record_num),address_of_i_j(table_join,i,j),sizeof(this->p_field[i].type));
-		}
-	}
-
-}
 
 
 void initFIELD(FIELD* field, char* field_name, char type)
 {
 	field->type = type;
-	memset(field->name, 0, name_max_size);//先归0
-	memcpy(field->name, field_name, strlen(field_name) % name_max_size);
+	memset(field->name, 0, format_name_length);//先归0
+	memcpy(field->name, field_name, strlen(field_name) % format_name_length);
 }
-/*
-void initTblh(Tblh* tblh)
-{
-	//将tqlh中的函数指针和函数进行关联	
-	tblh->make_table = tblh_make_table;
 
-	tblh->add_record = tblh_add_record;
-	tblh->rmv_record = tblh_rmv_record;
-	tblh->swap_record = tblh_swap_record;
-	tblh->insert_record = tblh_insert_record;
+int main() {
+    // 定义字段
+    FIELD fields[3];
+    initFIELD(&fields[0], "id", I4);       // 整数字段
+    initFIELD(&fields[1], "name", STR);   // 字符串字段
+    initFIELD(&fields[2], "salary", F4);  // 浮点数字段
 
-	tblh->add_field = tblh_add_field;
-	tblh->rmv_field = tblh_rmv_field;
-	tblh->swap_field = tblh_swap_field;
-	tblh->insert_field = tblh_insert_field;
+    TABLE table("mytable", fields, 3); // 创建表，字段数量为3
 
-	tblh->getfrom_i_j = tblh_getfrom_i_j;
+	FIELD field[2];
+	initFIELD(&field[0], "age", I4);       // 整数字段
+    initFIELD(&field[1], "address", STR);   // 字符串字段
 
-	tblh->reset_table_name = tblh_reset_table_name;
-	tblh->printf_table = tblh_printf_table;
-	tblh->printf_record = tblh_printf_record;
+	
+	//table.add_field(&field[0]);
+	//table.add_field(&field[1]);
+	//table.print_table(0);
 
-	tblh->save_table = tblh_save_table;
-	tblh->load_table = tblh_load_table;
-	tblh->del_table = tblh_del_table;
+    table.add_record("1,John Doe,50000,30,china"); // 添加记录
+    table.add_record("2,Jane Smith,60000.00,30,china"); // 添加记录
+    table.add_record("3,Michael Johnson,70000.00,40,china"); // 添加记录
+    table.print_table(0); // 打印表
 
-	tblh->join_table = tblh_join_table;
+	//table.swap_field(2,4);//交换salary和address
+	//table.swap_record(1,2);
+
+	//table.print_table(7); // 打印表
+
+    return 0;
 }
-*/
