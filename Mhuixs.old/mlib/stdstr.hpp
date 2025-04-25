@@ -12,7 +12,7 @@ Email:hj18914255909@outlook.com
 #ifndef STDSTR_H
 #define STDSTR_H
 
-#define end (str){NULL,0}
+
 #define merr -1
 #define bitmap_debug
 

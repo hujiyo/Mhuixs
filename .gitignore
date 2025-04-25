@@ -13,3 +13,5 @@ output/
 document/
 
 .vscode/
+
+test/
