@@ -6,7 +6,9 @@
 struct Date {
     int date; // 存储格式：YYYYMMDD
     static bool is_valid(int y, int m, int d); // 辅助函数：检查是否为合法日期
-    Date(int y = 1970, int m = 1, int d = 1);
+    Date();
+    Date(int);
+    Date(int y, int m, int d);
     // 基本函数
     int year() const;
     int month() const;
@@ -21,7 +23,9 @@ struct Date {
 struct Time {
     int time;  // 存储格式：HHMMSS
     static bool is_valid(int h, int m, int s);// 辅助函数：检查时间合法性
-    Time(int h = 0, int m = 0, int s = 0);
+    Time();
+    Time(int);
+    Time(int h, int m, int s);
     // 基本函数
     int hour() const;
     int minute() const;
