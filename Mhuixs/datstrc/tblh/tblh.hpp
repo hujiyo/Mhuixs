@@ -7,13 +7,15 @@ Email:hj18914255909@outlook.com
 */
 #ifndef TBLH_HPP
 #define TBLH_HPP
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdint.h>
 
 #include <string>
-
-#include <stdint.h>
 #include "time.hpp"
 using namespace std;
-
+#define merr -1
 /*
 这个库还没有完成
 */
@@ -37,8 +39,16 @@ table需要增添表格恢复功能
 #define TIME		'm'		// * 时 * 分 * 秒 3byte 1 + 1 + 1
 
 #define format_name_length 50		//字段名 占用字节数
+#define long_record      400  //定义了多大才算是一个长记录
+#define short_record_s_vacancy_rate 1.5  //短记录的留余空间占比
+#define long_record_s_vacancy_rate 1.2	//长记录的留余空间占比
+#define begin_ROM 200		//初始记录的总空间ROM
+#define add_ROM 100			//每次扩展记录空间
+#define record_add_ROM 300		//每次扩展每条记录的空间
 
-void initFIELD(FIELD* field, char* field_name, char type);
+#define separater ','		//定义字段分隔符
+
+void initFIELD(FIELD* field,const char* field_name, char type);
 
 typedef struct FIELD {
 	char type;
@@ -68,8 +78,13 @@ class TABLE {
 
 	int state;
 	uint8_t* real_addr_of_lindex(uint32_t index);
-	uint8_t copymemfrom_i_j(TABLE* table, uint32_t i, uint32_t j, void* buffer);
-	uint8_t* address_of_i_j(TABLE *table,uint32_t i,uint32_t j);
+	uint8_t copymemfrom_i_j(uint32_t i, uint32_t j, void* buffer);
+	uint8_t* address_of_i_j(uint32_t i,uint32_t j);
+	static void cpstr(uint8_t* start, uint8_t* end, uint8_t* target);
+	static uint8_t store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type);
+	static int sizeoftype(char type);
+	static void gotoxy(uint32_t x, uint32_t y);
+	static int ptfsizeoftype(char type);
 public:
 	TABLE(char* table_name, FIELD* field, uint32_t field_num);
 	~TABLE();
@@ -78,16 +93,29 @@ public:
 	int8_t rmv_record(uint32_t j);
 	int8_t swap_record(uint32_t j1, uint32_t j2);
 	uint8_t insert_record(const char* record, uint32_t j);
-
+	
 	uint32_t add_field(FIELD* field); 
 	int8_t rmv_field(uint32_t i);
 	int8_t swap_field(uint32_t i1_, uint32_t i2_);
 	int8_t insert_field(FIELD* field, uint32_t i);
 
-	int8_t getfrom_i_j(uint32_t i, uint32_t j, void* buffer);
-	void reset_table_name(char* table_name);
+	void reset_table_name(const char* table_name);
+	void reset_field_name(uint32_t i,string& field_name);
 	void print_table(uint32_t start_line);
 	void print_record(uint32_t line_j,uint32_t start_line);	
 };
+
+/*
+i,j ---> 表示对外的虚序列
+x,y ---> 表示对内的实际序列
+*/
+/*
+INDEX
+1.B数索引
+2.哈希索引
+3.全文索引
+4.空间索引
+5.位图索引
+*/
 
 #endif
