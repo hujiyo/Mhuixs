@@ -14,8 +14,24 @@ TABLE::TABLE(char* table_name, FIELD* field, uint32_t field_num):
 p_field(NULL),field_num(field_num),offsetofield(NULL),idle_map(NULL),
 map_size(0),/*map_size是真实大小，不是数组中括号中的最大值*/p_data(NULL),
 record_length(TENTATIVE),record_usage(TENTATIVE),record_num(0),line_index(NULL),
-data_ROM(begin_ROM),/*/TABLE数据区record条数初始容量为200条数*/table_name(NULL),
-state(0){
+data_ROM(begin_ROM),/*/TABLE数据区record条数初始容量为200条数*/table_name(table_name),
+primary_key_i(NOPKEY),state(0)
+{
+	//检查field是否合法
+	int if_exit_primary_key=0;//一个表只能存在一个主键,可以没有主键
+	for(int i=0;i<field_num;i++){
+		if(field[i].key_type==PRIMARY_KEY){
+			if(if_exit_primary_key==1){
+				state++;
+				#ifdef tblh_debug
+				printf("TABLE init err:PRIMARY_KEY is not unique!\n");
+				#endif
+				return;
+			}
+			if_exit_primary_key++;
+			this->primary_key_i=i;
+		}
+	}
 	//初始化table基础信息
 	uint32_t record_usage = 0;
 	for (uint32_t i = 0; i < field_num; record_usage += sizeoftype(field[i].type), i++);
@@ -44,8 +60,6 @@ state(0){
 	uint32_t ofsum = 0;	
 	for (uint32_t i = 0; i < field_num;this->p_field[i] = field[i],this->offsetofield[i] = ofsum, 
 		ofsum += sizeoftype(field[i].type),	i++	);
-	
-	this->table_name.assign(table_name);
 	return;
 }
 
@@ -162,33 +176,54 @@ TABLE::~TABLE(){
 	return;
 }
 
-void initFIELD(FIELD* field,const char* field_name, char type){
+void TABLE::initFIELD(FIELD* field,const char* field_name, char type,char key_type)
+{
+	if(!isvalidtype(type) || !isvalidkeytype(key_type)){
+		printf("initFIELD:illegal type err!");
+		return;
+	}
 	field->type = type;
+	field->key_type = key_type;
 	memset(field->name, 0, format_name_length);//先归0
 	memcpy(field->name, field_name, strlen(field_name) % format_name_length);
+	return;
 }
-/*
+
 int main() {
     // 定义字段
     FIELD fields[3];
-    initFIELD(&fields[0], "id", I4);       // 整数字段
-    initFIELD(&fields[1], "name", STR);   // 字符串字段
-    initFIELD(&fields[2], "salary", F4);  // 浮点数字段
+    TABLE::initFIELD(&fields[0], "id", I4,NOT_KEY);       // 整数字段
+    TABLE::initFIELD(&fields[1], "name", STR,NOT_KEY);   // 字符串字段
+    TABLE::initFIELD(&fields[2], "salary", F4,NOT_KEY);  // 浮点数字段
+
 
     TABLE table("mytable", fields, 3); // 创建表，字段数量为3
 
-	FIELD field[2];
-	initFIELD(&field[0], "age", I4);       // 整数字段
-    initFIELD(&field[1], "address", STR);   // 字符串字段
+	
 
+	//FIELD field[2];
+	//TABLE::initFIELD(&field[0], "age", I4,NOT_KEY);       // 整数字段
+    //TABLE::initFIELD(&field[1], "address", STR,NOT_KEY);   // 字符串字段
+
+	//TABLE::gotoxy(0,8);
 	//table.add_field(&field[0]);
 	//table.add_field(&field[1]);
 	//table.print_table(0);
 
-    table.add_record("1,John Doe,50000,30,china"); // 添加记录
-    table.add_record("2,Jane Smith,60000.00,30,china"); // 添加记录
-    table.add_record("3,Michael Johnson,70000.00,40,china"); // 添加记录
+	TABLE::gotoxy(0,9);
+	printf("\n#1\n");
+
+    table.add_record({"1","John Doe","50000"}); // 添加记录
+    table.add_record({"2","Jane Smith","60000"}); // 添加记录
+    table.add_record({"3","Michael Johnson","70000"}); // 添加记录
+
+	//TABLE::gotoxy(0,10);
+	//printf("\n#1\n");
+
     table.print_table(0); // 打印表
+
+	//TABLE::gotoxy(0,11);
+	//printf("\n#2\n");
 
 	//table.swap_field(2,4);//交换salary和address
 	//table.swap_record(1,2);
@@ -197,4 +232,3 @@ int main() {
 
     return 0;
 }
-*/

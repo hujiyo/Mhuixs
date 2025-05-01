@@ -14,6 +14,34 @@ void TABLE::reset_field_name(uint32_t i,string& field_name)
 	return;
 }
 
+int8_t TABLE::reset_field_key_type(uint32_t i,char key_type)
+{
+	if(!isvalidkeytype(key_type)) return merr;//检查i,key_type是否合法
+	if(i>=this->field_num) return merr;
+
+	if(key_type!=PRIMARY_KEY){
+		if(i!=this->primary_key_i)//如果操作的不是当前主键且修改过后也不是主键，那就直接修改
+		{	
+			this->p_field[i].key_type=key_type;
+		}
+		else//把当前主键修改为非主键
+		{
+			this->primary_key_i=NOPKEY;//没有主键了
+			this->p_field[i].key_type=key_type;
+		}
+	}
+	else{
+		if(this->primary_key_i==NOPKEY){
+			this->primary_key_i=i;
+			this->p_field[i].key_type=key_type;
+		}
+		else{
+			printf("warning:table already has a primary key!");
+		}
+	}
+	return 0;	
+}
+
 
 int8_t TABLE::insert_field(FIELD* field, uint32_t i)
 {
@@ -78,7 +106,10 @@ uint32_t TABLE::add_field(FIELD* field)
 	*/
 	// 扩展字段数组区
 	FIELD* p_field_new = (FIELD*)realloc(this->p_field, (this->field_num+1) * sizeof(FIELD));
-	if(!p_field_new) return merr;
+	if(!p_field_new){ 
+		printf("TABLE::add_field:p_field_new err");
+		return merr;
+	}
 	this->p_field[this->field_num++] = field[0];
 	this->offsetofield = (uint32_t*)realloc(this->offsetofield, this->field_num * sizeof(uint32_t));
 	//接下在p_data中为这个字段找合适的储存位置，先在idle_map里找
@@ -86,6 +117,7 @@ uint32_t TABLE::add_field(FIELD* field)
 	uint32_t new_offset = this->record_usage;//默认偏移量
 	uint32_t cc_map_size = this->map_size;
 	IDLE_MAP* cc_idle_map = this->idle_map;
+
 	//循环遍历找到合适的空位算法
 	uint32_t idle_seq = 0;//记录之后填入的空位的序号
 	for (uint32_t k = 0; k < cc_map_size; k++) {

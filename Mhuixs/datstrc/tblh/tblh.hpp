@@ -11,6 +11,7 @@ Email:hj18914255909@outlook.com
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <stdarg.h>
 
 #include <string>
 #include "time.hpp"
@@ -48,10 +49,15 @@ table需要增添表格恢复功能
 
 #define separater ','		//定义字段分隔符
 
-void initFIELD(FIELD* field,const char* field_name, char type);
+#define PRIMARY_KEY '0'//主键:1.唯一性
+#define FOREIGN_KEY '1'//外键
+#define UNIQUE_KEY  '2'//唯一键:唯一性
+#define INDEX_KEY   '3'//INDEX_KEY禁止提前声明
+#define NOT_KEY		'4'//非键的普通字段
 
 typedef struct FIELD {
 	char type;
+	char key_type;
 	char name[format_name_length];//字段名 注意\0结尾
 }FIELD;
 
@@ -74,6 +80,8 @@ class TABLE {
 	//虚顺序是指对外用户看到的顺序，实顺序是记录在内存中的真实顺序
 
     uint32_t data_ROM;//TABLE数据区record条数总容量
+	uint32_t primary_key_i;//主键序列
+	#define NOPKEY 0xFFFFFFFF //表示无主键
     string table_name;//table名
 
 	int state;
@@ -83,13 +91,15 @@ class TABLE {
 	static void cpstr(uint8_t* start, uint8_t* end, uint8_t* target);
 	static uint8_t store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type);
 	static int sizeoftype(char type);
-	static void gotoxy(uint32_t x, uint32_t y);
+	
 	static int ptfsizeoftype(char type);
 public:
 	TABLE(char* table_name, FIELD* field, uint32_t field_num);
 	~TABLE();
 
-	int64_t add_record(const char* record);
+	int64_t add_record(size_t field_count, ...);
+	int64_t add_record(std::initializer_list<char*> content);
+	//int64_t add_record(const char* record);
 	int8_t rmv_record(uint32_t j);
 	int8_t swap_record(uint32_t j1, uint32_t j2);
 	uint8_t insert_record(const char* record, uint32_t j);
@@ -101,8 +111,16 @@ public:
 
 	void reset_table_name(const char* table_name);
 	void reset_field_name(uint32_t i,string& field_name);
+	int8_t reset_field_key_type(uint32_t i,char key_type);
 	void print_table(uint32_t start_line);
-	void print_record(uint32_t line_j,uint32_t start_line);	
+	void print_record(uint32_t line_j,uint32_t start_line);
+
+	static int8_t isvalidtype(char type);
+	static int8_t isvalidkeytype(char type);
+	static void initFIELD(FIELD* field,const char* field_name, char type,char key_type);
+	static void gotoxy(uint32_t x, uint32_t y);
+
+	void debug_ram_inf_print(int y);
 };
 
 /*

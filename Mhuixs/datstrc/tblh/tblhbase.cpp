@@ -11,6 +11,23 @@
  */
 #include "tblh.hpp"
 
+int8_t TABLE::isvalidtype(char type){
+	switch (type)
+    {
+		case I1:case UI1:case I2:case UI2:case I4:case UI4:case F4:
+		case STR:case DATE:case TIME:case I8:case UI8:case F8:return 1;
+		default:return 0;
+	}
+}
+
+int8_t TABLE::isvalidkeytype(char type){
+	switch(type)
+	{
+		case PRIMARY_KEY:case FOREIGN_KEY:
+		case UNIQUE_KEY:case NOT_KEY:return 1;
+		default:return 0;
+	}
+}
 
 int TABLE::sizeoftype(char type) 
 {
@@ -166,4 +183,10 @@ void TABLE::gotoxy(uint32_t x, uint32_t y)
     return;
 }
 
+void TABLE::debug_ram_inf_print(int y){
+	//打印TABLE内部所有内存数据信息
+	gotoxy(0,y);
+	
+
+}
 
