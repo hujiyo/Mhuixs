@@ -10,19 +10,119 @@
  * 
  */
 #include "tblh.hpp"
+#include <cstdarg>  // for va_list, va_start, va_end
 
+int64_t TABLE::add_record(size_t field_count, ...)
+{
+	if(field_count!=this->field_num)return merr;
+    // 如果字段数量为0，则增加一条空记录
+    int isnullrecord = 0;
+    if (field_count == 0) {
+        isnullrecord = 1;
+    }
+    /*
+    tblh_add_record把新记录加到p_data的末尾（不用担心内存中存在空位 ：tblh_rmv_record将会把最后一个数据填补到删除的记录处）
+    、line_index的索引组织，未来可能还要处理分页管理
+    返回 虚序列号
+    */
+    if (this->record_num == this->data_ROM) {
+        // 记录数容量满了:扩展
+        uint8_t* new_p_data = (uint8_t*)realloc(this->p_data, this->record_length * (this->data_ROM + add_ROM));
+        if (new_p_data == NULL) return merr;
+        this->p_data = new_p_data;
+        this->data_ROM += add_ROM;
+    }
 
+    /*
+    定位本条待写入记录的首地址即p_data的末尾
+    */
+    uint8_t* new_record_address = this->p_data + this->record_length * this->record_num; // 更新record_num后定位地址
+    this->record_num++; // 记录数更新
+
+    // 重新创建line_index索引
+    this->line_index = (uint32_t*)realloc(this->line_index, this->record_num * sizeof(uint32_t));
+    if (this->line_index == NULL) {
+        free(this->p_data);
+        return merr;
+    }
+    this->line_index[this->record_num - 1] = this->record_num - 1; // 虚顺序也是表格的最后一个
+
+    // 写入记录前清零
+    memset(new_record_address, 0, this->record_length);
+
+    if (isnullrecord) return this->record_num - 1; // 如果是空记录，则不写入数据
+
+    va_list args;
+    va_start(args, field_count);
+
+    size_t idx = 0;
+    for (; idx < field_count && idx < this->field_num; ++idx) {
+        char* field = va_arg(args, char*);
+        store_fieldata(field, new_record_address + this->offsetofield[idx], this->p_field[idx].type);
+    }
+
+    va_end(args);
+    return this->record_num - 1;
+}
+int64_t TABLE::add_record(std::initializer_list<char*> contents)
+{
+    // 如果fields为空，则增加一条空记录
+    int isnullrecord = 0;
+    if (contents.size() == 0) isnullrecord = 1;
+
+    /*
+    tblh_add_record把新记录加到p_data的末尾（不用担心内存中存在空位 ：tblh_rmv_record将会把最后一个数据填补到删除的记录处）
+    、line_index的索引组织，未来可能还要处理分页管理
+    返回 虚序列号
+    record的格式："字段1,字段2,字段3..."
+    */
+    if (this->record_num == this->data_ROM) {
+        // 记录数容量满了:扩展
+        uint8_t* new_p_data = (uint8_t*)realloc(this->p_data, this->record_length * (this->data_ROM + add_ROM));
+        if (new_p_data == NULL) return merr;
+        this->p_data = new_p_data;
+        this->data_ROM += add_ROM;
+    }
+
+    /*
+    定位本条待写入记录的首地址即p_data的末尾
+    */
+    uint8_t* new_record_address = this->p_data + this->record_length * this->record_num; // 更新record_num后定位地址
+    this->record_num++; // 记录数更新
+
+    // 重新创建line_index索引
+    this->line_index = (uint32_t*)realloc(this->line_index, this->record_num * sizeof(uint32_t));
+    if (this->line_index == NULL) {
+        free(this->p_data);
+        return merr;
+    }
+    this->line_index[this->record_num - 1] = this->record_num - 1; // 虚顺序也是表格的最后一个
+
+    // 写入记录前清零
+    memset(new_record_address, 0, this->record_length);
+
+    if (isnullrecord) return this->record_num - 1; // 如果是空记录，则不写入数据
+
+    size_t idx = 0;
+    for (auto it = contents.begin(); it != contents.end() && idx < this->field_num; ++it, ++idx) {
+        char* field = *it;
+        store_fieldata(field, new_record_address + this->offsetofield[idx], this->p_field[idx].type);
+    }
+
+    return this->record_num - 1;
+}
+/*
 int64_t TABLE::add_record(const char* record)//add总是在末尾追加
 {
 	//如果record为空，则增加一条空记录
 	int isnullrecord = 0;
 	if (record == NULL) isnullrecord = 1;
-	/*
+	///*
 	tblh_add_record把新记录加到p_data的末尾（不用担心内存中存在空位 ：tblh_rmv_record将会把最后一个数据填补到删除的记录处）
 	、line_index的索引组织，未来可能还要处理分页管理
 	返回 虚序列号
 	record的格式："字段1,字段2,字段3..."
-	*/
+	///
 	if (this->record_num == this->data_ROM) {
 		//记录数容量满了:扩展
 		//不用担心有空位没有利用，记录条数永远等于实际记录条数
@@ -33,7 +133,7 @@ int64_t TABLE::add_record(const char* record)//add总是在末尾追加
 	}
 	/*
 	定位本条待写入记录的首地址即p_data的末尾
-	*/
+	
 	uint8_t* new_record_address = this->p_data + this->record_length * this->record_num;//更新record_num后定位地址
 	this->record_num++;//记录数更新
 
@@ -69,6 +169,7 @@ int64_t TABLE::add_record(const char* record)//add总是在末尾追加
 	}
 	return this->record_num - 1;
 }
+*/
 
 int8_t TABLE::rmv_record(uint32_t j)
 {
