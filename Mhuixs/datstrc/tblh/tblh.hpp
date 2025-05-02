@@ -12,11 +12,15 @@ Email:hj18914255909@outlook.com
 #include <string.h>
 #include <stdint.h>
 #include <stdarg.h>
+#include <iostream>
 
 #include <string>
 #include "time.hpp"
 using namespace std;
 #define merr -1
+
+#define tblh_debug
+
 /*
 这个库还没有完成
 */
@@ -55,6 +59,8 @@ table需要增添表格恢复功能
 #define INDEX_KEY   '3'//INDEX_KEY禁止提前声明
 #define NOT_KEY		'4'//非键的普通字段
 
+#define hub //核心函数标记
+
 typedef struct FIELD {
 	char type;
 	char key_type;
@@ -65,6 +71,11 @@ class TABLE {
 	struct IDLE_MAP {//“记录使用区”的“空位内存地图”
 		uint32_t idle_size;//空位的可用大小
 		uint32_t idle_offset;//空位的record偏移量
+	};
+	union temp_mem{
+		int8_t i1;uint8_t ui1;int16_t i2;uint16_t ui2;
+		int32_t i4;uint32_t ui4;int64_t i8;uint64_t ui8;
+		float f4;double f8;string* str;
 	};
     FIELD* p_field; //TABLE字段区地址（通过字段数确定边界！！！）//集成索引功能 删除FIELD_INDEX索引对象
     uint32_t field_num;//字段数
@@ -97,15 +108,15 @@ public:
 	TABLE(char* table_name, FIELD* field, uint32_t field_num);
 	~TABLE();
 
-	int64_t add_record(size_t field_count, ...);
-	int64_t add_record(std::initializer_list<char*> content);
+	hub int64_t add_record(size_t field_count, ...);
+	hub int64_t add_record(std::initializer_list<char*> content);
 	//int64_t add_record(const char* record);
-	int8_t rmv_record(uint32_t j);
+	hub int8_t rmv_record(uint32_t j);
 	int8_t swap_record(uint32_t j1, uint32_t j2);
-	uint8_t insert_record(const char* record, uint32_t j);
+	uint8_t insert_record(std::initializer_list<char*> contents, uint32_t j);
 	
-	uint32_t add_field(FIELD* field); 
-	int8_t rmv_field(uint32_t i);
+	hub uint32_t add_field(FIELD* field);
+	hub int8_t rmv_field(uint32_t i);
 	int8_t swap_field(uint32_t i1_, uint32_t i2_);
 	int8_t insert_field(FIELD* field, uint32_t i);
 

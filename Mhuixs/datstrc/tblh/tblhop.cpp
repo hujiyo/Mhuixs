@@ -30,6 +30,7 @@ int64_t TABLE::add_record(size_t field_count, ...)
         uint8_t* new_p_data = (uint8_t*)realloc(this->p_data, this->record_length * (this->data_ROM + add_ROM));
         if (new_p_data == NULL) return merr;
         this->p_data = new_p_data;
+		memset(p_data+this->record_length * this->data_ROM, 0, this->record_length * add_ROM);
         this->data_ROM += add_ROM;
     }
 
@@ -69,7 +70,6 @@ int64_t TABLE::add_record(std::initializer_list<char*> contents)
     // 如果fields为空，则增加一条空记录
     int isnullrecord = 0;
     if (contents.size() == 0) isnullrecord = 1;
-
     /*
     tblh_add_record把新记录加到p_data的末尾（不用担心内存中存在空位 ：tblh_rmv_record将会把最后一个数据填补到删除的记录处）
     、line_index的索引组织，未来可能还要处理分页管理
@@ -81,6 +81,7 @@ int64_t TABLE::add_record(std::initializer_list<char*> contents)
         uint8_t* new_p_data = (uint8_t*)realloc(this->p_data, this->record_length * (this->data_ROM + add_ROM));
         if (new_p_data == NULL) return merr;
         this->p_data = new_p_data;
+		memset(p_data+this->record_length * this->data_ROM, 0, this->record_length * add_ROM);
         this->data_ROM += add_ROM;
     }
 
@@ -91,16 +92,17 @@ int64_t TABLE::add_record(std::initializer_list<char*> contents)
     this->record_num++; // 记录数更新
 
     // 重新创建line_index索引
-    this->line_index = (uint32_t*)realloc(this->line_index, this->record_num * sizeof(uint32_t));
-    if (this->line_index == NULL) {
-        free(this->p_data);
+	uint32_t* new_line_index = (uint32_t*)realloc(this->line_index, this->record_num * sizeof(uint32_t));
+    if (new_line_index == NULL) {
+		this->record_num--;//回滚
         return merr;
     }
+    this->line_index = new_line_index;
     this->line_index[this->record_num - 1] = this->record_num - 1; // 虚顺序也是表格的最后一个
 
     // 写入记录前清零
     memset(new_record_address, 0, this->record_length);
-
+	
     if (isnullrecord) return this->record_num - 1; // 如果是空记录，则不写入数据
 
     size_t idx = 0;
@@ -129,6 +131,7 @@ int64_t TABLE::add_record(const char* record)//add总是在末尾追加
 		uint8_t* new_p_data = (uint8_t*)realloc(this->p_data, this->record_length * (this->data_ROM + add_ROM));
 		if (new_p_data == NULL)	return merr;
 		this->p_data=new_p_data;
+		memset(p_data+this->record_length * this->data_ROM, 0, this->record_length * add_ROM);
 		this->data_ROM += add_ROM;
 	}
 	/*
@@ -180,6 +183,22 @@ int8_t TABLE::rmv_record(uint32_t j)
 	用最后一条实记录去补删除的记录留下的空位
 	保证记录的连续性（记录条数永远等于实际记录条数）
 	*/
+
+	//对于STR类型的字段需要特殊处理
+	//先遍历一遍field字段，找到记录中的STR字段，然后把STR字段的值清空
+	for(uint32_t i=0;i<this->field_num;i++){
+		if(this->p_field[i].type==STR){
+			//找到j记录对应的第i个字段
+			uint8_t* p_i_j = this->address_of_i_j(i,j);
+			string* temp;
+			memcpy((uint8_t*)&temp,p_i_j,sizeof(STR));//把字段值拷贝到temp
+			if(temp!=NULL){
+				temp->~string();//调用析构函数
+				delete temp;
+			}
+		}
+	}
+
 	memset(real_addr_of_lindex(j), 0, this->record_length);
 	//判断本j记录是否是末记录（实记录）
 	this->record_num--;
@@ -189,8 +208,16 @@ int8_t TABLE::rmv_record(uint32_t j)
 		for (; j_mo < this->record_num+1; j_mo++) {
 			if (this->line_index[j_mo] == this->record_num) break;//找到末记录对应的虚序列
 		}
+		// 如果没找到（理论上不应该发生）
+		if (j_mo > this->record_num){
+			#ifdef tblh_debug
+			printf("tblh_rmv_record err:can't find the last record!\n");
+			#endif
+			this->state++;
+			return merr;
+		}
 		//把末记录复制到j处
-		cpstr(real_addr_of_lindex(j_mo) - 1,real_addr_of_lindex(j_mo) + this->record_length,real_addr_of_lindex(j));
+		memcpy(real_addr_of_lindex(j),real_addr_of_lindex(j_mo),this->record_length);
 		memset(real_addr_of_lindex(j_mo), 0, this->record_length);//原来的末记录归0//想了很久还是增加这一步吧，省点力气
 		//修改末记录对应的索引指向j地址
 		this->line_index[j_mo] = this->line_index[j];
@@ -211,9 +238,9 @@ int8_t TABLE::swap_record(uint32_t j1, uint32_t j2)//函数用于交换两条记
 	return 0;
 }
 
-uint8_t TABLE::insert_record(const char* record, uint32_t j)//向j处插入记录，原来及后面的记录全部退一位
+uint8_t TABLE::insert_record(initializer_list<char*> contents, uint32_t j)//向j处插入记录，原来及后面的记录全部退一位
 {
-	uint32_t sep = this->add_record(record);//这个地方调用了外部函数，不知道会不会影响性能
+	uint32_t sep = this->add_record(contents);//这个地方调用了外部函数，不知道会不会影响性能
 	if (j >= sep) return 0;//已经增加了一条记录，如果现在j比最后一条记录都大或等，那就直接return了
 	
 	uint32_t cache = this->line_index[sep];//先调用tblh_add_record并保存其索引
