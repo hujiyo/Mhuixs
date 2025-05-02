@@ -110,59 +110,52 @@ uint8_t TABLE::store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type){
 	put_tobyte存储C语言标准数据类型
 	storage_field_data存储SQlh标准数据类型
 	*/
+	temp_mem temp;
+	int i;
 	switch (type){
 		case I1:
 			*p_storaddr = atoi((const char*)p_inputstr);//这里可以考虑使用更快速的函数atoi
 			return 0;
-		case I2: {
-			int16_t i = atoi((const char*)p_inputstr);//在后期调试时，这里可以尝试改成atoi
-			memcpy(p_storaddr,&i,sizeoftype(I2));
+		case I2:
+			temp.i2 = atoi((const char*)p_inputstr);//在后期调试时，这里可以尝试改成atoi
+			memcpy(p_storaddr,&temp.i2,sizeoftype(I2));
 			return 0;
-		}
-		case I4:case DATE:case TIME: {
-			int32_t i = atoi((const char*)p_inputstr);
-			memcpy(p_storaddr,&i,sizeoftype(type));
-			return 0;
-		}		   
-		case I8: {
-			int64_t i = strtoll((const char*)p_inputstr, NULL, 10);//长字节使用strtoll
-			memcpy(p_storaddr,&i,sizeoftype(I8));
-			return 0;
-		}			
+		case I4:case DATE:case TIME:
+			temp.i4 = atoi((const char*)p_inputstr);
+			memcpy(p_storaddr,&temp.i4,sizeoftype(type));
+			return 0; 
+		case I8:
+			temp.i8 = strtoll((const char*)p_inputstr, NULL, 10);//长字节使用strtoll
+			memcpy(p_storaddr,&temp.i8,sizeoftype(I8));
+			return 0;	
 		case UI1:
 			*p_storaddr = atoi((const char*)p_inputstr);
 			return 0;
-		case UI2: {
-			uint16_t i = atoi((const char*)p_inputstr);
-			memcpy(p_storaddr,&i,sizeoftype(UI2));
+		case UI2:
+			temp.ui2 = atoi((const char*)p_inputstr);
+			memcpy(p_storaddr,&temp.ui2,sizeoftype(UI2));
+			return 0;		
+		case UI4:
+			temp.ui4 = strtoul((const char*)p_inputstr, NULL, 10);
+			memcpy(p_storaddr,&temp.ui4,sizeoftype(UI4));
+			return 0;		
+		case UI8:
+			temp.ui8 = strtoull((const char*)p_inputstr, NULL, 10);
+			memcpy(p_storaddr,&temp.ui8,sizeoftype(UI8));
+			return 0;		
+		case F4:
+			temp.f4 = strtof((const char*)p_inputstr, NULL);
+			memcpy(p_storaddr,&temp.f4,sizeoftype(F4));
 			return 0;
-		}				
-		case UI4: {
-			uint32_t i = strtoul((const char*)p_inputstr, NULL, 10);
-			memcpy(p_storaddr,&i,sizeoftype(UI4));
+		case F8:
+			temp.f8 = strtod((const char*)p_inputstr, NULL);
+			memcpy(p_storaddr,&temp.f8,sizeoftype(F8));
 			return 0;
-		}				
-		case UI8: {
-			uint64_t i = strtoull((const char*)p_inputstr, NULL, 10);
-			memcpy(p_storaddr,&i,sizeoftype(UI8));
+		case STR:
+			temp.str = new string;
+			temp.str->assign(p_inputstr);
+			memcpy(p_storaddr,&temp.str,sizeoftype(STR));//!!!!!
 			return 0;
-		}				
-		case F4: {
-			float i = strtof((const char*)p_inputstr, NULL);
-			memcpy(p_storaddr,&i,sizeoftype(F4));
-			return 0;
-		}			
-		case F8: {
-			double i = strtod((const char*)p_inputstr, NULL);
-			memcpy(p_storaddr,&i,sizeoftype(F8));
-			return 0;
-		}
-		case STR:{
-			string* s = new string;
-			s->assign(p_inputstr);
-			memcpy(p_storaddr,s,sizeoftype(STR));
-			return 0;
-		}
 	}
 	return 1;
 }

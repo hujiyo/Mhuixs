@@ -84,10 +84,25 @@ int8_t TABLE::rmv_field(uint32_t i)
 	
 	uint32_t cc_table_record_length = this->record_length;//缓存变量cache
 	uint8_t* cc_table_p_a_i = this->p_data + this->offsetofield[i];
-	uint32_t cc_clean_size = this->idle_map[this->map_size - 1].idle_size;
-	for (uint32_t j = 0; j < this->record_num; j++) {
-		memset(cc_table_p_a_i + cc_table_record_length * j, 0, cc_clean_size);
+	uint32_t cc_clean_size = sizeoftype(this->p_field[i].type);
+
+	if(this->p_field[i].type==STR){//如果删除的字段是字符串类型的，那么还需要单独处理
+		for (uint32_t j = 0; j < this->record_num; j++) {
+			string* temp;
+			memcpy((uint8_t*)&temp, cc_table_p_a_i + cc_table_record_length * j, sizeof(STR));
+			if(temp!=NULL){
+				temp->~string();//调用析构函数
+				delete temp;
+				memset(cc_table_p_a_i + cc_table_record_length * j, 0, cc_clean_size);	
+			}
+		}
 	}
+	else{
+		for (uint32_t j = 0; j < this->record_num; j++) {
+			memset(cc_table_p_a_i + cc_table_record_length * j, 0, cc_clean_size);
+		}
+	}
+	
 	this->field_num--;//字段数-1
 	if (i != this->field_num){
 		//对field和offsetof_field中删除的字段后的字段进行进位
@@ -107,11 +122,12 @@ uint32_t TABLE::add_field(FIELD* field)
 	// 扩展字段数组区
 	FIELD* p_field_new = (FIELD*)realloc(this->p_field, (this->field_num+1) * sizeof(FIELD));
 	if(!p_field_new){ 
-		printf("TABLE::add_field:p_field_new err");
+		printf("TABLE::add_field:p_field realloc error");
 		return merr;
 	}
+	this->p_field = p_field_new;
 	this->p_field[this->field_num++] = field[0];
-	this->offsetofield = (uint32_t*)realloc(this->offsetofield, this->field_num * sizeof(uint32_t));
+	this->offsetofield = (uint32_t*)realloc(this->offsetofield, this->field_num * sizeof(uint32_t));//这里感觉出错的可能性不大，所以不用判断
 	//接下在p_data中为这个字段找合适的储存位置，先在idle_map里找
 	uint32_t new_field_size = sizeoftype(field->type);
 	uint32_t new_offset = this->record_usage;//默认偏移量
