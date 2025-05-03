@@ -11,7 +11,7 @@
  */
 #include "tblh.hpp"
 
-int8_t TABLE::isvalidtype(char type){
+int8_t TABLE::isvalid_type(char type){
 	switch (type)
     {
 		case I1:case UI1:case I2:case UI2:case I4:case UI4:case F4:
@@ -20,7 +20,7 @@ int8_t TABLE::isvalidtype(char type){
 	}
 }
 
-int8_t TABLE::isvalidkeytype(char type){
+int8_t TABLE::isvalid_keytype(char type){
 	switch(type)
 	{
 		case PRIMARY_KEY:case FOREIGN_KEY:
@@ -44,21 +44,6 @@ int TABLE::sizeoftype(char type)
 		case I8:case UI8:case F8:return 8;
 		default:return merr;
 	}
-}
-
-uint8_t TABLE::copymemfrom_i_j(uint32_t i, uint32_t j, void* buffer){
-	/*
-	从（i，j）虚拟位置获得数据
-	内置函数，和tblh_getfrom_i_j相比，本函数直接在TABLE所管辖的数据内存区域直接复制到buffer中
-	本函数不会根据数据类型自动返回相应的格式化数据
-	*/
-	//先获得第i个字段的类型、偏移量的信息
-	char type = this->p_field[i].type;
-	//找到（i,j）的地址
-	uint8_t* inf_addr = this->p_data + j * this->record_length + this->offsetofield[i];
-	memcpy(buffer,inf_addr,sizeoftype(type));
-
-	return 0;
 }
 
 uint8_t* TABLE::real_addr_of_lindex(uint32_t j)//index是虚序列
@@ -154,20 +139,10 @@ uint8_t TABLE::store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type){
 		case STR:
 			temp.str = new string;
 			temp.str->assign(p_inputstr);
-			memcpy(p_storaddr,&temp.str,sizeoftype(STR));//!!!!!
+			memcpy(p_storaddr,&temp.str,sizeoftype(STR));
 			return 0;
 	}
 	return 1;
-}
-
-void TABLE::cpstr(uint8_t* start, uint8_t* end, uint8_t* target)
-{
-    /*
-    copy string bite by bite.
-    复制start和end "中间" 的 content 到 target指针 中
-    */
-	for (int i = 1; i < ( end-start ); *target = *(start + i), target++,i++);
-    return;
 }
 
 void TABLE::gotoxy(uint32_t x, uint32_t y)
@@ -179,7 +154,5 @@ void TABLE::gotoxy(uint32_t x, uint32_t y)
 void TABLE::debug_ram_inf_print(int y){
 	//打印TABLE内部所有内存数据信息
 	gotoxy(0,y);
-	
-
 }
 
