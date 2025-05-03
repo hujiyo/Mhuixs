@@ -166,30 +166,12 @@ void TABLE::initFIELD(FIELD* field,const char* field_name, char type,char key_ty
 }
 
 
-/*
-	TABLE(char* table_name, FIELD* field, uint32_t field_num);
-	~TABLE();
 
-	hub int64_t add_record(size_t field_count, ...);
-	hub int64_t add_record(initializer_list<char*> content);
-	hub int8_t rmv_record(uint32_t j);
-	int8_t swap_record(uint32_t j1, uint32_t j2);
-	uint8_t insert_record(initializer_list<char*> contents, uint32_t j);
-	
-	hub uint32_t add_field(FIELD* field);
-	hub int8_t rmv_field(uint32_t i);
-	int8_t swap_field(uint32_t i1_, uint32_t i2_);
-	int8_t insert_field(FIELD* field, uint32_t i);
+/*****************************
+ * 以下为测试函数
+ *****************************/
 
-	void reset_table_name(const char* table_name);
-	void reset_field_name(uint32_t i,string& field_name);
-	int8_t reset_field_key_type(uint32_t i,char key_type);
-	void print_table(uint32_t start_line);
-	void print_record(uint32_t line_j,uint32_t start_line);
-
-	static void initFIELD(FIELD* field,const char* field_name, char type,char key_type);
-};
-*/
+ 
 /*
 int main(){
 	//test:add_record、initFIELD、print_table、print_record、TABLE、~TABLE
