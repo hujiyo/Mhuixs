@@ -95,25 +95,20 @@ class TABLE {
 	#define NOPKEY 0xFFFFFFFF //表示无主键
     string table_name;//table名
 
-	int state;
 	uint8_t* real_addr_of_lindex(uint32_t index);
-	uint8_t copymemfrom_i_j(uint32_t i, uint32_t j, void* buffer);
 	uint8_t* address_of_i_j(uint32_t i,uint32_t j);
-	static void cpstr(uint8_t* start, uint8_t* end, uint8_t* target);
-	static uint8_t store_fieldata(char* p_inputstr, uint8_t* p_storaddr, char type);
+	static uint8_t store_fieldata(char* input_str, uint8_t* stor_addr, char type);
 	static int sizeoftype(char type);
-	
 	static int ptfsizeoftype(char type);
 public:
 	TABLE(char* table_name, FIELD* field, uint32_t field_num);
 	~TABLE();
 
 	hub int64_t add_record(size_t field_count, ...);
-	hub int64_t add_record(std::initializer_list<char*> content);
-	//int64_t add_record(const char* record);
+	hub int64_t add_record(initializer_list<char*> content);
 	hub int8_t rmv_record(uint32_t j);
 	int8_t swap_record(uint32_t j1, uint32_t j2);
-	uint8_t insert_record(std::initializer_list<char*> contents, uint32_t j);
+	uint8_t insert_record(initializer_list<char*> contents, uint32_t j);
 	
 	hub uint32_t add_field(FIELD* field);
 	hub int8_t rmv_field(uint32_t i);
@@ -126,12 +121,13 @@ public:
 	void print_table(uint32_t start_line);
 	void print_record(uint32_t line_j,uint32_t start_line);
 
-	static int8_t isvalidtype(char type);
-	static int8_t isvalidkeytype(char type);
+	static int8_t isvalid_type(char type);
+	static int8_t isvalid_keytype(char type);
 	static void initFIELD(FIELD* field,const char* field_name, char type,char key_type);
 	static void gotoxy(uint32_t x, uint32_t y);
 
 	void debug_ram_inf_print(int y);
+	int state;
 };
 
 /*

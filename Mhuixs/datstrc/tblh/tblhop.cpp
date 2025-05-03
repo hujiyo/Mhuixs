@@ -113,66 +113,6 @@ int64_t TABLE::add_record(std::initializer_list<char*> contents)
 
     return this->record_num - 1;
 }
-/*
-int64_t TABLE::add_record(const char* record)//add总是在末尾追加
-{
-	//如果record为空，则增加一条空记录
-	int isnullrecord = 0;
-	if (record == NULL) isnullrecord = 1;
-	///*
-	tblh_add_record把新记录加到p_data的末尾（不用担心内存中存在空位 ：tblh_rmv_record将会把最后一个数据填补到删除的记录处）
-	、line_index的索引组织，未来可能还要处理分页管理
-	返回 虚序列号
-	record的格式："字段1,字段2,字段3..."
-	///
-	if (this->record_num == this->data_ROM) {
-		//记录数容量满了:扩展
-		//不用担心有空位没有利用，记录条数永远等于实际记录条数
-		uint8_t* new_p_data = (uint8_t*)realloc(this->p_data, this->record_length * (this->data_ROM + add_ROM));
-		if (new_p_data == NULL)	return merr;
-		this->p_data=new_p_data;
-		memset(p_data+this->record_length * this->data_ROM, 0, this->record_length * add_ROM);
-		this->data_ROM += add_ROM;
-	}
-	/*
-	定位本条待写入记录的首地址即p_data的末尾
-	
-	uint8_t* new_record_address = this->p_data + this->record_length * this->record_num;//更新record_num后定位地址
-	this->record_num++;//记录数更新
-
-	//重新创建line_index索引
-	this->line_index = (uint32_t*)realloc(this->line_index, this->record_num * sizeof(uint32_t));
-	if (this->line_index == NULL){
-		free(this->p_data);
-		return merr;
-	}
-	this->line_index[this->record_num - 1] = this->record_num - 1;//虚顺序也是表格的最后一个//序号都是从0开始，所以这里-1
-	//this->line_index[this->record_num - 1].rcd_addr = new_record_address;//记录记录首地址
-	//写入记录
-	memset(new_record_address, 0, this->record_length);//注意！写入操作前先归0！！！！
-
-	if (isnullrecord) return this->record_num - 1;//如果是空记录，则不写入数据	
-	
-	char* pointer = (char*)record;//初始化 输入字符串 的定位指针
-	uint32_t field_num = this->field_num;//初始化 字段数量
-	for (uint32_t i = 0; i < field_num; i++){
-		if (i) pointer = strchr(pointer, separater) + 1;//如果不是第一个字段，则每次定位到,后都进一位
-		if (pointer == (char*)1) return 0;//如果已经到record的结尾'\0'		
-
-		uint8_t* start=(uint8_t*)(pointer - 1);
-		uint8_t* end=NULL;
-		if (i != field_num - 1) end=(uint8_t*)strchr(pointer, separater);
-		else end=(uint8_t*)strchr(pointer, '\0');
-		uint32_t len=end-start;
-		char* result = (char*)malloc(len);
-		memset(result, 0, len);//保证以\0结尾
-		cpstr(start,end,(uint8_t*)result);
-
-		store_fieldata(result,new_record_address + this->offsetofield[i], this->p_field[i].type);
-	}
-	return this->record_num - 1;
-}
-*/
 
 int8_t TABLE::rmv_record(uint32_t j)
 {
@@ -191,11 +131,8 @@ int8_t TABLE::rmv_record(uint32_t j)
 			//找到j记录对应的第i个字段
 			uint8_t* p_i_j = this->address_of_i_j(i,j);
 			string* temp;
-			memcpy((uint8_t*)&temp,p_i_j,sizeof(STR));//把字段值拷贝到temp
-			if(temp!=NULL){
-				temp->~string();//调用析构函数
-				delete temp;
-			}
+			memcpy((uint8_t*)&temp,p_i_j,sizeoftype(STR));//把字段值拷贝到temp
+			delete temp;
 		}
 	}
 

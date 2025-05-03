@@ -154,7 +154,7 @@ TABLE::~TABLE(){
 
 void TABLE::initFIELD(FIELD* field,const char* field_name, char type,char key_type)
 {
-	if(!isvalidtype(type) || !isvalidkeytype(key_type)){
+	if(!isvalid_type(type) || !isvalid_keytype(key_type)){
 		printf("initFIELD:illegal type err!");
 		return;
 	}
@@ -165,7 +165,56 @@ void TABLE::initFIELD(FIELD* field,const char* field_name, char type,char key_ty
 	return;
 }
 
+
 /*
+	TABLE(char* table_name, FIELD* field, uint32_t field_num);
+	~TABLE();
+
+	hub int64_t add_record(size_t field_count, ...);
+	hub int64_t add_record(initializer_list<char*> content);
+	hub int8_t rmv_record(uint32_t j);
+	int8_t swap_record(uint32_t j1, uint32_t j2);
+	uint8_t insert_record(initializer_list<char*> contents, uint32_t j);
+	
+	hub uint32_t add_field(FIELD* field);
+	hub int8_t rmv_field(uint32_t i);
+	int8_t swap_field(uint32_t i1_, uint32_t i2_);
+	int8_t insert_field(FIELD* field, uint32_t i);
+
+	void reset_table_name(const char* table_name);
+	void reset_field_name(uint32_t i,string& field_name);
+	int8_t reset_field_key_type(uint32_t i,char key_type);
+	void print_table(uint32_t start_line);
+	void print_record(uint32_t line_j,uint32_t start_line);
+
+	static void initFIELD(FIELD* field,const char* field_name, char type,char key_type);
+};
+*/
+/*
+int main(){
+	//test:add_record、initFIELD、print_table、print_record、TABLE、~TABLE
+	FIELD fields[4];
+	TABLE::initFIELD(&fields[0], "ID", I4, NOT_KEY);
+	TABLE::initFIELD(&fields[1], "Name", STR, NOT_KEY);
+	TABLE::initFIELD(&fields[2], "Age", I2, NOT_KEY);
+	TABLE::initFIELD(&fields[3], "Salary", F8, NOT_KEY);
+	TABLE table((char*)"EmployeeTable", fields, 4);//创建表格对象
+	table.add_record(4, "1001", "Alice", "30", "50000.0");//添加记录
+	table.add_record(4, "1002", "Bob", "25", "45000.0");//添加记录
+	table.add_record(4, "1003", "Charlie", "35", "60000.0");//添加记录
+	table.print_table(5);//打印表格
+	table.print_record(0, 10);//打印第一条记录
+	table.print_record(1, 12);//打印第二条记录
+	table.~TABLE();//删除表格对象
+	printf("test end!\n");//测试结束
+	return 0;
+}
+
+*/
+
+
+
+
 #include <cassert>
 
 
@@ -177,182 +226,68 @@ char* str2charp(const std::string& s) {
 }
 
 bool run_single_test() {
-	/*
-	FIELD fields[4];
-
-    TABLE::initFIELD(&fields[0], "ID", I4, NOT_KEY);
-    TABLE::initFIELD(&fields[1], "Name", STR, NOT_KEY);
-    TABLE::initFIELD(&fields[2], "Age", I2, NOT_KEY);
-    TABLE::initFIELD(&fields[3], "Salary", F8, NOT_KEY);
-
-    // 创建表格对象
-    TABLE table((char*)"EmployeeTable", fields, 4);
-
-    // 设置新的表名
-    table.reset_table_name("Staff");
-
-    // 修改字段名
-    std::string newName("Full Name");
-    table.reset_field_name(1, newName);
-
-    // 修改字段的键类型
-    table.reset_field_key_type(2, UNIQUE_KEY);
-
-    // 打印初始表结构
-    //std::cout << "\nInitial Table Structure:\n";
-    //table.print_table(4);
-
-    // 添加记录 (使用可变参数)
-    int64_t r1 = table.add_record(4, "1001", "Alice", "30", "50000.0");
-    assert(r1 != merr);
-    int64_t r2 = table.add_record(4, "1002", "Bob", "25", "45000.0");
-    assert(r2 != merr);
-    int64_t r3 = table.add_record(4, "1003", "Charlie", "35", "60000.0");
-	table.add_record({"1004", "David", "28", "48000.0"});
-    assert(r3 != merr);
-
-    //std::cout << "\nAfter Adding Records:\n";
-    //table.print_table(10);
-
-    // 插入一条记录到第1行位置
-    table.insert_record({"1004", "David", "28", "48000.0"}, 1);
-    //std::cout << "\nAfter Inserting Record at index 1:\n";
-    //table.print_table(20);
-
-    // 删除第2条记录
-    int8_t rm_res = table.rmv_record(2);
-    assert(rm_res == 0);
-    //std::cout << "\nAfter Removing Record at index 2:\n";
-    //table.print_table(30);
-
-    // 交换记录
-    int8_t swap_res = table.swap_record(0, 1);
-    assert(swap_res == 0);
-    //std::cout << "\nAfter Swapping Record 0 and 1:\n";
-    //table.print_table(40);
-
-    // 新增字段 Email
-    FIELD emailField;
-    TABLE::initFIELD(&emailField, "Email", STR, NOT_KEY);
-    uint32_t add_fld_res = table.add_field(&emailField);
-    assert(add_fld_res == 4); // 当前是第4个字段
-
-    // 更新新增字段的值
-    table.add_record(5, "1005", "Eve", "40", "70000.0", "eve@example.com");
-    //std::cout << "\nAfter Adding New Field 'Email':\n";
-    //table.print_table(50);
-	//printf("\nOK!");
-
-    // 删除新加入的字段
-    int8_t rm_fld_res = table.rmv_field(4);
-    assert(rm_fld_res == 0);
-    //std::cout << "\nAfter Removing Field 'Email':\n";
-    //table.print_table(60);
-
-    // 再次添加字段并交换字段顺序
-    table.add_field(&emailField);
-    table.add_record(5, "1006", "Frank", "50", "90000.0", "frank@example.com");
-    int8_t swap_fld_res = table.swap_field(1, 4);
-    assert(swap_fld_res == 0);
-    //std::cout << "\nAfter Swapping Fields 1 and 4 (Name <-> Email):\n";
-    //table.print_table(70);
-
-    // 边界测试 - 越界访问
-    //std::cout << "\nBoundary Test: Trying to access invalid record\n";
-    int8_t out_of_bounds = table.rmv_record(110);
-    assert(out_of_bounds == -1);
-	cout<<"OK!";
-	*/
-    // 定义字段数组
-	/*
     FIELD fields[4];
-
     TABLE::initFIELD(&fields[0], "ID", I4, NOT_KEY);
     TABLE::initFIELD(&fields[1], "Name", STR, NOT_KEY);
     TABLE::initFIELD(&fields[2], "Age", I2, NOT_KEY);
     TABLE::initFIELD(&fields[3], "Salary", F8, NOT_KEY);
-
-    // 创建表格对象
+    
     TABLE table((char*)"EmployeeTable", fields, 4);
-
-    // 修改表名
-    table.reset_table_name("Staff");
-
-    // 修改字段名
-    std::string newName("Full Name");
-    table.reset_field_name(1, newName);
-
-    // 修改键类型
     table.reset_field_key_type(2, UNIQUE_KEY);
     // 添加记录
     int64_t r1 = table.add_record(4, "1001", "Alice", "30", "50000.0");
-    //if (r1 == merr) return false;
-	
+    if (r1 == merr) return false;
     int64_t r2 = table.add_record(4, "1002", "Bob", "25", "45000.0");
-    //if (r2 == merr) return false;
-
+    if (r2 == merr) return false;
     int64_t r3 = table.add_record(4, "1003", "Charlie", "35", "60000.0");
-    //if (r3 == merr) return false;
+    if (r3 == merr) return false;
     // 插入记录
-    if (table.insert_record({"1004", "David", "28", "48000.0"}, 1) != 0);
-        //return false;
-
+	
+    if (table.insert_record({"1004", "David", "28", "48000.0"}, 1) != 0)   return false;
+	
     // 删除记录
-    if (table.rmv_record(2) != 0);
-        //return false;
-
+    if (table.rmv_record(2) != 0)  return false;
     // 交换记录
-    if (table.swap_record(0, 1) != 0);
-        //return false;
-
+	
+    if (table.swap_record(0, 1) != 0) return false;
     // 添加新字段 Email
-    FIELD emailField;
-    TABLE::initFIELD(&emailField, "Email", STR, NOT_KEY);
-    uint32_t add_fld_res = table.add_field(&emailField);
-    //if (add_fld_res != 4)return false;
-
+    
+    TABLE::initFIELD(&fields[0], "Email", STR, NOT_KEY);
+    uint32_t add_fld_res = table.add_field(fields);
+    if (add_fld_res != 4) return false;
     // 插入带新字段的记录
-    if (table.add_record(5, "1005", "Eve", "40", "70000.0", "eve@example.com") == merr);
-        //return false;
+    if (table.add_record(5, "1005", "Eve", "40", "70000.0", "eve@example.com") == merr)return false;
 
     // 删除字段
-    if (table.rmv_field(4) != 0);//      return false;
+    if (table.rmv_field(4) != 0) return false;
 
     // 再添加字段
-    table.add_field(&emailField);
+    table.add_field(fields);
     table.add_record(5, "1006", "Frank", "50", "90000.0", "frank@example.com");
 
-    // 交换字段
-    if (table.swap_field(1, 4) != 0);
-        //return false;
-
-    // 越界访问测试
-    if (table.rmv_record(110) != -1);
-        //return false;
+    if (table.swap_field(1, 4) != 0)return false;
+    if (table.rmv_record(110) != -1)return false;
 
 	
     return true; // 成功通过测试
-	*/
-//}
-/*
+	
+}
+
 int main() {
-    const int test_count = 1;
+    const int test_count = 10000000;
 
     for (int i = 0; i < test_count; ++i) {
-		run_single_test();
-		/*
         if (!run_single_test()) {
             std::cout << "Test failed at iteration: " << i << std::endl;
             return -1;
         }
-		
     }
 
     std::cout << "OK,ALL THINGS DONE SUCCESSFULLY!" << std::endl;
     return 0;
 }
-*/
 
+/*
 #include <cassert>
 
 // 工具函数：将字符串转为 char*
@@ -459,7 +394,7 @@ int main() {
 
     return 0;
 }
-
+*/
 /*
 int main() {
     // 定义字段

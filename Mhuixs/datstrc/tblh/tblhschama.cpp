@@ -16,7 +16,7 @@ void TABLE::reset_field_name(uint32_t i,string& field_name)
 
 int8_t TABLE::reset_field_key_type(uint32_t i,char key_type)
 {
-	if(!isvalidkeytype(key_type)) return merr;//检查i,key_type是否合法
+	if(!isvalid_keytype(key_type)) return merr;//检查i,key_type是否合法
 	if(i>=this->field_num) return merr;
 
 	if(key_type!=PRIMARY_KEY){
@@ -89,12 +89,9 @@ int8_t TABLE::rmv_field(uint32_t i)
 	if(this->p_field[i].type==STR){//如果删除的字段是字符串类型的，那么还需要单独处理
 		for (uint32_t j = 0; j < this->record_num; j++) {
 			string* temp;
-			memcpy((uint8_t*)&temp, cc_table_p_a_i + cc_table_record_length * j, sizeof(STR));
-			if(temp!=NULL){
-				temp->~string();//调用析构函数
-				delete temp;
-				memset(cc_table_p_a_i + cc_table_record_length * j, 0, cc_clean_size);	
-			}
+			memcpy((uint8_t*)&temp, cc_table_p_a_i + cc_table_record_length * j, sizeoftype(STR));
+			delete temp;
+			memset(cc_table_p_a_i + cc_table_record_length * j, 0, cc_clean_size);
 		}
 	}
 	else{
