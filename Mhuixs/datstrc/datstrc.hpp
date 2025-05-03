@@ -9,9 +9,8 @@ Email:hj18914255909@outlook.com
 #define DATSTRC_H
 
 #include "kvalh.h"
-#include "tblh.h"
-#include "list.h"
-#include "stdstr.h"
-#include "bitmap.h"
+#include "tblh.hpp"
+#include "list.hpp"
+#include "bitmap.hpp"
 
 #endif
