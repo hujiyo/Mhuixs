@@ -22,21 +22,32 @@ using namespace std;
 #define bitmap_debug
 
 
-/*
-LIST列表
-列表库是我为了解决QUEUE库频繁申请内存而造成的性能问题而后开发的。
-是第一个使用strmap库实现的数据结构。
-在dirt/test-strmap-queue-list.20241213.c测试文件中，
-strmap库的分配性能优异。
-同时，由于LIST的内存是连续的，对象压缩也容易。
-*/
+/**********************************************************************
+ *  \ LIST列表                                                   /
+ *   列表库是我为了解决QUEUE库频繁申请内存而造成的性能问题而后开发的。
+ *   最初QUEUE和LIST的唯一区别在于QUEUE库直接使用C提供内存分配函数，
+ *   而LIST库使用MEMAP库进行内存提前申请，减少了内存分配时的性能消耗。
+ *   后来由于LIST库的性能优异，于是便舍弃了QUEUE库。
+ *   对于LIST库的优化除了预分配内存池外，还要想办法提高元素的随机访问性能。
+ *   我来说说我原本的设计思路吧，我原本打算借鉴redis的quicklist和C++的deque
+ *   初始状态下使用连续内存块：blocklist，当需要从中间插入时，如果
+ *   blocklist足够小，则直接进行内存的位移，如果blocklist比较大，
+ *   则直接从中间断开，形成两个blocklist，中间使用指针连起来
+ *   但是这也太麻烦了，而且容易出错，所以我放弃了这种方法。
+ *   我觉得还是使用正常的链表比较好，链表的优势在于首尾插入和删除的性能优异。
+ *   缺点则是随机访问的性能较低。于是我打算使用一个deque动态数组来
+ *   存储元素的偏移量索引,这不比quicklist还要遍历list要快吗？
+ *   后来我发现deque的速度也不是特别高，于是我打算亲自实现一个专门用来
+ *   储存uint32_t类型的deque,deque为了兼容不同的数据类型，其内部比较冗余。
+ *   LIST是第一个使用memmap库实现的数据结构。
+ *   在dirt/test-strmap-queue-list.20241213.c测试文件中，
+ *   memap原名是strmap。它保证了LIST的内存是连续的，对象压缩更加容易。
+ *  /                                                           \
+***********************************************************************/
 
 class LIST{
 private:
     MEMAP strpool;//先声明一个数组内存池
-    OFFSET head;//头节点偏移量
-    OFFSET tail;//尾节点偏移量
-    uint32_t num;//节点数量
     int state = 0;//对象状态,成员函数通过改变对象状态来表示对象的异常状态。
     deque<OFFSET> index;//元素偏移量索引
 public:
@@ -57,6 +68,7 @@ public:
     int rpush(str &s);
     str lpop();
     str rpop();
+    int insert(str &s, int64_t idx);
 
     /*
     int insert(str &s, int64_t index);//在指定位置插入元素
