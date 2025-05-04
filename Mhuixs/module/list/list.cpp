@@ -41,7 +41,7 @@ int LIST::lpush(str &s){
         return merr;
     }
     memcpy(strpool.addr(node_o) + sizeof(uint32_t),s.string,s.len);
-    memcpy(strpool.addr(node_o) ,&s.len,sizeof(uint32_t)); 
+    memcpy(strpool.addr(node_o) ,&s.len,sizeof(uint32_t));
 
     //将元素偏移量索引添加到队列中
     this->index.push_front(node_o);
@@ -137,7 +137,7 @@ str 字节流类型
 str的目的不是封装，而是利用C++的特性将成员函数和str本身进行绑定
 */
 
-LIST::str::str(char* s):len(strlen(s)),state(0),string((uint8_t*)malloc(strlen(s))){
+LIST::str::str(const char* s):string((uint8_t*)malloc(strlen(s))),len(strlen(s)),state(0){
     if(string == NULL){
         #ifdef bitmap_debug
         printf("str init malloc error\n");
@@ -148,7 +148,7 @@ LIST::str::str(char* s):len(strlen(s)),state(0),string((uint8_t*)malloc(strlen(s
     memcpy(string, s, len);
 }
 
-LIST::str::str(uint8_t *s, uint32_t len):len(len),state(0),string((uint8_t*)malloc(len)){
+LIST::str::str(uint8_t *s, uint32_t len):string((uint8_t*)malloc(len)),len(len),state(0){
     if(string == NULL){
         #ifdef bitmap_debug
         printf("str init malloc error\n");
@@ -159,7 +159,7 @@ LIST::str::str(uint8_t *s, uint32_t len):len(len),state(0),string((uint8_t*)mall
     memcpy(string, s, len);
 }
 
-LIST::str::str(const str& s):len(s.len),state(s.state),string((uint8_t*)malloc(s.len)){
+LIST::str::str(const str& s):string((uint8_t*)malloc(s.len)),len(s.len),state(s.state){
     if(string == NULL){
         #ifdef bitmap_debug
         printf("str init malloc error\n");
@@ -187,7 +187,7 @@ LIST::str::~str(){
 
 
 void print(LIST::str s){
-    for(int i = 0;i < s.len;i++){
+    for(uint32_t i = 0;i < s.len;i++){
         printf("%c",s.string[i]);
     }
 }

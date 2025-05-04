@@ -55,7 +55,7 @@ public:
         uint8_t *string;//STREAM:字节流的长度
         uint32_t len;//字节流的长度
         int state;//状态码
-        str(char* s);
+        str(const char* s);
         str(uint8_t* s, uint32_t len);
         str(const str& s);
         ~str();

@@ -74,7 +74,9 @@ MEMAP::MEMAP(uint32_t block_size,uint32_t block_num){
     uint32_t strpool_len=12+block_num/8+block_size*block_num;//先计算strpool的所需长度
     strpool=(uint8_t*)calloc(1,strpool_len);
     if(strpool==NULL) {
+        #ifdef bitmap_debug
         printf("MEMAP::MEMAP:MEMAP calloc error\n");
+        #endif
         return;
     }
     *(uint32_t*)strpool= strpool_len;
@@ -89,21 +91,21 @@ MEMAP::~MEMAP(){
 OFFSET MEMAP::smalloc(uint32_t len){
     //强烈建议len为block_size的整数倍,从而提高内存利用率
     if(len==0 || strpool==NULL) return NULL_OFFSET;
+
+    /*
+    smalloc的算法:
+    遍历位图区，找到第一个足够大的连续block_num个空闲块
+    找到后，把连续block_num个空闲块标记为1
+    返回其偏移量
+    */
     
     //获取block_size和block_num
     uint32_t block_size = *(uint32_t*)(strpool + 4);
     uint32_t block_num = *(uint32_t*)(strpool + 8);
 
     uint8_t* bit_map=strpool+12;//位图区指针
-    uint8_t* mem=bit_map+block_num/8;//数据区指针
     uint32_t bitmap_size = block_num / 8;//位图区的字节数
-    uint32_t need_block_num = (len + block_size - 1) / block_size;//计算需要的块数量.
-    /*
-    STRmalloc的算法:
-    遍历位图区，找到第一个足够大的连续block_num个空闲块
-    找到后，把连续block_num个空闲块标记为1
-    返回其偏移量
-    */
+    uint32_t need_block_num = (len + block_size - 1) / block_size;//计算需要的块数量.    
     
     uint32_t k=0,start=0;//k为连续空闲块的数量，start为连续空闲块的起始位置
     for(uint32_t i=0;i<bitmap_size;i++){
@@ -136,17 +138,16 @@ OFFSET MEMAP::smalloc(uint32_t len){
     }
     //复制数据
     memcpy(new_strpool, strpool, 12 + bitmap_size);//复制HEAD和位图区
-    memcpy(new_strpool + 12 + new_bitmap_size, mem, block_num * block_size);//复制数据区
+    memcpy(new_strpool + 12 + new_bitmap_size, bit_map + bitmap_size, block_num * block_size);//复制数据区
     //释放旧内存
     free(strpool);
     //更新strpool
     strpool = new_strpool;
     *(uint32_t*)new_strpool = new_strpool_len;//更新strpool_len
     *(uint32_t*)(new_strpool+8) = new_block_num;//更新block_num
-    //继续搜索
-    bit_map=new_strpool+12;//更新位图区指针
-    mem=new_strpool+12+new_bitmap_size;//更新数据区指针
-    
+
+    //更新位图区指针后继续搜索
+    bit_map=new_strpool+12;    
     for(uint32_t i=bitmap_size;i<new_bitmap_size;i++){//初始化新的位图区
         for(uint32_t j=0;j<8;j++){
             if((bit_map[i]&(1<<j))==0) k++;
@@ -160,6 +161,7 @@ OFFSET MEMAP::smalloc(uint32_t len){
             }
         }
     }
+    return NULL_OFFSET;
 }
 
 void MEMAP::sfree(OFFSET offset,uint32_t len)//通过偏移量释放内存
@@ -169,16 +171,12 @@ void MEMAP::sfree(OFFSET offset,uint32_t len)//通过偏移量释放内存
     使用STRfree时必须保证offset是由STRmalloc正确分配的。
     同时，必须保证len是用STRmalloc分配内存时的len。
     */
-    if(len==0 || strpool==NULL) return;
-    uint8_t *bit_map = strpool+12;//位图区指针
-    
+    if( !len || !strpool ) return;
+
     uint32_t block_size=*(uint32_t*)(strpool+4);
-    uint32_t block_num=*(uint32_t*)(strpool+8);
+    uint8_t *bit_map = strpool + 12;//位图区指针
 
-    uint8_t* mem=bit_map+block_num/8;//数据区指针
-    uint8_t *p_mem = mem+ offset;//数据区指针
-
-    uint32_t need_block_num=(len+block_size-1)/block_size;//计算需要的块数量.
+    uint32_t need_block_num=( len + block_size - 1) / block_size;//计算需要标记的块数量.
 
     if(offset%block_size!=0){
         printf("MEMAP::sfree:error,p_mem is not aligned to block_size\n");
@@ -203,31 +201,24 @@ int MEMAP::iserr(){
     if (block_size%32 != 0 || block_num%32 != 0 || stored_len < 12) return merr;
 
     // 验证存储的长度是否合理
-    uint32_t bitmap_size = block_num / 8;
-    uint32_t expected_len = 12 + bitmap_size + block_size * block_num;
-    if (stored_len != expected_len) return merr;
-
+    if (stored_len != 12 + block_num / 8 + block_size * block_num ) return merr;
     return 0;
 }
 
 int MEMAP::iserr(OFFSET offset){
-    uint32_t strpool_len = *(uint32_t*)strpool;
     uint32_t block_size = *(uint32_t*)(strpool + 4);
     uint32_t block_num = *(uint32_t*)(strpool + 8);
-    
     /*
     offset永远都是block_size的整数倍,比如6400个块,每个块64字节,
     则offset的取值范围是0,1,....6399
     */
-    if(offset==NULL_OFFSET || offset%block_size!=0 || offset<0 || offset>=block_num) return merr;
+    if(offset==NULL_OFFSET || offset%block_size!=0 || offset>=block_num) return merr;
     // 接下来就是检查offset是否已经分配
     //6400个块,每个块占用1bit,则需要6400/8=800字节
-    uint32_t bite=offset/8;
-    uint32_t bit=offset%8;
-    uint8_t* bit_map=strpool+12;
-    if((bit_map[bite]&(1<<bit))==0) return 1;//未分配的合法偏移量
+ 
+    if( ((strpool+12)[offset/8]&(1<<(offset&7))) ) return 0;//分配的合法偏移量
 
-    return 0;//分配的合法偏移量
+    return 1;//未分配的合法偏移量
 }
 
 #endif
