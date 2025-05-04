@@ -17,20 +17,11 @@ Email:hj18914255909@outlook.com
 #define BLOCK_SIZE 64 //数据块大小
 #define BLOCK_NUM 6400//数据块数量
 
-//memap分配内存时默认不字节对齐，所以这里需要硬性规范1字节对齐
-#pragma pack(1)
-typedef struct NODE_LST{
-    OFFSET pre;//前一个节点
-    OFFSET next;//后一个节点
-    uint32_t length;//数据长度
-}NODE_LST;
-#pragma pack(4)
-
-LIST::LIST():head(0),tail(0),num(0),strpool(BLOCK_SIZE, BLOCK_NUM),state(0){
+LIST::LIST():strpool(BLOCK_SIZE, BLOCK_NUM),state(0),index(){
     if(strpool.strpool==NULL) state++;
 }
 
-LIST::LIST(int block_size,int block_num):strpool(block_size, block_num),head(0),tail(0),num(0){
+LIST::LIST(int block_size,int block_num):strpool(block_size, block_num),state(0),index(){
     if(strpool.strpool==NULL) state++;
 }
 
@@ -41,23 +32,16 @@ LIST::~LIST(){
 int LIST::lpush(str &s){
     if(s.string == NULL || s.len == 0 )return merr;
     //先生成一个节点
-    OFFSET node_o = strpool.smalloc(s.len + sizeof(NODE_LST));
-    if(node_o == 0) return merr;
-    memcpy(this->strpool.strpool + node_o + sizeof(NODE_LST),s.string,s.len);
-
-    ((NODE_LST*)(this->strpool.strpool + node_o))->length = s.len;    
-    ((NODE_LST*)(this->strpool.strpool + node_o))->pre = 0;//将节点的前一个节点设置为0 
-
-    if(this->num == 0){
-        this->tail = this->head = node_o;
-        ((NODE_LST*)(this->strpool.strpool + node_o))->next = 0;
-        this->num++;
-        return 0;
+    OFFSET node_o = strpool.smalloc(s.len + sizeof(uint32_t));
+    if(node_o == NULL_OFFSET) {
+        state++;
+        #ifdef bitmap_debug
+        printf("LIST::lpush:smalloc error\n");
+        #endif
+        return merr;
     }
-    ((NODE_LST*)(this->strpool.strpool + node_o))->next = this->head;
-    ((NODE_LST*)(this->strpool.strpool + this->head))->pre = node_o;
-    this->head = node_o;//将头节点设置为新节点
-    this->num++;//最后将队列的长度加1
+    memcpy(strpool.addr(node_o) + sizeof(uint32_t),s.string,s.len);
+    memcpy(strpool.addr(node_o) ,&s.len,sizeof(uint32_t)); 
 
     //将元素偏移量索引添加到队列中
     this->index.push_front(node_o);
@@ -66,23 +50,16 @@ int LIST::lpush(str &s){
 int LIST::rpush(str &s){
     if(s.string == NULL || s.len == 0)return merr;
     //先生成一个节点
-    OFFSET node_o = strpool.smalloc(s.len + sizeof(NODE_LST));
-    if(node_o == 0) return merr;
-    memcpy(this->strpool.strpool + node_o + sizeof(NODE_LST),s.string,s.len);
-    
-    ((NODE_LST*)(this->strpool.strpool + node_o))->length = s.len;
-    ((NODE_LST*)(this->strpool.strpool + node_o))->next = 0;//将节点的后一个节点设置为0
-
-    if(this->num == 0){
-        this->tail = this->head = node_o;
-        ((NODE_LST*)(this->strpool.strpool + node_o))->pre = 0;
-        this->num++;
-        return 0;
+    OFFSET node_o = strpool.smalloc(s.len + sizeof(uint32_t));
+    if(node_o == NULL_OFFSET){
+        state++;
+        #ifdef bitmap_debug
+        printf("LIST::rpush:smalloc error\n");
+        #endif
+        return merr;
     }
-    ((NODE_LST*)(this->strpool.strpool + node_o))->pre = this->tail;   
-    ((NODE_LST*)(this->strpool.strpool + this->tail))->next = node_o;
-    this->tail = node_o;//将尾节点设置为新节点
-    this->num++;//最后将队列的长度加1
+    memcpy(strpool.addr(node_o) + sizeof(uint32_t),s.string,s.len);
+    memcpy(strpool.addr(node_o),&s.len,sizeof(uint32_t));
 
     //将元素偏移量索引添加到队列中
     this->index.push_back(node_o);
@@ -91,51 +68,66 @@ int LIST::rpush(str &s){
 
 LIST::str LIST::lpop()
 {
-    if(this->num == 0)return "";
+    if(!this->index.size()){printf("1");
+        return "";}
     //将元素偏移量索引从队列中删除
-    this->index.pop_front();
+    OFFSET head_offset =this->index.front();//获取队列头元素偏移量
+    this->index.pop_front();//删除队列头元素
     //复制数据流
-    uint32_t length = ((NODE_LST*)(this->strpool.strpool + this->head))->length;
-    str s(this->strpool.strpool + this->head + sizeof(NODE_LST),length);
-
-    //将头节点的后一个节点的前一个节点设置为0
-    if(this->num > 1){    
-        ((NODE_LST*)(this->strpool.strpool + ((NODE_LST*)(this->strpool.strpool + this->head))->next))->pre = 0;
-        OFFSET old_node = this->head;
-        this->head = ((NODE_LST*)(this->strpool.strpool + this->head))->next;
-        this->strpool.sfree(old_node,length + sizeof(NODE_LST));
-        this->num--;
-        return s;
-    }
-    this->strpool.sfree(this->head,length + sizeof(NODE_LST));
-    this->head = this->tail = this->num = 0;
-
+    uint32_t length;
+    memcpy(&length,strpool.addr(head_offset),sizeof(uint32_t));
+    str s(strpool.addr(head_offset) + sizeof(uint32_t),length);
+    this->strpool.sfree(head_offset,length + sizeof(uint32_t));//释放内存    
     return s;
 }
 LIST::str LIST::rpop()
 {
-    if(this->num == 0) return "";
+    if(!this->index.size()) return "";
     //将元素偏移量索引从队列中删除
-    this->index.pop_back();
+    OFFSET tail_offset =this->index.back();//获取队列尾元素偏移量
+    this->index.pop_back();//删除队列尾元素
     //复制数据流
-    uint32_t length = ((NODE_LST*)(this->strpool.strpool + this->tail))->length;
-    str s(this->strpool.strpool + this->tail + sizeof(NODE_LST),length);
+    uint32_t length;
+    memcpy(&length,strpool.addr(tail_offset),sizeof(uint32_t));
+    str s(strpool.addr(tail_offset) + sizeof(uint32_t),length);
 
-    //将尾节点的前一个节点的后一个节点设置为0
-    if(this->num > 1){
-        ((NODE_LST*)(this->strpool.strpool + ((NODE_LST*)(this->strpool.strpool + this->tail))->pre))->next = 0;
-        OFFSET old_node = this->tail;
-        this->tail = ((NODE_LST*)(this->strpool.strpool + this->tail))->pre;
-        this->strpool.sfree(old_node,length + sizeof(NODE_LST));
-        this->num--;
-        return s;
-    }
-    this->strpool.sfree(this->tail,length + sizeof(NODE_LST));
-    this->head = this->tail = this->num = 0;
+    this->strpool.sfree(tail_offset,length + sizeof(uint32_t));//释放内存
     return s;
 }
 int LIST::iserr(){
+    if(this->strpool.iserr()){
+        this->state++;
+        #ifdef bitmap_debug
+        printf("LIST::iserr:strpool iserr\n");
+        #endif
+        return merr;
+    }
     return this->state;
+}
+
+int LIST::insert(str &s, int64_t idx) 
+{
+    //0,1,2....表示从左往右数,-1,-2,-3...表示从右往左数,0表示第一个元素，-1表示最后一个元素
+    if (s.string == NULL || s.len == 0) return merr;
+    // 处理负数索引，-1表示最后一个元素，-2倒数第二个...
+    int64_t adjusted_idx = (idx < 0) ? (this->index.size() + idx) : idx;
+    // 参数范围检查
+    if (adjusted_idx < 0 || adjusted_idx > this->index.size()) return merr;
+
+    OFFSET node_o = strpool.smalloc(s.len + sizeof(uint32_t));
+    if (node_o == NULL_OFFSET) {
+        state++;
+        #ifdef bitmap_debug
+        printf("LIST::insert:smalloc error\n");
+        #endif
+        return merr;
+    }
+    //向index中插入元素
+    this->index.insert(this->index.begin() + adjusted_idx, node_o);
+
+    // 写入数据到节点
+    memcpy(strpool.addr(node_o) + sizeof(uint32_t), s.string, s.len);
+    return 0;
 }
 
 /*
@@ -193,18 +185,17 @@ LIST::str::~str(){
  ************************************/
 
 
-/*
+
 void print(LIST::str s){
     for(int i = 0;i < s.len;i++){
         printf("%c",s.string[i]);
-    } 
+    }
 }
 //下面是LIST的测试代码
 
 int main(){
-    LIST list(64,1000);
+    LIST list(32,32);
     for(int i = 0;i < 1000000;i++){
-        
         LIST::str s1("hello1########################");
         LIST::str s2("hello2########################");
         LIST::str s3("hello3########################");
@@ -217,14 +208,14 @@ int main(){
         list.lpush(s5);
         for(int i = 0;i < 5;i++){
             list.lpop();
-        }  
+        }
         list.rpush(s1);
         list.rpush(s2);
         list.rpush(s3);
         list.rpush(s4);
         list.rpush(s5);
         for(int i = 0;i < 5;i++){
-        list.rpop();
+            list.rpop();
         }
         list.rpush(s1);
         list.lpush(s2);
@@ -238,7 +229,7 @@ int main(){
     printf("end\n");
     return 0;
 }
-*/
+
 
 //下面是std::list的测试代码
 /*
