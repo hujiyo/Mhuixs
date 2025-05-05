@@ -30,7 +30,6 @@ LIST::~LIST(){
 }
 
 int LIST::lpush(str &s){
-    if(s.string == NULL || s.len == 0 )return merr;
     //先生成一个节点
     OFFSET node_o = strpool.smalloc(s.len + sizeof(uint32_t));
     if(node_o == NULL_OFFSET) {
@@ -41,14 +40,13 @@ int LIST::lpush(str &s){
         return merr;
     }
     memcpy(strpool.addr(node_o) + sizeof(uint32_t),s.string,s.len);
-    memcpy(strpool.addr(node_o) ,&s.len,sizeof(uint32_t));
+    *(uint32_t*)strpool.addr(node_o) = s.len;
 
     //将元素偏移量索引添加到队列中
     this->index.push_front(node_o);
     return 0;
 }
 int LIST::rpush(str &s){
-    if(s.string == NULL || s.len == 0)return merr;
     //先生成一个节点
     OFFSET node_o = strpool.smalloc(s.len + sizeof(uint32_t));
     if(node_o == NULL_OFFSET){
@@ -59,7 +57,7 @@ int LIST::rpush(str &s){
         return merr;
     }
     memcpy(strpool.addr(node_o) + sizeof(uint32_t),s.string,s.len);
-    memcpy(strpool.addr(node_o),&s.len,sizeof(uint32_t));
+    *(uint32_t*)strpool.addr(node_o) = s.len;
 
     //将元素偏移量索引添加到队列中
     this->index.push_back(node_o);
@@ -90,7 +88,6 @@ LIST::str LIST::rpop()
     uint32_t length;
     memcpy(&length,strpool.addr(tail_offset),sizeof(uint32_t));
     str s(strpool.addr(tail_offset) + sizeof(uint32_t),length);
-
     this->strpool.sfree(tail_offset,length + sizeof(uint32_t));//释放内存
     return s;
 }
@@ -108,11 +105,10 @@ int LIST::iserr(){
 int LIST::insert(str &s, int64_t idx) 
 {
     //0,1,2....表示从左往右数,-1,-2,-3...表示从右往左数,0表示第一个元素，-1表示最后一个元素
-    if (s.string == NULL || s.len == 0) return merr;
     // 处理负数索引，-1表示最后一个元素，-2倒数第二个...
     int64_t adjusted_idx = (idx < 0) ? (this->index.size() + idx) : idx;
     // 参数范围检查
-    if (adjusted_idx < 0 || adjusted_idx > this->index.size()) return merr;
+    if (adjusted_idx < 0 || adjusted_idx >= this->index.size()) return merr;
 
     OFFSET node_o = strpool.smalloc(s.len + sizeof(uint32_t));
     if (node_o == NULL_OFFSET) {
@@ -127,7 +123,89 @@ int LIST::insert(str &s, int64_t idx)
 
     // 写入数据到节点
     memcpy(strpool.addr(node_o) + sizeof(uint32_t), s.string, s.len);
+    *(uint32_t*)strpool.addr(node_o) = s.len;
     return 0;
+}
+
+int LIST::update(str &s, int64_t idx)
+{
+    //先检查索引是否有效
+    int64_t adjusted_idx = (idx < 0) ? (this->index.size() + idx) : idx;
+    // 参数范围检查
+    if (adjusted_idx < 0 || adjusted_idx >= this->index.size()) return merr;
+    //获取节点偏移量
+    OFFSET node_o = this->index[adjusted_idx];
+    
+    //释放旧数据
+    this->strpool.sfree(node_o, *(uint32_t*)strpool.addr(node_o) + sizeof(uint32_t));
+    //分配新数据
+    node_o = strpool.smalloc(s.len + sizeof(uint32_t));
+    if (node_o == NULL_OFFSET) {
+        state++;
+        #ifdef bitmap_debug
+        printf("LIST::update:smalloc error\n");
+        #endif
+        return merr; 
+    }
+    //写入新数据
+    memcpy(strpool.addr(node_o) + sizeof(uint32_t), s.string, s.len);
+    *(uint32_t*)strpool.addr(node_o) = s.len;
+    //更新索引
+    this->index[adjusted_idx] = node_o;
+    return 0;
+}
+
+int LIST::del(int64_t index){
+    //先检查索引是否有效
+    int64_t adjusted_idx = (index < 0)? (this->index.size() + index) : index;
+    // 参数范围检查
+    if (adjusted_idx < 0 || adjusted_idx >= this->index.size()) return merr;
+    //获取节点偏移量
+    OFFSET node_o = this->index[adjusted_idx];
+    //释放内存
+    this->strpool.sfree(node_o, *(uint32_t*)strpool.addr(node_o) + sizeof(uint32_t));
+    //删除索引
+    this->index.erase(this->index.begin() + adjusted_idx);
+    return 0;
+}
+
+LIST::str LIST::get(int64_t index){
+    //先检查索引是否有效
+    int64_t adjusted_idx = (index < 0)? (this->index.size() + index) : index;
+    // 参数范围检查
+    if (adjusted_idx < 0 || adjusted_idx >= this->index.size()) return "INDEX OUT OF RANGE";
+    //获取节点偏移量
+    OFFSET node_o = this->index[adjusted_idx];
+    //读取数据
+    uint32_t length = *(uint32_t*)strpool.addr(node_o);
+    str s(strpool.addr(node_o) + sizeof(uint32_t),length);
+    return s;
+}
+
+uint32_t LIST::num(){
+    return this->index.size();
+}
+
+int LIST::clear(){
+    //释放内存
+    this->strpool.~MEMAP();
+    //清空索引
+    this->index.clear();
+    //重新初始化
+    this->strpool = MEMAP(BLOCK_SIZE, BLOCK_NUM);
+    if(this->strpool.strpool==NULL) {
+        this->state++;
+        #ifdef bitmap_debug
+        printf("LIST::clear:MEMAP calloc error\n");
+        #endif
+        return merr;
+    }
+    this->state = 0;
+    return 0;
+}
+
+int LIST::find(str &s){
+    
 }
 
 /*

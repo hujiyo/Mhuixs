@@ -68,17 +68,17 @@ public:
     int rpush(str &s);
     str lpop();
     str rpop();
-    int insert(str &s, int64_t idx);
-
-    /*
     int insert(str &s, int64_t index);//在指定位置插入元素
     int update(str &s, int64_t index);//更新指定位置的元素
-    int remove(int64_t index);//删除指定位置的元素
+    int del(int64_t index);//删除指定位置的元素
     str get(int64_t index);//获取指定位置的元素
     uint32_t num();//获取列表的元素数量
-    //int clear();//清空列表
+    int clear();//清空列表
+    int find(str &s);//查找元素
+
+    /*  
     //int sort();//排序
-    //int find(string s);//查找元素
+    
     */
     int iserr();
 };
