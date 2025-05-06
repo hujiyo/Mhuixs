@@ -1,4 +1,4 @@
-#include "list.hpp"
+#include "list-ud.hpp"
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
@@ -15,7 +15,7 @@ Email:hj18914255909@outlook.com
 默认初始列表容量为64*6400=409600字节=400kb
 */
 #define BLOCK_SIZE 64 //数据块大小
-#define BLOCK_NUM 6400//数据块数量
+#define BLOCK_NUM 3200//数据块数量
 
 LIST::LIST():strpool(BLOCK_SIZE, BLOCK_NUM),state(0),index(){
     if(strpool.strpool==NULL) state++;
@@ -30,6 +30,12 @@ LIST::~LIST(){
 }
 
 int LIST::lpush(str &s){
+    if(s.len == 0 || s.string == NULL) {
+        #ifdef bitmap_debug
+        printf("LIST::lpush: empty string, skip\n");
+        #endif
+        return merr;
+    }
     //先生成一个节点
     OFFSET node_o = strpool.smalloc(s.len + sizeof(uint32_t));
     if(node_o == NULL_OFFSET) {
@@ -43,10 +49,16 @@ int LIST::lpush(str &s){
     *(uint32_t*)strpool.addr(node_o) = s.len;
 
     //将元素偏移量索引添加到队列中
-    this->index.push_front(node_o);
+    this->index.lpush(node_o);
     return 0;
 }
 int LIST::rpush(str &s){
+    if(s.len == 0 || s.string == NULL) {
+        #ifdef bitmap_debug
+        printf("LIST::rpush: empty string, skip\n");
+        #endif
+        return merr;
+    }
     //先生成一个节点
     OFFSET node_o = strpool.smalloc(s.len + sizeof(uint32_t));
     if(node_o == NULL_OFFSET){
@@ -60,7 +72,7 @@ int LIST::rpush(str &s){
     *(uint32_t*)strpool.addr(node_o) = s.len;
 
     //将元素偏移量索引添加到队列中
-    this->index.push_back(node_o);
+    this->index.rpush(node_o);
     return 0;
 }
 
@@ -68,8 +80,15 @@ LIST::str LIST::lpop()
 {
     if(!this->index.size()) return "";
     //将元素偏移量索引从队列中删除
-    OFFSET head_offset =this->index.front();//获取队列头元素偏移量
-    this->index.pop_front();//删除队列头元素
+    int64_t offset= index.lpop();//获取队列头元素偏移量
+    if(offset == merr) {
+        state++;
+        #ifdef bitmap_debug
+        printf("LIST::lpop:uintdeque:lpop error\n");
+        #endif
+        return "";//如果队列为空，返回空字符串
+    }
+    OFFSET head_offset = offset;//获取队列头元素偏移量
     //复制数据流
     uint32_t length;
     memcpy(&length,strpool.addr(head_offset),sizeof(uint32_t));
@@ -81,8 +100,15 @@ LIST::str LIST::rpop()
 {
     if(!this->index.size()) return "";
     //将元素偏移量索引从队列中删除
-    OFFSET tail_offset =this->index.back();//获取队列尾元素偏移量
-    this->index.pop_back();//删除队列尾元素
+    int64_t offset= index.rpop();//获取队列头元素偏移量
+    if(offset == merr) {
+        state++;
+        #ifdef bitmap_debug
+        printf("LIST::rpop:uintdeque:rpop error\n");
+        #endif
+        return "";//如果队列为空，返回空字符串 
+    }
+    OFFSET tail_offset = offset;//获取队列尾元素偏移量
     //复制数据流
     uint32_t length;
     memcpy(&length,strpool.addr(tail_offset),sizeof(uint32_t));
@@ -118,8 +144,7 @@ int LIST::insert(str &s, int64_t idx)
         return merr;
     }
     //向index中插入元素
-    this->index.insert(this->index.begin() + adjusted_idx, node_o);
-
+    this->index.insert(adjusted_idx, node_o);
     // 写入数据到节点
     memcpy(strpool.addr(node_o) + sizeof(uint32_t), s.string, s.len);
     *(uint32_t*)strpool.addr(node_o) = s.len;
@@ -133,7 +158,7 @@ int LIST::update(str &s, int64_t idx)
     // 参数范围检查
     if (adjusted_idx < 0 || adjusted_idx >= this->index.size()) return merr;
     //获取节点偏移量
-    OFFSET node_o = this->index[adjusted_idx];
+    OFFSET node_o = this->index.get_index(adjusted_idx);
     
     //释放旧数据
     this->strpool.sfree(node_o, *(uint32_t*)strpool.addr(node_o) + sizeof(uint32_t));
@@ -150,7 +175,7 @@ int LIST::update(str &s, int64_t idx)
     memcpy(strpool.addr(node_o) + sizeof(uint32_t), s.string, s.len);
     *(uint32_t*)strpool.addr(node_o) = s.len;
     //更新索引
-    this->index[adjusted_idx] = node_o;
+    this->index.set_index(adjusted_idx, node_o);
     return 0;
 }
 
@@ -160,11 +185,11 @@ int LIST::del(int64_t index){
     // 参数范围检查
     if (adjusted_idx < 0 || adjusted_idx >= this->index.size()) return merr;
     //获取节点偏移量
-    OFFSET node_o = this->index[adjusted_idx];
+    OFFSET node_o = this->index.get_index(adjusted_idx);
     //释放内存
     this->strpool.sfree(node_o, *(uint32_t*)strpool.addr(node_o) + sizeof(uint32_t));
     //删除索引
-    this->index.erase(this->index.begin() + adjusted_idx);
+    this->index.rm_index(adjusted_idx);
     return 0;
 }
 
@@ -174,7 +199,7 @@ LIST::str LIST::get(int64_t index){
     // 参数范围检查
     if (adjusted_idx < 0 || adjusted_idx >= this->index.size()) return "INDEX OUT OF RANGE";
     //获取节点偏移量
-    OFFSET node_o = this->index[adjusted_idx];
+    OFFSET node_o = this->index.get_index(adjusted_idx);
     //读取数据
     uint32_t length = *(uint32_t*)strpool.addr(node_o);
     str s(strpool.addr(node_o) + sizeof(uint32_t),length);
@@ -214,12 +239,20 @@ str 字节流类型
 str的目的不是封装，而是利用C++的特性将成员函数和str本身进行绑定
 */
 
-LIST::str::str(const char* s):string((uint8_t*)malloc(strlen(s))),len(strlen(s)),state(0){
+LIST::str::str(const char* s) {
+    len = strlen(s);
+    state = 0;
+    if(len == 0) {
+        string = NULL;
+        // 不报错，允许空字符串
+        return;
+    }
+    string = (uint8_t*)malloc(len);
     if(string == NULL){
         #ifdef bitmap_debug
         printf("str init malloc error\n");
         #endif
-        len = 0,state++;
+        len = 0; state++;
         return;
     }
     memcpy(string, s, len);
@@ -269,15 +302,15 @@ void print(LIST::str s){
     }
 }
 //下面是LIST的测试代码
-#include <stdio.h>
 #include <time.h>
 int main(){
     LIST list(32,32);
+    
 
     //测试代码
     time_t start, end;
     start = clock();
-    //100s
+
     for(int i = 0;i < 10000;i++){
         LIST::str s1("hello1########################");
         LIST::str s2("hello2########################");
@@ -289,11 +322,11 @@ int main(){
         list.lpush(s3);
         list.lpush(s4);
         list.lpush(s5);
-        list.rpush(s1);
-        list.rpush(s2);
-        list.rpush(s3);
-        list.rpush(s4);
-        list.rpush(s5);
+        list.lpush(s1);
+        list.lpush(s2);
+        list.lpush(s3);
+        list.lpush(s4);
+        list.lpush(s5);
         for(int i = 0;i < 10;i++){
             list.insert(s1,i);
         }
@@ -301,8 +334,8 @@ int main(){
             list.insert(s2,i);
         }
     }
-
     end = clock();
+    #define CLOCKS_PER_SEC 1000
     printf("LIST耗时: %.3f秒\n", (end - start) / (double)CLOCKS_PER_SEC);
     printf("end\n");
     return 0;
