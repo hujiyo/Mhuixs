@@ -29,7 +29,7 @@ int main() {
     UintDeque dq;
     
     for(int i = 0; i < MAX/2; i++){
-        dq.lpush(i);
+        dq.lpush(i);//499999，499998.... 2,1,0
     }
     for(int i = MAX/2,j=0; i < MAX; i++,j++){
         dq.insert(j,i);
@@ -43,5 +43,7 @@ int main() {
         int a = dq.rpop();
         cout << a << endl;
     }
+
+    cout<<dq.size()<<endl;
 }
 #endif
