@@ -311,95 +311,51 @@ LIST::str::~str(){
 }
 
 
-//#define TEST_LIST_FIND
-#ifdef TEST_LIST_FIND
-int main() {
+void print(LIST::str s){
+    for(uint32_t i = 0;i < s.len;i++){
+        printf("%c",s.string[i]);
+    }
+}
+
+#define MAIN
+#ifdef MAIN
+#include <time.h>
+int main(){
     LIST list;
-    LIST::str s1("hello world");
-    LIST::str s2("foo bar");
-    LIST::str s3("test123");
-    LIST::str s4("abc123xyz");
-    list.lpush(s1);
-    list.lpush(s2);
-    list.lpush(s3);
-    list.lpush(s4);
-
-    // 测试正则查找
-    LIST::str pattern1("foo.*");
-    LIST::str pattern2("123");
-    LIST::str pattern3("^hello");
-    LIST::str pattern4("notfound");
-
-    printf("find 'foo.*' : %lld\n", list.find(pattern1));      // 期望输出1
-    printf("find '123'  : %lld\n", list.find(pattern2));        // 期望输出2
-    printf("find '^hello': %lld\n", list.find(pattern3));       // 期望输出3
-    printf("find 'notfound': %lld\n", list.find(pattern4));     // 期望输出-1
-
-    system("pause");
-
-    return 0;
-}
-#endif
-
-#define TEST_LIST_PERF
-#ifdef TEST_LIST_PERF
-#include <chrono>
-
-int main() {
-    using namespace std::chrono;
-    LIST list(32,6400);
-    const int N = 100000;
-    // 批量插入
-    auto t1 = high_resolution_clock::now();
-    for (int i = 0; i < N; ++i) {
-        char buf[64];
-        snprintf(buf, sizeof(buf), "item_%d_abc123", i);
-        LIST::str s(buf);
-        list.lpush(s);
+    time_t start, end;
+    start = clock();
+    for(int i = 0;i < 1000000;i++){
+        LIST::str s("hello world");
+        list.rpush(s); 
     }
-    auto t2 = high_resolution_clock::now();
-    printf("插入%d个元素耗时: %.3f ms\n", N, duration<double, std::milli>(t2-t1).count());
-
-    // 多次查找并打印部分命中信息
-    int found = 0;
-    t1 = high_resolution_clock::now();
-    for (int i = 0; i < 1000; ++i) {
-        char pat[64];
-        snprintf(pat, sizeof(pat), "item_%d_abc123", N/2 + i);
-        LIST::str pattern(pat);
-        int64_t idx = list.find(pattern);
-        if (idx != -1) {
-            found++;
-            if (found <= 10) {
-                // 打印实际内容，辅助调试
-                LIST::str real = list.get(idx);
-                printf("pattern: %s, idx: %lld, value: %.*s\n", pat, idx, real.len, real.string);
-            }
-        }
-    }
-    t2 = high_resolution_clock::now();
-    printf("查找1000次耗时: %.3f ms，命中次数: %d\n", duration<double, std::milli>(t2-t1).count(), found);
-
-    // 调试：打印前10个元素内容，确认顺序
-    printf("前10个元素内容：\n");
-    for (int i = 0; i < 10; ++i) {
-        LIST::str s = list.get(i);
-        printf("idx %d: %.*s\n", i, s.len, s.string);
-    }
-    printf("最后10个元素内容：\n");
-    for (int i = N-10; i < N; ++i) {
-        LIST::str s = list.get(i);
-        printf("idx %d: %.*s\n", i, s.len, s.string);
-    }
-
-    // 新增：打印实际元素数量，排查amount()和index.size()问题
-    printf("list.amount() = %u\n", list.amount());
-
-    // 新增：打印index.size()，排查UintDeque内部实现问题
-    // printf("index.size() = %u\n", list.index.size()); // 若index为private可临时加public打印
-
+    end = clock();
+    #define CLOCKS_PER_SEC 1000
+    printf("LIST耗时: %.3f秒\n", (end - start) / (double)CLOCKS_PER_SEC);
+    printf("end\n");
     return 0;
 }
 #endif
 
 
+//#define main2
+#ifdef main2
+#include <time.h>
+#include <string>
+#include <deque>
+#include <iostream>
+
+int main(){
+    std::deque<std::string> deque;
+    time_t start, end;
+    start = clock();
+    for(int i = 0;i < 1000000;i++){
+        deque.push_back("hello world");
+    }
+    end = clock();
+    #define CLOCKS_PER_SEC 1000
+    printf("deque耗时: %.3f秒\n", (end - start) / (double)CLOCKS_PER_SEC);
+    printf("end\n");
+    return 0;
+}
+
+#endif
