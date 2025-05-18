@@ -321,7 +321,7 @@ void print(LIST::str s){
 #ifdef MAIN
 #include <time.h>
 int main(){
-    LIST list(64,64000000);
+    LIST list(64,64000);
     time_t start, end;
     start = clock();
     for(int i = 0;i < 1000000;i++){
@@ -330,12 +330,27 @@ int main(){
     }
     end = clock();
     #define CLOCKS_PER_SEC 1000
-    printf("LIST耗时: %.3f秒\n", (end - start) / (double)CLOCKS_PER_SEC);
+    printf("LIST推入耗时: %.3f秒\n", (end - start) / (double)CLOCKS_PER_SEC);
+
+    // 插入测试：插入10000条到中间，每次都重新计算mid
+    int insert_count = 10000;
+    LIST::str insert_str("inserted");
+    start = clock();
+    for(int i = 0; i < insert_count; ++i){
+        int mid = list.amount() / 2;
+        list.insert(insert_str, mid);
+    }
+    end = clock();
+    printf("LIST插入%d条耗时: %.3f秒\n", insert_count, (end - start) / (double)CLOCKS_PER_SEC);
+    printf("插入后中间位置内容: ");
+    int mid = list.amount() / 2;
+    LIST::str got = list.get(mid);
+    print(got);
+    printf("\n");
     printf("end\n");
     return 0;
 }
 #endif
-
 
 //#define main2
 #ifdef main2
@@ -353,9 +368,21 @@ int main(){
     }
     end = clock();
     #define CLOCKS_PER_SEC 1000
-    printf("deque耗时: %.3f秒\n", (end - start) / (double)CLOCKS_PER_SEC);
+    printf("deque推入耗时: %.3f秒\n", (end - start) / (double)CLOCKS_PER_SEC);
+
+    // 插入测试：插入10000条到中间，每次都重新计算mid
+    int insert_count = 10000;
+    start = clock();
+    for(int i = 0; i < insert_count; ++i){
+        int mid = deque.size() / 2;
+        deque.insert(deque.begin() + mid, "inserted");
+    }
+    end = clock();
+    printf("deque插入%d条耗时: %.3f秒\n", insert_count, (end - start) / (double)CLOCKS_PER_SEC);
+    printf("插入后中间位置内容: ");
+    int mid = deque.size() / 2;
+    std::cout << deque[mid] << std::endl;
     printf("end\n");
     return 0;
 }
-
 #endif

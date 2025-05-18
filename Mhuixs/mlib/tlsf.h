@@ -87,6 +87,6 @@ int tlsf_check_pool(pool_t pool);
 };
 #endif
 
-#endif
+#endif /* INCLUDED_tlsf */
 
-#include "tlsf.c"//这边就直接包含实现文件了
+#include "tlsf.c"

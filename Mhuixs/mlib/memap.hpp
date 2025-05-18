@@ -30,9 +30,26 @@ struct MEMAP {
     MEMAP(uint32_t block_size_, uint32_t block_num_) {
         block_size = block_size_;
         block_num = block_num_;
+        
+        // 确保初始池至少64字节（TLSF最小要求）
         pool_bytes = block_size * block_num;
+        if (pool_bytes < 64) pool_bytes = 64;
+        
+        // 分配内存（使用标准malloc）
         strpool = malloc(pool_bytes + tlsf_size());
+        if (!strpool) {
+            tlsf = nullptr;
+            return;
+        }
+
+        // 创建TLSF并添加首池
         tlsf = tlsf_create_with_pool(strpool, pool_bytes);
+        if (!tlsf) {
+            free(strpool);
+            strpool = nullptr;
+            return;
+        }
+        
         pools.push_back(strpool);
         pool_sizes.push_back(pool_bytes);
     }
@@ -47,31 +64,25 @@ struct MEMAP {
         if (!tlsf || len == 0) return NULL_OFFSET;
         void* ptr = tlsf_malloc(tlsf, len);
         if (!ptr) {
-            // 自动扩容：新建池并加入TLSF
-            uint32_t new_pool_bytes = ((len + block_size - 1) / block_size) * block_size;
-            if (new_pool_bytes < add_block_num * block_size)
-                new_pool_bytes = add_block_num * block_size;
-            // 保证池大小加上TLSF元数据
-            void* new_pool_mem = malloc(new_pool_bytes + tlsf_pool_overhead());
-            if (!new_pool_mem) return NULL_OFFSET;
-            pool_t new_pool = tlsf_add_pool(tlsf, new_pool_mem, new_pool_bytes);
-            if (!new_pool) {
-                free(new_pool_mem);
+            uint32_t new_pool_bytes = std::max(len, pool_bytes * 2);
+            if (new_pool_bytes < 64) new_pool_bytes = 64;
+            void* new_pool = malloc(new_pool_bytes);
+            if (!new_pool) return NULL_OFFSET;
+            if (!tlsf_add_pool(tlsf, new_pool, new_pool_bytes)) {
+                free(new_pool);
                 return NULL_OFFSET;
             }
-            pools.push_back(new_pool_mem);
+            pools.push_back(new_pool);
             pool_sizes.push_back(new_pool_bytes);
             ptr = tlsf_malloc(tlsf, len);
             if (!ptr) return NULL_OFFSET;
         }
         // 查找ptr属于哪个池，计算offset
         for (size_t i = 0; i < pools.size(); ++i) {
-            uint8_t* base = (uint8_t*)pools[i] + tlsf_pool_overhead();
+            uint8_t* base = (uint8_t*)pools[i];
             if ((uint8_t*)ptr >= base && (uint8_t*)ptr < base + pool_sizes[i]) {
-                // 兼容旧接口，首池offset直接返回
                 if (i == 0)
-                    return (OFFSET)((uint8_t*)ptr - ((uint8_t*)strpool + tlsf_pool_overhead()));
-                // 其他池offset编码为高位池号+低位偏移（高8位池号，低24位偏移）
+                    return (OFFSET)((uint8_t*)ptr - (uint8_t*)strpool);
                 return (OFFSET)((i << 24) | ((uint8_t*)ptr - base));
             }
         }
@@ -82,13 +93,12 @@ struct MEMAP {
         if (!tlsf || offset == NULL_OFFSET) return;
         void* ptr = nullptr;
         if ((offset >> 24) == 0) {
-            // 首池
-            ptr = (uint8_t*)strpool + tlsf_pool_overhead() + offset;
+            ptr = (uint8_t*)strpool + offset;
         } else {
             size_t pool_idx = offset >> 24;
             uint32_t off = offset & 0xFFFFFF;
             if (pool_idx < pools.size())
-                ptr = (uint8_t*)pools[pool_idx] + tlsf_pool_overhead() + off;
+                ptr = (uint8_t*)pools[pool_idx] + off;
         }
         if (ptr)
             tlsf_free(tlsf, ptr);
@@ -98,17 +108,17 @@ struct MEMAP {
         if (!tlsf || offset == NULL_OFFSET) return merr;
         void* ptr = nullptr;
         if ((offset >> 24) == 0) {
-            ptr = (uint8_t*)strpool + tlsf_pool_overhead() + offset;
-            if ((uint8_t*)ptr < (uint8_t*)strpool + tlsf_pool_overhead() ||
-                (uint8_t*)ptr >= (uint8_t*)strpool + tlsf_pool_overhead() + pool_bytes)
+            ptr = (uint8_t*)strpool + offset;
+            if ((uint8_t*)ptr < (uint8_t*)strpool ||
+                (uint8_t*)ptr >= (uint8_t*)strpool + pool_bytes)
                 return merr;
         } else {
             size_t pool_idx = offset >> 24;
             uint32_t off = offset & 0xFFFFFF;
             if (pool_idx >= pools.size()) return merr;
-            ptr = (uint8_t*)pools[pool_idx] + tlsf_pool_overhead() + off;
-            if ((uint8_t*)ptr < (uint8_t*)pools[pool_idx] + tlsf_pool_overhead() ||
-                (uint8_t*)ptr >= (uint8_t*)pools[pool_idx] + tlsf_pool_overhead() + pool_sizes[pool_idx])
+            ptr = (uint8_t*)pools[pool_idx] + off;
+            if ((uint8_t*)ptr < (uint8_t*)pools[pool_idx] ||
+                (uint8_t*)ptr >= (uint8_t*)pools[pool_idx] + pool_sizes[pool_idx])
                 return merr;
         }
         // TLSF无法直接判断块是否已分配，只能保证指针合法
@@ -124,12 +134,12 @@ struct MEMAP {
     uint8_t* addr(OFFSET offset) {
         if (!tlsf || offset == NULL_OFFSET) return nullptr;
         if ((offset >> 24) == 0) {
-            return (uint8_t*)strpool + tlsf_pool_overhead() + offset;
+            return (uint8_t*)strpool + offset;
         } else {
             size_t pool_idx = offset >> 24;
             uint32_t off = offset & 0xFFFFFF;
             if (pool_idx >= pools.size()) return nullptr;
-            return (uint8_t*)pools[pool_idx] + tlsf_pool_overhead() + off;
+            return (uint8_t*)pools[pool_idx] + off;
         }
     }
 };
