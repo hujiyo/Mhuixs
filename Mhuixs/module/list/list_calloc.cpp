@@ -12,6 +12,7 @@ Email:hj18914255909@outlook.com
 
 LIST_CALLOC::LIST_CALLOC() : index(), state(0) {}
 
+
 LIST_CALLOC::~LIST_CALLOC() {
     clear();
 }

@@ -22,7 +22,7 @@ Email:hj18914255909@outlook.com
 #define LIST_MEMAP_DEF_block_num 3200//数据块数量
 
 LIST::LIST():strpool(LIST_MEMAP_DEF_block_size, LIST_MEMAP_DEF_block_num),index(),state(0){
-    if(strpool.strpool==NULL) state++;
+    if(strpool.strpool ==NULL) state++;
 }
 
 LIST::LIST(int block_size,int block_num):strpool(block_size, block_num),index(),state(0){
@@ -321,7 +321,7 @@ void print(LIST::str s){
 #ifdef MAIN
 #include <time.h>
 int main(){
-    LIST list;
+    LIST list(64,64000000);
     time_t start, end;
     start = clock();
     for(int i = 0;i < 1000000;i++){
