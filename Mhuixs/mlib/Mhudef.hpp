@@ -216,37 +216,10 @@ struct COMMEND{
 
 struct SECTION{
     basic_handle_struct obj;//操作对象的描述符
-}
+    COMMEND commend;//操作命令
+};
 
 bool iserr_obj_type(obj_type type);
-
-/*
-Mhuixs权限管理建议：
-对于人类用户：开启会话默认是guest,通过登录系统获得user权限，通过密码认证获得admin权限，再通过sudo获得root权限
-对于AI用户：开启会话默认是guest,通过密码认证获得aiworker权限，通过密码获得aiadmin权限。
-*/
-typedef uint32_t userid_t;//用户ID 1-65535
-//下面是ID的两个极端，ROOT是最高权限ID，VOID是最低权限ID
-#define ROOT 0
-#define VOID 65535
-//ID分配规则草案：
-//ADMIN ID：1-99
-//HUMAN ID：100-999
-//AI  ID：1000-9999
-//GUEST ID：10000-
-typedef uint32_t groupid_t;//组ID 0-65535
-typedef uint32_t hookid_t;//钩子ID 0-65535
-
-
-
-typedef uint8_t RANK;//保护等级
-//下面是默认的保护等级
-#define RANK_root        255
-#define RANK_admin       250
-#define RANK_user        150
-#define RANK_aiadmin     100
-#define RANK_aiworker    50
-#define RANK_guest       0
 
 /*
 Mhuixs是基于内存的数据库，在这个寸土寸金的内存世界，内存压缩是数据库的核心
@@ -262,11 +235,11 @@ lv3 .zstd压缩
 lv4 :直接存放于磁盘（然后返回磁盘索引）这个索引需要zslish自己定义，可能要包含文件路径、文件名、数据在文件中的偏移量等等
 lv5 :使用mzstd库进行压缩存放于磁盘（然后返回索引）
 */
-typedef enum cprs{
+typedef enum Cprs{
     lv0=0,    lv1=1,
     lv2=2,    lv3=3,
     lv4=4,    lv5=5
-}cprs;
+}Cprs;
 
 
 

@@ -1,6 +1,10 @@
 #ifndef GETID_HPP
 #define GETID_HPP
-#include "Mhudef.hpp"
+
+#include "bitmap.hpp"
+
+#include <mutex>
+using namespace std;
 /*
 #版权所有 (c) HuJi 2024
 #许可证协议:
@@ -8,26 +12,57 @@
 start from 2024.11
 Email:hj18914255909@outlook.com
 */
-
+#define merr -1
 /*
-ID分配器
-会话ID：1-65535 其中：1-99为管理员ID 100-999为用户ID 1000-9999为AI ID 10000-65535为游客ID
-组ID：0-65535
+ID分配器 线程安全：所有公有方法均加锁
+
+会话ID:0-65535,类似linux的PID
+
+用户ID:0-65535,类似linux
+    0为root用户ID            ROOT_UID
+    1-99为系统用户ID         SYSTEM_UID
+    99-49999为普通用户ID     COMMON_UID
+    50000-65535为临时用户ID  TEMP_UID
+
+组ID：0-65535,类似linux
+    0为root组ID             ROOT_GID
+    1为管理员组ID           ADMIN_GID
+    2-999为系统保留组       SYSTEM_GID
+    1000-65535为自定义组ID    MY_GID
 */
-int init_getid(void);//初始化ID分配器
-int getid(char IDTYPE);//获得相应种类的ID
-int delid(char IDTYPE,uint16_t id);//删除相应种类的ID
+typedef int SID,UID,GID;
 
-//ID类型 ：IDTYPE
-#define ADMIN_ID 0
-#define HUMAN_ID 1
-#define AI_ID 2
-#define GUEST_ID 3
+enum UID_t{
+    ROOT_UID,     // root用户ID
+    SYSTEM_UID,   // 系统用户ID
+    COMMON_UID,   // 普通用户ID
+    TEMP_UID      // 临时用户ID
+};//用户ID类型
 
-#define USER_ID 6 //上面4个ID类型的并称为用户ID
+enum GID_t{
+    ROOT_GID,     // root组ID
+    ADMIN_GID,    // 管理员组ID
+    SYSTEM_GID,   // 系统保留组ID
+    MY_GID       // 自定义组ID
+};//组ID类型
 
-#define GROUP_ID 4
+class IDalloc{
+private:
+    BITMAP sid_bitmap;  // 会话ID位图
+    BITMAP uid_bitmap;  // 用户ID位图    
+    BITMAP gid_bitmap;  // 组ID位图
+public:
+    IDalloc():sid_bitmap(65536),uid_bitmap(65536),gid_bitmap(65536){}
+    ~IDalloc()=default;
 
+    SID get_sid();//获得会话ID
+    SID del_sid(SID sid);//释放会话ID
 
+    UID get_uid(UID_t type);//获得用户ID
+    UID del_uid(UID_t type,UID uid);//释放用户ID
+
+    GID get_gid(GID_t type);//获得组ID    
+    GID del_gid(GID_t type,GID gid);//释放组ID
+};
 
 #endif

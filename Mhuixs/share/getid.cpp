@@ -1,149 +1,95 @@
-#include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include "bitmap.hpp"
 #include "getid.hpp"
-
 /*
-#版权所有 (c) Mhuixs-team 2024
+#版权所有 (c) HuJi 2024
 #许可证协议:
 #任何人或组织在未经版权所有者同意的情况下禁止使用、修改、分发此作品
-start from 2025.1
+start from 2024.11
 Email:hj18914255909@outlook.com
 */
 
-userid_t _ADMIN_ID_=1; //全局变量:ADMIN ID分配器
-userid_t _HUMAIN_ID_=100; //全局变量:用户ID分配器
-userid_t _AI_ID_=1000; //全局变量:AI ID分配器
-userid_t _GUEST_ID_=10000; //全局变量:GUEST ID分配器
-groupid_t _GROUP_ID_=0; //全局变量:当前组ID分配器
+static mutex sid_mutex,uid_mutex,gid_mutex;//分别为sid/uid/gid分配器添加静态互斥锁
 
-BITMAP* _USERS_ID_BITMAP_=NULL; //全局变量:用户ID位图
-BITMAP* _GROUP_ID_BITMAP_=NULL; //全局变量:组ID位图
-
-
-int init_getid()
-{
-    /*
-    初始ID分配器
-
-    返回值：0：成功  -1：失败
-    */
-    //下面4个全局变量共用一个位图
-    _ADMIN_ID_ = 1;//1-99
-    _HUMAIN_ID_ = 100;//100-999
-    _AI_ID_ = 1000;//1000-9999
-    _GUEST_ID_ = 10000;//10000-65535
-    _USERS_ID_BITMAP_ = makeBITMAP(65536);//0-65535
-    if(_USERS_ID_BITMAP_ == NULL){
-        return merr;
-    }
-    setBIT(_USERS_ID_BITMAP_,0,1);//隐藏root位
-
-    _GROUP_ID_ = 0;//0-65535
-    _GROUP_ID_BITMAP_ = makeBITMAP(65536);
-    if(_GROUP_ID_BITMAP_ == NULL){
-        return merr;
-    }
+// 会话ID分配
+SID IDalloc::get_sid() {
+    lock_guard<mutex> lock(sid_mutex);// 锁定会话ID位图
+    int64_t idx = sid_bitmap.find(0, 0, 65535);
+    if(idx == merr) return merr;
+    sid_bitmap.set((uint32_t)idx, 1);
+    return (SID)idx;
 }
-int getid(char IDTYPE)
-{
-    /*
-    获得相应种类的ID
 
-    返回值：ID  -1：失败
-    */
-    switch(IDTYPE){
-        case ADMIN_ID:{
-            int64_t offset = retuoffset(_USERS_ID_BITMAP_,1,99);
-            if(offset == merr){
-                return merr;
-            }
-            setBIT(_USERS_ID_BITMAP_,offset,1);
-            return offset;
-        }
-        case HUMAN_ID:{
-            int64_t offset = retuoffset(_USERS_ID_BITMAP_,100,999);
-            if(offset == merr){
-                return merr;
-            }
-            setBIT(_USERS_ID_BITMAP_,offset,1);
-            return offset;
-        }
-        case AI_ID:{
-            int64_t offset = retuoffset(_USERS_ID_BITMAP_,1000,9999);
-            if(offset == merr){
-                return merr;
-            }
-            setBIT(_USERS_ID_BITMAP_,offset,1);
-            return offset;
-        }
-        case GUEST_ID:{
-            int64_t offset = retuoffset(_USERS_ID_BITMAP_,10000,65535);
-            if(offset == merr){
-                return merr;
-            }
-            setBIT(_USERS_ID_BITMAP_,offset,1);
-            return offset;
-        }
-        case GROUP_ID:{
-            int64_t offset = retuoffset(_GROUP_ID_BITMAP_,0,65535);
-            if(offset == merr){
-                return merr;
-            }
-            setBIT(_GROUP_ID_BITMAP_,offset,1);
-            return offset;
-        }
-        default:return merr;
-    }
+// 释放会话ID
+SID IDalloc::del_sid(SID sid) {
+    lock_guard<mutex> lock(sid_mutex);// 锁定会话ID位图
+    if(sid < 0 || sid > 65535) return merr;
+    sid_bitmap.set((SID)sid, 0);
+    return 0;
 }
-int delid(char IDTYPE,uint16_t id)
-{
-    /*
-    删除相应种类的ID
-    返回值：0：成功  -1：失败
-    */
-    switch(IDTYPE){
-        case ADMIN_ID:{
-            if(id < 1 || id > 99){
-                return merr;
-            }
-            setBIT(_USERS_ID_BITMAP_,id,0);
-            return 0;
-        }
-        case HUMAN_ID:{
-            if(id < 100 || id > 999){
-                return merr;
-            }
-            setBIT(_USERS_ID_BITMAP_,id,0);
-            return 0;
-        }
-        case AI_ID:{
-            if(id < 1000 || id > 9999){
-                return merr;
-            }
-            setBIT(_USERS_ID_BITMAP_,id,0);
-            return 0;
-        }
-        case GUEST_ID:{            
-            if(id < 10000 || id > 65535){
-                return merr;
-            }
-            setBIT(_USERS_ID_BITMAP_,id,0);
-            return 0;
-        }
-        case GROUP_ID:{
-            setBIT(_GROUP_ID_BITMAP_,id,0);
-            return 0;
-        }
-        case USER_ID:{
-            if(id == 0){
-                return merr;
-            }
-            setBIT(_USERS_ID_BITMAP_,id,0);
-            return 0;
-        }
-        default:return merr;
+
+// 用户ID分配
+UID IDalloc::get_uid(UID_t type) {
+    uint32_t start = 0, end = 0;
+    switch(type) {
+        case ROOT_UID:    start = 0; end = 0; break;
+        case SYSTEM_UID:  start = 1; end = 98; break;
+        case COMMON_UID:  start = 99; end = 49999; break;
+        case TEMP_UID:    start = 50000; end = 65535; break;
+        default: return merr;
     }
+    lock_guard<mutex> lock(uid_mutex);// 锁定用户ID位图
+    int64_t idx = uid_bitmap.find(0, start, end);
+    if(idx == merr) return merr;
+    uid_bitmap.set((uint32_t)idx, 1);
+    return (UID)idx;
 }
+
+// 释放用户ID
+UID IDalloc::del_uid(UID_t type, UID uid) {
+    uint32_t start = 0, end = 0;
+    switch(type) {
+        case ROOT_UID:    start = 0; end = 0; break;
+        case SYSTEM_UID:  start = 1; end = 98; break;
+        case COMMON_UID:  start = 99; end = 49999; break;
+        case TEMP_UID:    start = 50000; end = 65535; break;
+        default: return merr;
+    }
+    if(uid < (int)start || uid > (int)end) return merr;
+    lock_guard<mutex> lock(uid_mutex);// 锁定用户ID位图
+    uid_bitmap.set((uint32_t)uid, 0);
+    return 0;
+}
+
+// 组ID分配
+GID IDalloc::get_gid(GID_t type) {    
+    uint32_t start = 0, end = 0;
+    switch(type) {
+        case ROOT_GID:    start = 0; end = 0; break;
+        case ADMIN_GID:   start = 1; end = 1; break;
+        case SYSTEM_GID:  start = 2; end = 999; break;
+        case MY_GID:      start = 1000; end = 65535; break;
+        default: return merr;
+    }
+    lock_guard<mutex> lock(gid_mutex);// 锁定组ID位图
+    int64_t idx = gid_bitmap.find(0, start, end);
+    if(idx == merr) return merr;
+    gid_bitmap.set((GID)idx, 1);
+    return (GID)idx;
+}
+
+// 释放组ID
+GID IDalloc::del_gid(GID_t type, GID gid) {
+    uint32_t start = 0, end = 0;
+    switch(type) {
+        case ROOT_GID:    start = 0; end = 0; break;
+        case ADMIN_GID:   start = 1; end = 1; break;
+        case SYSTEM_GID:  start = 2; end = 999; break;
+        case MY_GID:      start = 1000; end = 65535; break;
+        default: return merr;
+    }
+    if(gid < (int)start || gid > (int)end) return merr;
+
+    lock_guard<mutex> lock(gid_mutex);// 锁定组ID位图
+    gid_bitmap.set((GID)gid, 0);
+    return 0;
+}
+

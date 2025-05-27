@@ -10,5 +10,9 @@ Email:hj18914255909@outlook.com
 HOOK权限管理
 待完成
 */
-
-
+HOOK::HOOK(string name)
+:cprs(lv0),
+name(name)
+{
+    // 构造函数
+}

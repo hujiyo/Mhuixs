@@ -11,7 +11,6 @@ Email:hj18914255909@outlook.com
 using namespace std;
 
 #include "Mhudef.hpp"
-#include "getid.hpp"
 
 /*
 hook在Mhuixs中被用来：
@@ -20,19 +19,34 @@ hook在Mhuixs中被用来：
 3.分为有权HOOK和无权HOOK
 */
 class HOOK {
-    basic_handle_struct bhs;//对象
-    RANK rank;//保护等级
-    cprs cprs_stage;//压缩级别
-    userid_t owner;//对应所有者ID
-    groupid_t group;//对应组ID
-    hookid_t hook_id;
+    basic_handle_struct bhs;//对象    
+    Cprs cprs;//压缩级别
+    UID owner;//对应所有者ID
+    GID group;//对应组ID
     string name;//狗子名
+
+    uint16_t ifisinit:1;//是否初始化:一旦初始化权限就生效
+
+    //权限:可读:r 可添:a 可删:d 
+    //所有者权限
+    uint16_t owner_read:1;//所有者可读
+    uint16_t owner_add:1;//所有者可添内容
+    uint16_t owner_del:1;//所有者可删内容    
+    //组权限
+    uint16_t group_read:1;//组可读
+    uint16_t group_add:1;//组可添内容
+    uint16_t group_del:1;//组可删内容    
+    //其他权限
+    uint16_t other_read:1;//其他可读
+    uint16_t other_add:1;//其他可添内容
+    uint16_t other_del:1;//其他可删内容    
+
 public:
-    HOOK(string name);//创建一个空钩子，空钩子将会被注册。
-    int rise_rank(uint8_t caller_rank,uint8_t target_rank);//请求赋予权限
+    HOOK(UID owner,string name);//创建一个空钩子，空钩子将会被注册。
+    set(GID group,
     int hook_obj(obj_type objtype);//链接一个对象
 
-}HOOK;
+};
 
 
 #endif
