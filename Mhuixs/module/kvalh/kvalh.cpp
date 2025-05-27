@@ -5,8 +5,6 @@ KVALOT::KVALOT(str* kvalot_name)//只能是规定的数量
 :numof_tong(hash_tong_1024ge),keynum(0),
 kvalot_name((char*)kvalot_name->string,kvalot_name->len)
 {
-    key_name_pool = (MEMAP*)calloc(1,sizeof(MEMAP));//分配键名池
-    key_name_pool = new (key_name_pool)MEMAP(32,640);//初始化键名池
     hash_table.resize(numof_tong);//初始化哈希桶表大小
 }
 /*
@@ -32,8 +30,8 @@ basic_handle_struct KVALOT::find_key(str* key_name){
     for (uint32_t i = 0; i < hash_tong->numof_key; i++) {
         KEY* key = &keypool[hash_tong->offsetof_key[i]];
         //比较长度
-        if (*(uint32_t*)key_name_pool->addr(key->name) == key_name->len &&
-                memcmp(key_name_pool->addr(key->name)+sizeof(uint32_t),
+        if (*(uint32_t*)g_memap.addr(key->name) == key_name->len &&
+                memcmp(g_memap.addr(key->name)+sizeof(uint32_t),
                 key_name->string,key_name->len) == 0 ){
             return key->bhs;
         }
@@ -48,10 +46,8 @@ KVALOT::~KVALOT(){
     }
     //释放key池
     for(uint32_t i = 0; i < keynum; i++){
-        keypool[i].clear_self(*key_name_pool);
+        keypool[i].clear_self();
     }
-    key_name_pool->~MEMAP();//释放键名池
-    free(key_name_pool);//释放键名池指针
 }
 
 str KVALOT::get_name(){

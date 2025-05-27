@@ -1,4 +1,4 @@
-<img src="Mhuixs/muixclt/logo/Mhuixs-logo.png" height="130px" />    
+<img src="Mhuixs/logo/Mhuixs-logo.png" height="130px" />    
 
 # 正在开发的数据库软件
 

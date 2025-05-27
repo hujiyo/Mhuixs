@@ -37,9 +37,9 @@ int KVALOT::add_key(str* key_name, obj_type type, void* parameter1, void* parame
     if(numof_key_in_this_tong!=0){
         for(uint32_t i=0;i<numof_key_in_this_tong;i++){//遍历哈希桶内的所有键
             //先比较长度
-            if(*(uint32_t*)key_name_pool->addr(offsetof_key[i]) == key_name->len){
+            if(*(uint32_t*)g_memap.addr(offsetof_key[i]) == key_name->len){
                 //再比较内容
-                if( memcmp( key_name_pool->addr(offsetof_key[i]) + sizeof(uint32_t),
+                if( memcmp( g_memap.addr(offsetof_key[i]) + sizeof(uint32_t),
                             key_name->string,
                             key_name->len) ==0 ){
                     //如果相同，返回错误
@@ -62,7 +62,7 @@ int KVALOT::add_key(str* key_name, obj_type type, void* parameter1, void* parame
     }//把这个内存分配提前，因为如果下面出错了这个是不用回滚的
     //keypool增加一个元素,默认添加新键都是存放在键池keypool内的末尾
     keypool.emplace_back();//创建一个空的KEY对象
-    if(keypool[keynum].setname(*key_name,*key_name_pool)==merr)//设置键名
+    if(keypool[keynum].setname(*key_name)==merr)//设置键名
     {
         //如果设置键名失败，返回错误
         printf("KVALOT::add_key:Error: setname error.\n");
@@ -73,7 +73,7 @@ int KVALOT::add_key(str* key_name, obj_type type, void* parameter1, void* parame
     int flag = keypool[keynum].bhs.make_self(type,parameter1,parameter2,parameter3);//创建对象
     if(flag==merr){//如果创建对象失败，返回错误
         printf("KVALOT::add_key:Error: make_self error.\n");
-        keypool[keynum].clear_self(*key_name_pool);//回滚
+        keypool[keynum].clear_self();//回滚
         keypool.pop_back();//回滚
         return merr;
     }
@@ -100,12 +100,12 @@ int KVALOT::rmv_key(str* key_name)
     for (uint32_t i = 0; i < hash_tong->numof_key; i++) {
         //i是当前键在哈希桶内的索引序号
         KEY* key = &keypool[hash_tong->offsetof_key[i]];
-        if(*(uint32_t*)key_name_pool->addr(key->name) == key_name->len )//比较长度
+        if(*(uint32_t*)g_memap.addr(key->name) == key_name->len )//比较长度
         {
-            if (memcmp(key_name_pool->addr(key->name)+sizeof(uint32_t),
+            if (memcmp(g_memap.addr(key->name)+sizeof(uint32_t),
                          key_name->string ,key_name->len) == 0) {
                 //找到了要删除的键                
-                key->clear_self(*key_name_pool);//清除键值对
+                key->clear_self();//清除键值对
             
                 //清空对应的哈希桶内的数据
                 //保存当前key的偏移量

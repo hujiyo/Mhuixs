@@ -10,7 +10,7 @@
 #include <string>
 
 #include "Mhudef.hpp"
-#include "memap.hpp"
+#include "mshare.hpp"
 #define merr -1
 /*
 #版权所有 (c) HUJI 2025
@@ -41,39 +41,38 @@ class KVALOT{
         uint32_t numof_key;//桶内的key数量
         uint32_t* offsetof_key;//key偏移量数组,这里的偏移量是在keypool中的偏移量
     };
-    //支持自辐射神经网状式连接结构的“键值对数据结构”--->单向连接+连接系数 特点：支持复杂的网络结构和关系查询，如社交网络分析、路径查找等。
-    typedef struct KEY{
+public:
+    struct KEY{
         basic_handle_struct bhs;//对象
         OFFSET name;//指向一个key名称存放的地址
         uint32_t hash_index;//当前key在哈希表中的索引
-        int setname(str &key_name,MEMAP& key_name_pool){//设置键名
-            OFFSET name_ = key_name_pool.smalloc(key_name.len + sizeof(uint32_t));
+        int setname(str &key_name){//设置键名
+            OFFSET name_ = g_memap.smalloc(key_name.len + sizeof(uint32_t));
             if (name_ == NULL_OFFSET) {
                 printf("KVALOT::KEY::setname:Error: Memory allocation failed for key name.\n");
                 return merr;// 错误处理
             }
-            *(uint32_t*)key_name_pool.addr(name_) = key_name.len;
-            memcpy(key_name_pool.addr(name_) + sizeof(uint32_t), key_name.string, key_name.len);
+            *(uint32_t*)g_memap.addr(name_) = key_name.len;
+            memcpy(g_memap.addr(name_) + sizeof(uint32_t), key_name.string, key_name.len);
             this->name = name_;
             return 0;
         }
-        void clear_self(MEMAP& key_name_pool){
+        void clear_self(){
             bhs.clear_self();
             //获得键名的长度
-            uint32_t len = *(uint32_t*)key_name_pool.addr(name);
-            key_name_pool.sfree(name,len + sizeof(uint32_t));
+            uint32_t len = *(uint32_t*)g_memap.addr(name);
+            g_memap.sfree(name,len + sizeof(uint32_t));
             name = NULL_OFFSET;
             hash_index = NULL_OFFSET;
         }
-    }KEY;
-    
+    };
+private:
     vector<HASH_TONG> hash_table;//哈希桶表--->索引
     uint32_t numof_tong;//哈希桶数量
 
     vector<KEY> keypool;//键池    
 
     uint32_t keynum;//键数量
-    MEMAP* key_name_pool;//键名池:键名的存放地址池
 
     string kvalot_name;//键值对池名称
 
@@ -91,7 +90,7 @@ public:
     int  add_key(str* key_name, obj_type type,void* parameter1, void* parameter2,void* parameter3);
     str get_name();
 
-    int iserr();
+    int iserr();        
 };
 
 

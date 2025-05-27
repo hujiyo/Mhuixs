@@ -19,7 +19,7 @@ int KVALOT::rise_capacity() {
     for (uint32_t i = 0; i < keypool.size(); ++i) {
         KEY& key = keypool[i];
         // 重新计算 hash_index
-        uint32_t new_hash_index = murmurhash(*(str*)key_name_pool->addr(key.name), bits(new_numof_tong));
+        uint32_t new_hash_index = murmurhash(*(str*)g_memap.addr(key.name), bits(new_numof_tong));
         HASH_TONG& tong = new_hash_table[new_hash_index];
         // 扩容桶内 key 偏移量数组
         uint32_t* new_offsetof_key = (uint32_t*)realloc(tong.offsetof_key, sizeof(uint32_t) * (tong.numof_key + 1));

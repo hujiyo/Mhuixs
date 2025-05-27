@@ -1,9 +1,3 @@
-/*
-Mhuixs核心的必带功能:
-1.kvalot
-2.table
-3.stream
-*/
 #if defined(TBLH_H) 
     && defined(KALOT_H) 
     && defined(STREAM_H)

@@ -11,6 +11,7 @@ Email:hj18914255909@outlook.com
 using namespace std;
 
 #include "Mhudef.hpp"
+#include "getid.hpp"
 
 /*
 hook在Mhuixs中被用来：
@@ -18,8 +19,7 @@ hook在Mhuixs中被用来：
 2.在一种数据结构中引用独立于自己的另一个数据结构
 3.分为有权HOOK和无权HOOK
 */
-class HOOK{
-private:
+class HOOK {
     basic_handle_struct bhs;//对象
     RANK rank;//保护等级
     cprs cprs_stage;//压缩级别
@@ -30,7 +30,7 @@ private:
 public:
     HOOK(string name);//创建一个空钩子，空钩子将会被注册。
     int rise_rank(uint8_t caller_rank,uint8_t target_rank);//请求赋予权限
-    int hook_obj(obj_type objtype);
+    int hook_obj(obj_type objtype);//链接一个对象
 
 }HOOK;
 

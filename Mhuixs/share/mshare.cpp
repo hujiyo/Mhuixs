@@ -1,3 +1,5 @@
 #include "mshare.hpp"
 
-MEMAP g_memap(1024, 10240);//定义全局内存池变量
+MEMAP g_memap(1024, 10240);//“核心执行器”的全局内存池
+
+

@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include "bitmap.hpp"
-#include "getid.h"
+#include "getid.hpp"
 
 /*
 #版权所有 (c) Mhuixs-team 2024
@@ -18,11 +18,9 @@ userid_t _HUMAIN_ID_=100; //全局变量:用户ID分配器
 userid_t _AI_ID_=1000; //全局变量:AI ID分配器
 userid_t _GUEST_ID_=10000; //全局变量:GUEST ID分配器
 groupid_t _GROUP_ID_=0; //全局变量:当前组ID分配器
-hookid_t _HOOK_ID_=0; //全局变量:当前钩子ID分配器
 
 BITMAP* _USERS_ID_BITMAP_=NULL; //全局变量:用户ID位图
 BITMAP* _GROUP_ID_BITMAP_=NULL; //全局变量:组ID位图
-BITMAP* _HOOK_ID_BITMAP_=NULL; //全局变量:钩子ID位图
 
 
 int init_getid()
@@ -46,12 +44,6 @@ int init_getid()
     _GROUP_ID_ = 0;//0-65535
     _GROUP_ID_BITMAP_ = makeBITMAP(65536);
     if(_GROUP_ID_BITMAP_ == NULL){
-        return merr;
-    }
-
-    _HOOK_ID_ = 0;//0-65535
-    _HOOK_ID_BITMAP_ = makeBITMAP(65536);
-    if(_HOOK_ID_BITMAP_ == NULL){
         return merr;
     }
 }
@@ -103,14 +95,6 @@ int getid(char IDTYPE)
             setBIT(_GROUP_ID_BITMAP_,offset,1);
             return offset;
         }
-        case HOOK_ID:{
-            int64_t offset = retuoffset(_HOOK_ID_BITMAP_,0,65535);
-            if(offset == merr){
-                return merr;
-            }
-            setBIT(_HOOK_ID_BITMAP_,offset,1);
-            return offset;
-        }
         default:return merr;
     }
 }
@@ -151,10 +135,6 @@ int delid(char IDTYPE,uint16_t id)
         }
         case GROUP_ID:{
             setBIT(_GROUP_ID_BITMAP_,id,0);
-            return 0;
-        }
-        case HOOK_ID:{
-            setBIT(_HOOK_ID_BITMAP_,id,0);
             return 0;
         }
         case USER_ID:{

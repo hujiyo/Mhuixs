@@ -14,8 +14,9 @@ Email:hj18914255909@outlook.com
 #include "kvalh.hpp"
 #include "tblh.hpp"
 #include "stream.hpp"
+#include "hook.hpp"
 
-#include "getid.h"
+#include "getid.hpp"
 
 
 /*
@@ -48,6 +49,8 @@ union obj_struct //储存各种对象的描述符
     TABLE *table;
     BITMAP *bitmap;
     STREAM *stream;
+    KVALOT::KEY *key; //KVALOT的KEY对象
+    HOOK *hook; //HOOK对象
 };
 
 enum obj_type //数据结构对象的类型
@@ -200,19 +203,20 @@ typedef struct basic_handle_struct
 } basic_handle_struct;
 
 
-
-
-typedef struct COMMEND{
+struct COMMEND{
     uint32_t command; // 命令码
-    char*    object; // 对象名
-    uint32_t param1;      // 参数1
-    uint32_t param2;      // 参数2
-    uint32_t param3;      // 参数3
-    //提供两个指针参数，有些函数要用到的
-    uint32_t* param4;      // 参数4
-    uint32_t* param5;      // 参数5
-    uint32_t* param6;      // 参数6
-} COMMEND;
+    obj_type objtype; // 对象名
+    void* param1;      // 参数1
+    void* param2;      // 参数2
+    void* param3;      // 参数3
+    void* param4;      // 参数4
+    void* param5;      // 参数5
+    void* param6;      // 参数6
+};
+
+struct SECTION{
+    basic_handle_struct obj;//操作对象的描述符
+}
 
 bool iserr_obj_type(obj_type type);
 
