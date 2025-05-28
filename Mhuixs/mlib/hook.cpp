@@ -10,9 +10,25 @@ Email:hj18914255909@outlook.com
 HOOK权限管理
 待完成
 */
-HOOK::HOOK(string name)
-:cprs(lv0),
-name(name)
-{
-    // 构造函数
+HOOK::HOOK(UID owner, string name)
+{}
+HOOK::~HOOK() {
+    
+}
+
+
+
+void HOOK::set(GID group, permission_struct pm) {
+   
+}
+
+
+int HOOK::hook_new(obj_type objtype) {
+    // 创建新对象并注册到 bhs
+    
+}
+
+int HOOK::hook_obj(HOOK *hook) {
+    // 将另一个 HOOK 的对象挂载到当前 HOOK
+  
 }

@@ -14,11 +14,7 @@ table需要增添表格恢复功能
 #include <string.h>
 #include <stdint.h>
 
-//含所有数据结构的头文件
-#include "datstrc/tblh.h"
-#include "datstrc/kvalh.h"
-#include "datstrc/list.h"
-#include "datstrc/bitmap.h"
+#include "Mhudef.hpp"
 /*
 下面的stack和queue是完全可以被list替换的，
 我感觉stack和queue可以被优化掉

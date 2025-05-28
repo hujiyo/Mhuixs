@@ -9,7 +9,7 @@ Email:hj18914255909@outlook.com
 */
 #include <string>
 using namespace std;
-
+#include "usergroup.hpp"
 #include "Mhudef.hpp"
 
 /*
@@ -18,13 +18,8 @@ hook在Mhuixs中被用来：
 2.在一种数据结构中引用独立于自己的另一个数据结构
 3.分为有权HOOK和无权HOOK
 */
-class HOOK {
-    basic_handle_struct bhs;//对象    
-    Cprs cprs;//压缩级别
-    UID owner;//对应所有者ID
-    GID group;//对应组ID
-    string name;//狗子名
 
+struct permission_struct{
     uint16_t ifisinit:1;//是否初始化:一旦初始化权限就生效
 
     //权限:可读:r 可添:a 可删:d 
@@ -39,14 +34,36 @@ class HOOK {
     //其他权限
     uint16_t other_read:1;//其他可读
     uint16_t other_add:1;//其他可添内容
-    uint16_t other_del:1;//其他可删内容    
+    uint16_t other_del:1;//其他可删内容
+}; 
 
+class HOOK {
 public:
-    HOOK(UID owner,string name);//创建一个空钩子，空钩子将会被注册。
-    set(GID group,
-    int hook_obj(obj_type objtype);//链接一个对象
+    basic_handle_struct bhs; // 操作对象
+    Cprs cprs; // 压缩级别
+    UID owner; // 所有者ID
+    GID group; // 组ID
+    string name; // 钩子名
 
+    permission_struct pm_s; // 权限结构体
+
+    HOOK(UID owner, string name);
+    ~HOOK();
+
+
+
+    void set(GID group, permission_struct pm); // 设置组和权限
+
+    int hook_new(obj_type objtype); // 用钩子建立一个新对象
+    int hook_obj(HOOK *hook); // 挂载另一个HOOK
+    
 };
+// 权限操作类型
+    enum HookOpType { HOOK_READ = 'r', HOOK_ADD = 'a', HOOK_DEL = 'd' };
+
+    // 权限检查接口声明
+    bool check_hook_permission(const HOOK& hook, UID current_uid, HookOpType op, const UserGroupManager& ugm);
+
 
 
 #endif
