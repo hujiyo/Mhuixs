@@ -1,6 +1,4 @@
 #include "usergroup.hpp"
-#include <algorithm>
-
 /*
 #版权所有 (c) HUJI 2025
 #许可证协议:
@@ -27,18 +25,29 @@ int User_group_manager::add_user(string username, string passwd) {
     user_info_struct u;
     u.uid = uid;
     u.username = username;
-    u.password = passwd; // 实际应存储哈希
+    // 密码哈希
+    char salt[BCRYPT_HASHSIZE];
+    char hash[BCRYPT_HASHSIZE];
+    if (bcrypt_gensalt(12, salt) != 0) return merr;
+    if (bcrypt_hashpw(passwd.c_str(), salt, hash) != 0) return merr;
+    u.password = string(hash);
     u.groups.clear();
     u.num_groups = 0;
     users.push_back(u);
     return 0;
 }
 
-int User_group_manager::set_user_password(string username, string passwd, string new_passwd) {
+int User_group_manager::set_user_password(string username, string old_passwd, string new_passwd) {
     for (auto& user : users) {
         if (user.username == username) {
-            if (user.password != passwd) return merr;
-            user.password = new_passwd; // 实际应存储哈希
+            // 验证旧密码
+            if (bcrypt_checkpw(old_passwd.c_str(), user.password.c_str()) != 0) return merr;
+            // 生成新哈希
+            char salt[BCRYPT_HASHSIZE];
+            char hash[BCRYPT_HASHSIZE];
+            if (bcrypt_gensalt(12, salt) != 0) return merr;
+            if (bcrypt_hashpw(new_passwd.c_str(), salt, hash) != 0) return merr;
+            user.password = string(hash);
             return 0;
         }
     }

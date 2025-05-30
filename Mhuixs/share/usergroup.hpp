@@ -9,9 +9,12 @@ Email:hj18914255909@outlook.com
 */
 #include <string>
 #include <vector>
+#include <algorithm>
+#include <string.h>
 
 #include "getid.hpp"
 #include "hook.hpp"
+#include "bcrypt.h" // 新增
 using namespace std;
 
 #define merr -1
@@ -45,9 +48,9 @@ public:
     User_group_manager();
     ~User_group_manager();
 
-    
-    int add_user(string username,string passwd);//添加用户时必须设置密码
-    int set_user_password(string username,string passwd,string new_passwd);//重置用户密码
+    // 密码参数均为明文，内部自动哈希
+    int add_user(string username, string passwd); // 添加用户时必须设置明文密码
+    int set_user_password(string username, string old_passwd, string new_passwd); // old_passwd为明文，验证后设置新明文密码
     int del_user(string username);//删除用户
 
     int add_group(string groupname);//添加组
