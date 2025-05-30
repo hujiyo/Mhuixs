@@ -19,6 +19,12 @@ hook在Mhuixs中被用来：
 3.分为有权HOOK和无权HOOK
 */
 
+enum Mode_type { 
+    HOOK_READ = 'r', 
+    HOOK_ADD = 'a', 
+    HOOK_DEL = 'd' 
+};//HOOK的操作类型
+
 struct permission_struct{
     uint16_t ifisinit:1;//是否初始化:一旦初始化权限就生效
 
@@ -38,7 +44,7 @@ struct permission_struct{
 }; 
 
 class HOOK {
-public:
+
     basic_handle_struct bhs; // 操作对象
     Cprs cprs; // 压缩级别
     UID owner; // 所有者ID
@@ -46,7 +52,8 @@ public:
     string name; // 钩子名
 
     permission_struct pm_s; // 权限结构体
-
+    friend class User_group_manager; // 友元类，允许访问私有成员
+public:
     HOOK(UID owner, string name);
     ~HOOK();
 

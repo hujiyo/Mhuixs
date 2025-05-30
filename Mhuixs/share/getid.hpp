@@ -46,14 +46,14 @@ enum GID_t{
     MY_GID       // 自定义组ID
 };//组ID类型
 
-class IDalloc{
+class Id_alloctor{
 private:
     BITMAP sid_bitmap;  // 会话ID位图
     BITMAP uid_bitmap;  // 用户ID位图    
     BITMAP gid_bitmap;  // 组ID位图
 public:
-    IDalloc():sid_bitmap(65536),uid_bitmap(65536),gid_bitmap(65536){}
-    ~IDalloc()=default;
+    Id_alloctor():sid_bitmap(65536),uid_bitmap(65536),gid_bitmap(65536){}
+    ~Id_alloctor()=default;
 
     SID get_sid();//获得会话ID
     SID del_sid(SID sid);//释放会话ID

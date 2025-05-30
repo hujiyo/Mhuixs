@@ -10,7 +10,7 @@ Email:hj18914255909@outlook.com
 static mutex sid_mutex,uid_mutex,gid_mutex;//分别为sid/uid/gid分配器添加静态互斥锁
 
 // 会话ID分配
-SID IDalloc::get_sid() {
+SID Id_alloctor::get_sid() {
     lock_guard<mutex> lock(sid_mutex);// 锁定会话ID位图
     int64_t idx = sid_bitmap.find(0, 0, 65535);
     if(idx == merr) return merr;
@@ -19,7 +19,7 @@ SID IDalloc::get_sid() {
 }
 
 // 释放会话ID
-SID IDalloc::del_sid(SID sid) {
+SID Id_alloctor::del_sid(SID sid) {
     lock_guard<mutex> lock(sid_mutex);// 锁定会话ID位图
     if(sid < 0 || sid > 65535) return merr;
     sid_bitmap.set((SID)sid, 0);
@@ -27,7 +27,7 @@ SID IDalloc::del_sid(SID sid) {
 }
 
 // 用户ID分配
-UID IDalloc::get_uid(UID_t type) {
+UID Id_alloctor::get_uid(UID_t type) {
     uint32_t start = 0, end = 0;
     switch(type) {
         case ROOT_UID:    start = 0; end = 0; break;
@@ -44,7 +44,7 @@ UID IDalloc::get_uid(UID_t type) {
 }
 
 // 释放用户ID
-UID IDalloc::del_uid(UID_t type, UID uid) {
+UID Id_alloctor::del_uid(UID_t type, UID uid) {
     uint32_t start = 0, end = 0;
     switch(type) {
         case ROOT_UID:    start = 0; end = 0; break;
@@ -60,7 +60,7 @@ UID IDalloc::del_uid(UID_t type, UID uid) {
 }
 
 // 组ID分配
-GID IDalloc::get_gid(GID_t type) {    
+GID Id_alloctor::get_gid(GID_t type) {    
     uint32_t start = 0, end = 0;
     switch(type) {
         case ROOT_GID:    start = 0; end = 0; break;
@@ -77,7 +77,7 @@ GID IDalloc::get_gid(GID_t type) {
 }
 
 // 释放组ID
-GID IDalloc::del_gid(GID_t type, GID gid) {
+GID Id_alloctor::del_gid(GID_t type, GID gid) {
     uint32_t start = 0, end = 0;
     switch(type) {
         case ROOT_GID:    start = 0; end = 0; break;
