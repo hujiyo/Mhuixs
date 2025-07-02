@@ -14,17 +14,19 @@ Email:hj18914255909@outlook.com
 */
 #define merr -1
 /*
-ID分配器 线程安全：所有公有方法均加锁
+===================================
+ID分配器模块 线程安全：所有公有方法均加锁
+===================================
 
-会话ID:0-65535,类似linux的PID
+会话SID:0-65535,类似linux的PID
 
-用户ID:0-65535,类似linux
+用户UID:0-65535,类似linux
     0为root用户ID            ROOT_UID
     1-99为系统用户ID         SYSTEM_UID
     99-49999为普通用户ID     COMMON_UID
     50000-65535为临时用户ID  TEMP_UID
 
-组ID：0-65535,类似linux
+组GID：0-65535,类似linux
     0为root组ID             ROOT_GID
     1为管理员组ID           ADMIN_GID
     2-999为系统保留组       SYSTEM_GID
@@ -64,5 +66,9 @@ public:
     GID get_gid(GID_t type);//获得组ID    
     GID del_gid(GID_t type,GID gid);//释放组ID
 };
+
+extern Id_alloctor Idalloc;//全局唯一ID分配器
+
+int id_alloc_init();//启动ID分配器模块
 
 #endif

@@ -14,6 +14,10 @@ table需要增添表格恢复功能
 #include <string.h>
 #include <stdint.h>
 
+#include "env.hpp"//环境变量模块
+#include "log.hpp"//日志模块
+#include "getid.hpp"//ID分配器模块
+
 #include "Mhudef.hpp"
 /*
 下面的stack和queue是完全可以被list替换的，
@@ -23,7 +27,7 @@ table需要增添表格恢复功能
 */
 
 
-#include "mlib/session.h"
+#include "mlib/session.hpp"
 
 QUEUE run_queue;//执行队列execution queue
 #define commend_size 32 //命令长度
@@ -74,10 +78,33 @@ hookcompressrank:钩子压缩等级
 hookaddr:钩子地址
 */
 
-int main(){
-    /*
-    这里是Mhuixs服务端的真正main函数
-    */
+
+/*
+这里是Mhuixs服务端的真正main函数
+*/
+int main()
+{
+    //环境变量模块
+    if (env_init() != 0)
+    {
+        printf("\nENV module failed!\n");
+        return 1;
+    }
+
+    //初始化日志模块
+    if (logger_init() != 0)
+    {
+        printf("\nLogger module failed!\n");
+        return 1;
+    }
+
+    //id分配器模块
+    if (id_alloc_init() != 0)
+    {
+        printf("\nID allocator module failed!\n");
+        return 1;
+    }
+
     //初始化执行队列、发送队列、日志队列
     initLIST_AND_SET_BLOCK_SIZE_NUM(&run_queue,commend_size,run_queue_len);
     /*

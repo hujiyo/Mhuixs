@@ -7,12 +7,6 @@ start from 2025.5
 Email:hj18914255909@outlook.com
 */
 
-User_group_manager::User_group_manager() {
-}
-
-User_group_manager::~User_group_manager() {
-}
-
 int User_group_manager::add_user(string username, string passwd) {
     // 检查用户名是否已存在
     for (const auto& user : users) {
@@ -210,4 +204,94 @@ int User_group_manager::is_entitled(HOOK &hook, UID applicant_uid, Mode_type mod
         case HOOK_DEL:  return hook.pm_s.other_del ? 1 : 0;
         default: return merr;
     }
+}
+
+int init_User_group_manager() {    
+    string user_path = Env.MhuixsHomePath + "/etc/user.config";
+    string group_path = Env.MhuixsHomePath + "/etc/group.config";
+
+    Ugmanager = User_group_manager(); // 清空原有数据
+
+    // 1. 读取 group.config，先加载所有组
+    ifstream gfin(group_path);
+    if (!gfin.is_open()) return merr;
+    string gline;
+    set<GID> gid_set;
+    set<string> groupname_set;
+    while (getline(gfin, gline)) {
+        if (gline.empty()) continue;
+        stringstream ss(gline);
+        string groupname, gidstr;
+        if (!getline(ss, groupname, ':')) return 1;
+        if (!getline(ss, gidstr, ':')) return 1;
+        if (groupname.empty() || gidstr.empty()) return 1;
+        GID gid = static_cast<GID>(stoul(gidstr));
+        if (gid_set.count(gid) > 0) return 1; // GID重复
+        if (groupname_set.count(groupname) > 0) return 1; // 组名重复
+        gid_set.insert(gid);
+        groupname_set.insert(groupname);
+        group_info_struct g;
+        g.groupname = groupname;
+        g.gid = gid;
+        g.members.clear();
+        g.num = 0;
+        Ugmanager.groups.push_back(g);
+    }
+    gfin.close();
+
+    // 2. 读取 user.config，加载所有用户
+    ifstream ufin(user_path);
+    if (!ufin.is_open()) return merr;
+    string uline;
+    set<UID> uid_set;
+    set<string> username_set;
+    while (getline(ufin, uline)) {
+        if (uline.empty()) continue;
+        stringstream ss(uline);
+        string username, uidstr, gidstr, desc, main_hook, passwd;
+        if (!getline(ss, username, ':')) return 1;
+        if (!getline(ss, uidstr, ':')) return 1;
+        if (!getline(ss, gidstr, ':')) return 1;
+        if (!getline(ss, desc, ':')) return 1;
+        if (!getline(ss, main_hook, ':')) return 1;
+        if (!getline(ss, passwd, ':')) return 1;
+        if (username.empty() || uidstr.empty() || gidstr.empty()) return 1;
+        UID uid = static_cast<UID>(stoul(uidstr));
+        if (uid_set.count(uid) > 0) return 1; // UID重复
+        if (username_set.count(username) > 0) return 1; // 用户名重复
+        uid_set.insert(uid);
+        username_set.insert(username);
+        user_info_struct u;
+        u.username = username;
+        u.uid = uid;
+        u.password = passwd;
+        u.description = desc;
+        u.main_hook = main_hook;
+        u.groups.clear();
+        // 解析 GID 列表
+        stringstream gidss(gidstr);
+        string giditem;
+        while (getline(gidss, giditem, ',')) {
+            if (!giditem.empty()) {
+                GID gid = static_cast<GID>(stoul(giditem));
+                if (gid_set.count(gid) == 0) return 1; // 用户引用了不存在的组
+                u.groups.push_back(gid);
+            }
+        }
+        u.num_groups = u.groups.size();
+        Ugmanager.users.push_back(u);
+    }
+    ufin.close();
+
+    // 3. 遍历所有组，收集成员
+    for (auto& group : Ugmanager.groups) {
+        group.members.clear();
+        for (const auto& user : Ugmanager.users) {
+            if (find(user.groups.begin(), user.groups.end(), group.gid) != user.groups.end()) {
+                group.members.push_back(user.uid);
+            }
+        }
+        group.num = group.members.size();
+    }
+    return 0;
 }

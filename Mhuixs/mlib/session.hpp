@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include <time.h>
 #include "Mhudef.hpp"
-#include "getid.h"//用户ID分配器
-#include "iami/maes.h"
+#include "getid.hpp"//用户ID分配器
+#include "iami/maes.hpp"
 
 #include <fcntl.h> // 文件控制定义头文件
 #include <errno.h> // 错误号定义头文件
@@ -23,7 +23,7 @@ Mhuixs通过会话来管理客户端连接
 #define SESSION_H
 
 //默认参数定义
-#define PORT 18482                  //Mhuixs默认端口号，1848.2.22:《共产党宣言》发表
+#define PORT 18482                  //Mhuixs默认端口号，1848.2:《共产党宣言》发表
 #define BUFFER_SIZE 1024            // 缓冲区默认初始大小（1KB/8KB/16KB/64KB）
 #define MAX_SESSIONS 64             // 最大会话数量
 #define SESSION_backlog 8           //连接等待队列最大长度
@@ -53,8 +53,8 @@ typedef struct SESSION{//会话
    int sessocket; // 通信套接字文件描述符
    struct sockaddr client_addr; // 客户端地址
 
-   userid_t user_id; // 客户端身份id
-   RANK rank; // 客户端权限等级
+   SID sid; // 会话ID
+   UID uid; // 客户端身份id
 
    time_t time; // 会话建立时间
    uint32_t revisit_sum; // 回访次数，接收到数据时清零，否则+1，超过设置时间时视为断开连接

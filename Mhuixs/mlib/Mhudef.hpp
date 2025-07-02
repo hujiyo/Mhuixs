@@ -14,17 +14,6 @@ Email:hj18914255909@outlook.com
 #include "kvalh.hpp"
 #include "tblh.hpp"
 #include "stream.hpp"
-#include "hook.hpp"
-
-#include "getid.hpp"
-
-
-/*
-这个内部头文件是mhuixs最基本定义
-*/
-#define short_string 50
-#define long_string 300
-#define err -1
 
 /*
 Mhuixs数据库支持的数据结构/数据操作对象:
@@ -248,7 +237,5 @@ uint8_t islittlendian(){
     return *(uint8_t*)&a;//返回1则是小端，返回0则是大端
 }
 extern int _IS_LITTLE_ENDIAN_; //全局变量:是否是小端 0-否 1-是
-
-#define Threadsnum 4 //线程数量
 
 #endif

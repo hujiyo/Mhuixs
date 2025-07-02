@@ -44,20 +44,20 @@ struct permission_struct{
 }; 
 
 class HOOK {
-
     basic_handle_struct bhs; // 操作对象
     Cprs cprs; // 压缩级别
     UID owner; // 所有者ID
     GID group; // 组ID
+public:
     string name; // 钩子名
-
+private:
     permission_struct pm_s; // 权限结构体
-    friend class User_group_manager; // 友元类，允许访问私有成员
+    int if_register;//是否注册(由Registry管理)
+    friend class User_group_manager;
+    friend class Registry; // 允许注册表访问
 public:
     HOOK(UID owner, string name);
     ~HOOK();
-
-
 
     void set(GID group, permission_struct pm); // 设置组和权限
 
@@ -65,12 +65,5 @@ public:
     int hook_obj(HOOK *hook); // 挂载另一个HOOK
     
 };
-// 权限操作类型
-    enum HookOpType { HOOK_READ = 'r', HOOK_ADD = 'a', HOOK_DEL = 'd' };
-
-    // 权限检查接口声明
-    bool check_hook_permission(const HOOK& hook, UID current_uid, HookOpType op, const UserGroupManager& ugm);
-
-
 
 #endif

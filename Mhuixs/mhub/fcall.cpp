@@ -1,7 +1,4 @@
-#include "Mhudef.h"
-#include "datstrc.h"
-
-#include "strmap.h"
+#include "Mhudef.hpp"
 
 #define MAX_FUNC_NUM 10000
 

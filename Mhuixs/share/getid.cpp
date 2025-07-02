@@ -93,3 +93,10 @@ GID Id_alloctor::del_gid(GID_t type, GID gid) {
     return 0;
 }
 
+Id_alloctor Idalloc;
+
+
+//id分配器模块初始化
+int id_alloc_init(){
+    return 0;
+}

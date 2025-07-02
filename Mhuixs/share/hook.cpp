@@ -1,4 +1,5 @@
 #include "hook.hpp"
+#include "registry.hpp"
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
@@ -11,7 +12,10 @@ HOOK权限管理
 待完成
 */
 HOOK::HOOK(UID owner, string name)
-{}
+    : owner(owner), name(name)
+{
+    
+}
 HOOK::~HOOK() {
     
 }
@@ -24,11 +28,10 @@ void HOOK::set(GID group, permission_struct pm) {
 
 
 int HOOK::hook_new(obj_type objtype) {
-    // 创建新对象并注册到 bhs
     
 }
 
 int HOOK::hook_obj(HOOK *hook) {
-    // 将另一个 HOOK 的对象挂载到当前 HOOK
+    
   
 }
