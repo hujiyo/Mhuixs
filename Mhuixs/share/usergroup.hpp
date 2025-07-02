@@ -16,7 +16,7 @@ Email:hj18914255909@outlook.com
 #include <set>
 
 #include "getid.hpp"
-//#include "hook.hpp"
+#include "hook.hpp"
 #include "env.hpp"
 #include "mlib/bcrypt.h"
 using namespace std;
