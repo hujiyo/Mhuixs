@@ -1,5 +1,6 @@
 #include "hook.hpp"
 #include "registry.hpp"
+#include "merr.h"
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
@@ -11,27 +12,93 @@ Email:hj18914255909@outlook.com
 HOOK权限管理
 待完成
 */
-HOOK::HOOK(UID owner, string name)
-    : owner(owner), name(name)
-{
-    
+HOOK::HOOK(UID owner,string name)
+:cprs(lv0),owner(owner),name(name),if_register(0){
+    pm_s.owner_read=1;
+    pm_s.owner_del=1;
+    pm_s.owner_add=1;
+
+    pm_s.group_read=1;
+    pm_s.group_del=1;
+    pm_s.group_add=1;
+
+    pm_s.other_read=0;
+    pm_s.other_del=0;
+    pm_s.other_add=0;
+
+    pm_s.ifisinit=1;//权限初始化完成
 }
+
 HOOK::~HOOK() {
-    
+    //recover(bhs,cprs);//解压
+    bhs.clear_self();
 }
-
-
-
-void HOOK::set(GID group, permission_struct pm) {
-   
-}
-
-
-int HOOK::hook_new(obj_type objtype) {
-    
-}
-
-int HOOK::hook_obj(HOOK *hook) {
-    
-  
+int HOOK::hook_new(UID caller,obj_type objtype,void *parameter1, void *parameter2, void *parameter3)
+{
+    // 用钩子建立一个新对象:先删除原有对象，再增加新对象。必须同时拥有add和del权限
+    //先检查权限
+    if(caller!=0){
+        if( (!Ugmanager.is_entitled(*this,caller,HOOK_ADD)) || (!Ugmanager.is_entitled(*this,caller,HOOK_DEL))){
+            return permission_denied;
+        }
+    }
+    //删除原有对象
+    //recover(bhs,cprs);//解压
+    bhs.clear_self();
+    int res = bhs.make_self(objtype,parameter1, parameter2, parameter3);
+    if(res==merr){
+        report("[Error]: HOOK::hook_new::bhs.make_self() failed.\n");
+        return merr;
+    }
+} 
+void HOOK::reset_pm(UID caller, string pm_str) {
+    // 仅允许root或owner修改权限
+    if (caller != 0 && caller != owner) return;
+    // 只允许长度为3（八进制）或9（二进制）
+    if (!(pm_str.length() == 3 || pm_str.length() == 9)) return;
+    // 临时权限结构体
+    permission_struct new_pm = pm_s;
+    // 解析三位八进制
+    if (pm_str.length() == 3) {
+        for (int i = 0; i < 3; ++i) {
+            if (pm_str[i] < '0' || pm_str[i] > '7') return;
+            int val = pm_str[i] - '0';
+            // owner/group/other
+            switch (i) {
+                case 0:
+                    new_pm.owner_read = (val & 4) ? 1 : 0;
+                    new_pm.owner_add  = (val & 2) ? 1 : 0;
+                    new_pm.owner_del  = (val & 1) ? 1 : 0;
+                    break;
+                case 1:
+                    new_pm.group_read = (val & 4) ? 1 : 0;
+                    new_pm.group_add  = (val & 2) ? 1 : 0;
+                    new_pm.group_del  = (val & 1) ? 1 : 0;
+                    break;
+                case 2:
+                    new_pm.other_read = (val & 4) ? 1 : 0;
+                    new_pm.other_add  = (val & 2) ? 1 : 0;
+                    new_pm.other_del  = (val & 1) ? 1 : 0;
+                    break;
+            }
+        }
+    } else if (pm_str.length() == 9) {
+        // 解析九位二进制
+        for (int i = 0; i < 9; ++i) {
+            if (pm_str[i] != '0' && pm_str[i] != '1') return;
+        }
+        new_pm.owner_read = pm_str[0] - '0';
+        new_pm.owner_add  = pm_str[1] - '0';
+        new_pm.owner_del  = pm_str[2] - '0';
+        new_pm.group_read = pm_str[3] - '0';
+        new_pm.group_add  = pm_str[4] - '0';
+        new_pm.group_del  = pm_str[5] - '0';
+        new_pm.other_read = pm_str[6] - '0';
+        new_pm.other_add  = pm_str[7] - '0';
+        new_pm.other_del  = pm_str[8] - '0';
+    } else {
+        return;
+    }
+    new_pm.ifisinit = 1;
+    pm_s = new_pm;
 }

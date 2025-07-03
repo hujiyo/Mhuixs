@@ -23,14 +23,13 @@ ID分配器模块 线程安全：所有公有方法均加锁
 用户UID:0-65535,类似linux
     0为root用户ID            ROOT_UID
     1-99为系统用户ID         SYSTEM_UID
-    99-49999为普通用户ID     COMMON_UID
-    50000-65535为临时用户ID  TEMP_UID
+    100-49999为普通用户ID     COMMON_UID
+    50000-65536为临时用户ID  TEMP_UID
 
 组GID：0-65535,类似linux
-    0为root组ID             ROOT_GID
-    1为管理员组ID           ADMIN_GID
-    2-999为系统保留组       SYSTEM_GID
-    1000-65535为自定义组ID    MY_GID
+    0为系统组ID             SYSTEM_GID
+    1-65535为普通组ID    COMMON_GID
+    65536为临时用户组ID     TEMP_GID
 */
 typedef int SID,UID,GID;
 
@@ -42,10 +41,9 @@ enum UID_t{
 };//用户ID类型
 
 enum GID_t{
-    ROOT_GID,     // root组ID
-    ADMIN_GID,    // 管理员组ID
-    SYSTEM_GID,   // 系统保留组ID
-    MY_GID       // 自定义组ID
+    SYSTEM_GID,     // 系统组ID  
+    COMMON_GID,    // 普通组ID
+    TEMP_GID,   // 临时用户组ID 
 };//组ID类型
 
 class Id_alloctor{

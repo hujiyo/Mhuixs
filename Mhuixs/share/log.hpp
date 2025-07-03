@@ -5,10 +5,11 @@
 #include <stdlib.h>
 #include <time.h>
 
-#include "merr.h"
 #include "env.hpp"
 
-mrc logger_init();
+#define open_log //是否开启日志
+
+int logger_init();
 void log(char* message);
 
 #endif

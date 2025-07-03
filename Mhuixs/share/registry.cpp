@@ -1,19 +1,23 @@
 #include "registry.hpp"
 
 Registry Reg;
-
-int Registry::register_hook(HOOK* hook) {
+mrc Registry::register_hook(UID owner,string name,HOOK* hook_return) 
+{
+    void* mem = malloc(sizeof(HOOK));
+    if(!hook_return) return null_hook;//空HOOK，注册失败
+    hook_return = new (mem) HOOK(owner,name);
+    HOOK *hook = hook_return;
+    //注册HOOK
     lock_guard<mutex> lock(mtx);
     if (hook && !hook->name.empty()) {
-        if (hook_map.find(hook->name) != hook_map.end()) {
-            // 已有同名HOOK，注册失败
-            return -1;
+        if (hook_map.find(hook->name) != hook_map.end()) {            
+            return hook_already_registered;// 已有同名HOOK，注册失败
         }
         hook_map[hook->name] = hook;
         hook->if_register = 1;
-        return 0;
+        return success;
     }
-    return -1;
+    return register_failed;
 }
 
 void Registry::unregister_hook(const string& name) {

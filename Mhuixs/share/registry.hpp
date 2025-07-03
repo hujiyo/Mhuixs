@@ -23,8 +23,8 @@ public:
     Registry() = default;
     ~Registry() = default;
     
-    // 注册HOOK，0=成功，-1=重名失败
-    int register_hook(HOOK* hook);// 注册HOOK
+    // 注册HOOK，0=成功，-1=重名失败,hook_return是返回的HOOK
+    mrc register_hook(UID owner,string name,HOOK* hook_return);// 注册HOOK
     
     void unregister_hook(const string& name);// 注销HOOK
     

@@ -63,10 +63,9 @@ UID Id_alloctor::del_uid(UID_t type, UID uid) {
 GID Id_alloctor::get_gid(GID_t type) {    
     uint32_t start = 0, end = 0;
     switch(type) {
-        case ROOT_GID:    start = 0; end = 0; break;
-        case ADMIN_GID:   start = 1; end = 1; break;
-        case SYSTEM_GID:  start = 2; end = 999; break;
-        case MY_GID:      start = 1000; end = 65535; break;
+        case SYSTEM_GID:    start = 0; end = 0; break;
+        case COMMON_GID:   start = 1; end = 65535; break;
+        case TEMP_GID:  start = 65536; end = 65536; break;
         default: return merr;
     }
     lock_guard<mutex> lock(gid_mutex);// 锁定组ID位图
@@ -80,10 +79,9 @@ GID Id_alloctor::get_gid(GID_t type) {
 GID Id_alloctor::del_gid(GID_t type, GID gid) {
     uint32_t start = 0, end = 0;
     switch(type) {
-        case ROOT_GID:    start = 0; end = 0; break;
-        case ADMIN_GID:   start = 1; end = 1; break;
-        case SYSTEM_GID:  start = 2; end = 999; break;
-        case MY_GID:      start = 1000; end = 65535; break;
+        case SYSTEM_GID:    start = 0; end = 0; break;
+        case COMMON_GID:   start = 1; end = 65535; break;
+        case TEMP_GID:  start = 65536; end = 65536; break;
         default: return merr;
     }
     if(gid < (int)start || gid > (int)end) return merr;

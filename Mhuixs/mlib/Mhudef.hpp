@@ -14,6 +14,7 @@ Email:hj18914255909@outlook.com
 #include "kvalh.hpp"
 #include "tblh.hpp"
 #include "stream.hpp"
+#include "hook.hpp"
 
 /*
 Mhuixs数据库支持的数据结构/数据操作对象:

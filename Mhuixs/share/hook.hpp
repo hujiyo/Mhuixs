@@ -22,13 +22,13 @@ hook在Mhuixs中被用来：
 enum Mode_type { 
     HOOK_READ = 'r', 
     HOOK_ADD = 'a', 
-    HOOK_DEL = 'd' 
+    HOOK_DEL = 'd',
 };//HOOK的操作类型
 
 struct permission_struct{
     uint16_t ifisinit:1;//是否初始化:一旦初始化权限就生效
 
-    //权限:可读:r 可添:a 可删:d 
+    //权限:可读:r 可添:a 可删:d
     //所有者权限
     uint16_t owner_read:1;//所有者可读
     uint16_t owner_add:1;//所有者可添内容
@@ -55,15 +55,14 @@ private:
     int if_register;//是否注册(由Registry管理)
     friend class User_group_manager;
     friend class Registry; // 允许注册表访问
-public:
-    HOOK(UID owner, string name);
-    ~HOOK();
+    friend class FunCall;
 
-    void set(GID group, permission_struct pm); // 设置组和权限
-
-    int hook_new(obj_type objtype); // 用钩子建立一个新对象
-    int hook_obj(HOOK *hook); // 挂载另一个HOOK
-    
+    HOOK(UID owner,string name);//由注册表统一创建、统一管理
+    ~HOOK();    
+public:    
+    int hook_new(UID caller,obj_type objtype,void *parameter1, void *parameter2, void *parameter3); // 用钩子建立一个新对象
+    void reset_pm(UID caller,string pm_str);// 设置组和权限
 };
+
 
 #endif

@@ -76,7 +76,7 @@ int User_group_manager::add_group(string groupname) {
     }
     // 分配GID
     Id_alloctor idalloc;
-    GID gid = idalloc.get_gid(MY_GID);
+    GID gid = idalloc.get_gid(COMMON_GID);
     if (gid == merr) return merr;
     group_info_struct g;
     g.gid = gid;
@@ -103,7 +103,7 @@ int User_group_manager::del_group(string groupname) {
     }
     // 释放GID
     Id_alloctor idalloc;
-    idalloc.del_gid(MY_GID, gid);
+    idalloc.del_gid(COMMON_GID, gid);
     groups.erase(it);
     return 0;
 }
@@ -120,10 +120,22 @@ int User_group_manager::add_user_to_group(UID uid, GID gid) {
     });
     if (git == groups.end()) return merr;
     // 检查是否已在组中
-    if (std::find(uit->groups.begin(), uit->groups.end(), gid) == uit->groups.end()) {
-        uit->groups.push_back(gid);
+    auto it = std::find(uit->groups.begin(), uit->groups.end(), gid);
+    if (it == uit->groups.end()) {
+        // 如果当前没有主组（groups为空），直接插入首位
+        if (uit->groups.empty()) {
+            uit->groups.insert(uit->groups.begin(), gid);
+        } else {
+            // 若为主组（要求插入首位），否则插入末尾
+            // 这里需由调用者指定主组，假设gid为主组时插入首位，否则插入末尾
+            // 约定：若groups非空且gid应为主组，则需先移除原主组
+            // 这里默认只允许添加附加组，主组只能在创建用户时指定
+            uit->groups.push_back(gid);
+        }
         uit->num_groups = uit->groups.size();
     }
+    // 保证主组始终在首位，不允许重复
+    // 组成员列表
     if (std::find(git->members.begin(), git->members.end(), uid) == git->members.end()) {
         git->members.push_back(uid);
         git->num = git->members.size();
@@ -145,8 +157,13 @@ int User_group_manager::del_user_from_group(UID uid, GID gid) {
     // 从用户组列表移除
     auto ugit = std::find(uit->groups.begin(), uit->groups.end(), gid);
     if (ugit != uit->groups.end()) {
+        bool is_main = (ugit == uit->groups.begin());
         uit->groups.erase(ugit);
         uit->num_groups = uit->groups.size();
+        // 若删除主组且还有附加组，则自动提升下一个为主组
+        if (is_main && !uit->groups.empty()) {
+            // 不需要额外操作，groups[0]自动成为新主组
+        }
     }
     // 从组成员列表移除
     auto gmit = std::find(git->members.begin(), git->members.end(), uid);
@@ -171,8 +188,17 @@ GID User_group_manager::get_gid_by_groupname(string groupname) {
     return merr;
 }
 
+GID User_group_manager::get_primary_gid_by_uid(UID uid) {
+    auto uit = std::find_if(users.begin(), users.end(), [&](const user_info_struct& u) {
+        return u.uid == uid;
+    });
+    if (uit == users.end() || uit->groups.empty()) return merr;
+    return uit->groups[0];
+}
+
 int User_group_manager::is_entitled(HOOK &hook, UID applicant_uid, Mode_type mode) {
-    // 权限检查
+    // 0. 判断权限是否已经初始化
+    if (!hook.pm_s.ifisinit) return merr;
     // 1. 判断是否为所有者
     if (hook.owner == applicant_uid) {
         switch (mode) {
@@ -184,11 +210,11 @@ int User_group_manager::is_entitled(HOOK &hook, UID applicant_uid, Mode_type mod
     }
     // 2. 判断是否为组成员
     GID group = hook.group;
-    auto uit = std::find_if(users.begin(), users.end(), [&](const user_info_struct& u) {
+    auto uit = find_if(users.begin(), users.end(), [&](const user_info_struct& u) {
         return u.uid == applicant_uid;
     });
     if (uit != users.end()) {
-        if (std::find(uit->groups.begin(), uit->groups.end(), group) != uit->groups.end()) {
+        if (find(uit->groups.begin(), uit->groups.end(), group) != uit->groups.end()) {
             switch (mode) {
                 case HOOK_READ: return hook.pm_s.group_read ? 1 : 0;
                 case HOOK_ADD:  return hook.pm_s.group_add ? 1 : 0;
