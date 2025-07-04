@@ -17,6 +17,7 @@ table需要增添表格恢复功能
 #include "env.hpp"//环境变量模块
 #include "log.hpp"//日志模块
 #include "getid.hpp"//ID分配器模块
+#include "usergroup.hpp"//用户组管理模块
 
 #include "Mhudef.hpp"
 /*
@@ -102,6 +103,13 @@ int main()
     if (id_alloc_init() != 0)
     {
         printf("\nID allocator module failed!\n");
+        return 1;
+    }
+
+    //用户组管理模块
+    if (init_User_group_manager() != 0)
+    {
+        printf("\nUser group manager module failed!\n");
         return 1;
     }
 

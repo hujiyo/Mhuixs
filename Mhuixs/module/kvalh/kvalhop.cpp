@@ -48,18 +48,39 @@ int KVALOT::add_key(str* key_name, obj_type type, void* parameter1, void* parame
             }            
         }
     }
+    
     //上面都是一些检查，下面开始正式添加键值对，首先要创建指定类型的对象，要根据type的类型为KEY的handle分别处理
-    {
-        uint32_t* new_offsetof_key =(uint32_t*)realloc(
-            hash_table[hash_index].offsetof_key,
-            sizeof(uint32_t)*(hash_table[hash_index].numof_key+1));
-        if(new_offsetof_key==NULL){
-            //概率很小
+    //优化：预分配内存，减少realloc次数
+    HASH_TONG* current_tong = &hash_table[hash_index];
+    
+    // 检查是否需要扩容桶内数组
+    // 如果当前桶内key数量为0，初始分配4个位置
+    // 如果桶内key数量达到当前分配大小，扩容为2倍
+    if(current_tong->numof_key == 0) {
+        // 初次分配
+        current_tong->offsetof_key = (uint32_t*)malloc(sizeof(uint32_t) * 4);
+        if(current_tong->offsetof_key == NULL) {
             printf("KVALOT::add_key:Error: Memory allocation failed for offsetof_key.\n");
             return merr;
         }
-        hash_table[hash_index].offsetof_key=new_offsetof_key;
-    }//把这个内存分配提前，因为如果下面出错了这个是不用回滚的
+        current_tong->capacity = 4; // 添加capacity字段来记录分配的大小
+    } else {
+        // 检查是否需要扩容（这里假设HASH_TONG结构已经添加了capacity字段）
+        // 如果没有capacity字段，可以用简单的策略：每次增长时分配 (当前数量 + 4) 的空间
+        if(current_tong->numof_key >= current_tong->capacity) {
+            uint32_t new_capacity = current_tong->capacity * 2;
+            uint32_t* new_offsetof_key = (uint32_t*)realloc(
+                current_tong->offsetof_key,
+                sizeof(uint32_t) * new_capacity);
+            if(new_offsetof_key == NULL) {
+                printf("KVALOT::add_key:Error: Memory allocation failed for offsetof_key.\n");
+                return merr;
+            }
+            current_tong->offsetof_key = new_offsetof_key;
+            current_tong->capacity = new_capacity;
+        }
+    }
+    
     //keypool增加一个元素,默认添加新键都是存放在键池keypool内的末尾
     keypool.emplace_back();//创建一个空的KEY对象
     if(keypool[keynum].setname(*key_name)==merr)//设置键名
@@ -80,9 +101,8 @@ int KVALOT::add_key(str* key_name, obj_type type, void* parameter1, void* parame
     keypool[keynum].hash_index=hash_index;//复制哈希表索引
     
     //接下来才是更新哈希桶内的数据    
-    hash_table[hash_index].offsetof_key[hash_table[hash_index].numof_key]= keypool.size()-1;//桶内的键偏移量,从0开始
-    hash_table[hash_index].numof_key++;//桶内的键数量+1
-
+    current_tong->offsetof_key[current_tong->numof_key] = keypool.size()-1;//桶内的键偏移量,从0开始
+    current_tong->numof_key++;//桶内的键数量+1
 
     keynum++;//键数量+1
     return 0;

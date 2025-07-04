@@ -38,8 +38,12 @@ Email:hj18914255909@outlook.com
 
 class KVALOT{
     struct HASH_TONG{
-        uint32_t numof_key;//桶内的key数量
-        uint32_t* offsetof_key;//key偏移量数组,这里的偏移量是在keypool中的偏移量
+        uint32_t numof_key;      //桶内的key数量
+        uint32_t capacity;       //桶内数组的容量（实际分配的大小）
+        uint32_t* offsetof_key;  //key偏移量数组,这里的偏移量是在keypool中的偏移量
+        
+        // 构造函数，初始化为空桶
+        HASH_TONG() : numof_key(0), capacity(0), offsetof_key(NULL) {}
     };
 public:
     struct KEY{

@@ -18,19 +18,42 @@ int KVALOT::rise_capacity() {
     // 3. 重新分配所有 key 到新桶
     for (uint32_t i = 0; i < keypool.size(); ++i) {
         KEY& key = keypool[i];
+        // 获取key名称用于重新计算hash
+        uint32_t key_len = *(uint32_t*)g_memap.addr(key.name);
+        str key_str((uint8_t*)g_memap.addr(key.name) + sizeof(uint32_t), key_len);
+        
         // 重新计算 hash_index
-        uint32_t new_hash_index = murmurhash(*(str*)g_memap.addr(key.name), bits(new_numof_tong));
+        uint32_t new_hash_index = murmurhash(key_str, bits(new_numof_tong));
         HASH_TONG& tong = new_hash_table[new_hash_index];
-        // 扩容桶内 key 偏移量数组
-        uint32_t* new_offsetof_key = (uint32_t*)realloc(tong.offsetof_key, sizeof(uint32_t) * (tong.numof_key + 1));
-        if (!new_offsetof_key) {
-            // 释放已分配内存
-            for (uint32_t j = 0; j < new_numof_tong; ++j) {
-                free(new_hash_table[j].offsetof_key);
+        
+        // 检查是否需要分配或扩容桶内数组
+        if(tong.numof_key == 0) {
+            // 初次分配
+            tong.offsetof_key = (uint32_t*)malloc(sizeof(uint32_t) * 4);
+            if(!tong.offsetof_key) {
+                // 释放已分配内存
+                for (uint32_t j = 0; j < new_numof_tong; ++j) {
+                    free(new_hash_table[j].offsetof_key);
+                }
+                return merr;
             }
-            return merr;
+            tong.capacity = 4;
+        } else if(tong.numof_key >= tong.capacity) {
+            // 需要扩容
+            uint32_t new_capacity = tong.capacity * 2;
+            uint32_t* new_offsetof_key = (uint32_t*)realloc(tong.offsetof_key, sizeof(uint32_t) * new_capacity);
+            if (!new_offsetof_key) {
+                // 释放已分配内存
+                for (uint32_t j = 0; j < new_numof_tong; ++j) {
+                    free(new_hash_table[j].offsetof_key);
+                }
+                return merr;
+            }
+            tong.offsetof_key = new_offsetof_key;
+            tong.capacity = new_capacity;
         }
-        tong.offsetof_key = new_offsetof_key;
+        
+        // 添加key到桶中
         tong.offsetof_key[tong.numof_key] = i;
         tong.numof_key++;
         key.hash_index = new_hash_index;
@@ -105,5 +128,5 @@ uint32_t KVALOT::murmurhash(str& stream, uint32_t result_bits)
     seed *= 0xc2b2ae35;
     seed ^= seed >> 16; 
 
-    return seed%result_bits;
+    return seed & ((1 << result_bits) - 1);
 }

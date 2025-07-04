@@ -8,9 +8,13 @@ start from 2025.1
 Email:hj18914255909@outlook.com
 */
 #include <string>
-using namespace std;
+
 #include "usergroup.hpp"
+#include "registry.hpp"
+#include "merr.h"
 #include "Mhudef.hpp"
+
+using namespace std;
 
 /*
 hook在Mhuixs中被用来：
