@@ -1,0 +1,75 @@
+lexer.c需要处理的标准语法规则：
+
+对象管理：【HOOK】
+对象类型：【TABLE,KVALOT,LIST,BITMAP,STREAM】
+操作关键字：【DEL,TYPE,RANK,CLEAR,DESC,GET,WHERE,TEMP,SET,DEL,EXISTS,SELECT,KEY,TYPE,INSERT,GET,FIELD,SET,ADD,SWAP,DEL,ATTRIBUTE,POS,WHERE,APPEND,LEN,LPUSH,RPUSH,LPOP,RPOP,SET,EXISTS,COUNT】
+类型关键字【i1/int8_t,i2/int16_t,i4/int32_t/int,i8/int64_t,ui1/uint8_t,ui2/uint16_t,ui4/uint32_t,ui8/uint64_t,
+f4/float,f8/double,str/stream,date,time,datetime】
+键关键字【PKEY,FKEY,UNIQUE,NOTNULL,DEFAULT】
+宏替换：【$】
+
+基础语法
+[GET objname;] 	#获取HOOK对象的所有数据
+[WHERE;] 	#返回当前操作对象的基本信息
+[DESC;] 	#返回当前操作对象的视图信息
+[HOOK;] 	#回归主HOOK根，此HOOK为STREAM类型临时HOOK,名字为用户名,存储用户描述信息
+[HOOK objtype objname1 objname2 ...;] #使用钩子创建操作对象
+[HOOK objname;] #手动切换到一个已经存在的操作对象
+[HOOK DEL objname1 objname2 ...;] #注销指定的HOOK操作对象
+[HOOK CLEAR objname1 objname2 ...;] #清空当前操作对象的所有数据,但保留操作对象及其权限信息
+[RANK objname rank;] #设置HOOK操作对象的权限信息
+[GET RANK objname;] #获取指定HOOK操作对象的权限等级
+[GET TYPE objname;] #获取指定HOOK操作对象的类型
+
+TABLE类语法 不指明FIELD默认就是LINE操作
+[FIELD ADD field_name datatype restraint ;] #增加一个字段
+[FIELD INSERT index field_name datatype restraint;] #只支持单次插入一个字段
+[FIELD SWAP field1_index field2_index;] #交换字段
+[FIELD DEL field1_index field2_index ...;] #删除指定字段
+[FIELD SET ATTRIBUTE field_index attribute;] #设置字段约束性属性
+[ADD value1 value2...;] #增加一条记录
+[INSERT line_index value1 value2 ...] #插入一条记录
+[SET line1_index field1_index value1 line2_index field2_index value2 ...;] #修改某行的部分信息
+[DEL line1_index line2_index;] #删除line1_index到line2_index的行，可以相同
+[SWAP line1_index line2_index;] #交换两条记录
+[GET line1_index line2_index;] #获取行号之间的多行数据，可以相同
+[GET FIELD field_name;] #获取指定字段对应的列的数据
+[GET POS x1 y1 x2 y2 ...;]#标准 POS_GET 语句,获取指定坐标的数据
+
+KVALOT类语法
+[EXISTS key1 key2 ...;] #判断存在几个键
+[SELECT pattern;] #查找所有符合给定模式的键,注意查询的是键，不是值,pattern是字符串
+[SET TYPE type key1 key2 key3 ... ;] #创建新键
+[DEL key1 key2 ...;] #删除指定键
+[KEY key;]# 进入键对象操作
+
+STREAM类语法
+[APPEND value;]#将数据追加向流中附加数据
+[APPEND pos value;]#将value追加到流中，从指定位置开始。若pos超出流的长度，则从流的末尾开始追加。
+[GET pos len;]#获取流中指定长度的数据
+[SET pos value;]#从pos处设置流中指定位置的值
+[SET pos len char;]#从pos处设置流中指定位置的值,并将其长度设置为len
+[GET LEN;] #获取流的长度
+
+LIST类语法
+[LPUSH value;]#标准 LIST_LPUSH 语句，在列表开头添加一个值
+[RPUSH value;]#标准 LIST_RPUSH 语句，在列表末尾添加一个值
+[LPOP;]#标准 LIST_LPOP 语句，移除并返回列表开头的值
+[RPOP;]#标准 LIST_RPOP 语句，移除并返回列表末尾的值
+[GET index;] #标准 LIST_GET 语句,获取指定位置的值,index:1,2..为第1,2..个元素，-1,-2,为倒数第1,2..个元素，0:所有元素
+[DEL index;] #标准 LIST_DEL 语句，删除指定索引位置的值
+[GET LEN index;]#标准 LIST_GET_INDEX_LEN 语句，获取列表中指定索引位置的值的长度
+[INSERT index value;] #标准 LIST_INSERT 语句，在指定索引位置插入一个值
+[SET index value;]#标准 LIST_SET 语句，更新列表中指定索引位置的值
+[EXISTS value1 value2 ...;]#标准 LIST_EXISTS 语句，判断列表是否存在指定值
+[GET LEN;] #标准 LIST_GET_LEN 语句，获取列表的长度
+
+BITMAP类语法
+[SET offset value;] #设置位图中指定偏移量处的位值，value为0或1
+[SET offset1 offset2 value;] #设置位图中指定偏移量范围内的位值，value为0或1
+[GET offset;] #获取位图中指定偏移量处的位值
+[GET offset1 offset2;]#获取位图中指定偏移量范围内的位值
+[COUNT offset1 offset2;] #统计位图中指定偏移量范围内值为1的位数     
+   
+
+
