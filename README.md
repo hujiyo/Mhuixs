@@ -1,3 +1,7 @@
+[👉 前往客户端 muixclt 说明文档](Mhuixs/muixclt/README.md)
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hujiyo/Mhuixs)
+
 <img src="Mhuixs/logo/Mhuixs-logo.png" height="130px" />    
 
 # 正在开发的数据库软件
@@ -7,8 +11,6 @@
 Mhuixs 是一个基于内存的数据库，致力于为用户提供高效、灵活的数据管理能力。
 
 本项目结合了关系型与非关系型数据库的优势，目标是实现国产化、易于集成、支持多样化数据结构，并具备简洁的语言特性。
-
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hujiyo/Mhuixs)
 
 ## 2. 目标
 
@@ -52,7 +54,7 @@ NAQL：NAture-language Query Language
 
 旨在设计一种最接近口语的、最简单、给AI可以直接现场学会的数据查询语言。 
 
-未来我们会出一版专门提供给AI看的查询语言 “ 学习资料 ”。
+未来我们会出一版专门提供给AI看的查询语言 " 学习资料 "。
 
 
 
@@ -119,7 +121,7 @@ NAQL：NAture-language Query Language
 
     [FIELD ADD field1_name datatype restraint field2_name datatype restraint...;]#标准 FIELD_ADD 语句
 
-        衍生&&:FIELD ADD (field1_name datatype restraint,...);#从左向右添加字段,初处理将会对命令进行预处理，即‘,’替换为空格,()替换为空格
+        衍生&&:FIELD ADD (field1_name datatype restraint,...);#从左向右添加字段,初处理将会对命令进行预处理，即','替换为空格,()替换为空格
 
               预处理=> FIELD ADD  field1_name datatype restraint field2_name datatype restraint...;
 
@@ -162,11 +164,11 @@ NAQL：NAture-language Query Language
 
     [SET line1_index field1_index value1 line2_index field2_index value2 ...;]#标准 LINE_SET 语句
 
-        衍生&&:SET line_number field1_index = value1, field2_index = value2,...;#(,)等在第一步预处理时就会被替换为‘ ’
+        衍生&&:SET line_number field1_index = value1, field2_index = value2,...;#(,)等在第一步预处理时就会被替换为' '
 
               预处理=> SET line_index field1_index value1 line_index field2_index value2...;#转变为SET普通语句
 
-        衍生&&:SET POS (x1,y1)= value1 (x2,y2)=value2 ...;#(,)等在第一步预处理时就会被替换为‘ ’
+        衍生&&:SET POS (x1,y1)= value1 (x2,y2)=value2 ...;#(,)等在第一步预处理时就会被替换为' '
 
               预处理=> SET line_index field1_index value1 line_index field2_index value2...;#转变为SET普通语句
 
