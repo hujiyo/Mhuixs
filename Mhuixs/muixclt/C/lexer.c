@@ -159,6 +159,7 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
     )
 
     tok *token = (tok*)calloc(1,sizeof(tok));
+    str_init(&token->content);
 
 
     /*
@@ -180,6 +181,7 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
     //检查instr是否合法，pos是否在string的合法范围内
     if(instr == NULL || instr->string == NULL ||instr->len == 0 || instr->pos == NULL ||
         instr->pos < instr->string ||instr->pos >=  instr->string+instr->len){
+        str_free(&token->content);
         free(token);
         return NULL;//返回NULL表示instr已经分割完毕了或者instr无法分割（即不合法）
     }
@@ -234,6 +236,7 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
 
     if(is_number+is_word+is_char + is_string + is_symbol == 0){
         //说明没有找到token的起始字符(连结束符都没有找到)
+        str_free(&token->content);
         free(token);
         return NULL;//返回NULL表示instr已经分割完毕了  
     }
@@ -470,7 +473,7 @@ static int distinguish_token_type(tok* token){
         return merr;
     }
     if(token->type == TOKEN_END){
-        sfree(&token->content,NULL);//释放token->content
+                    str_free(&token->content);//释放token->content
         return 0;
     }
     if(token->type == TOKEN_VALUES || token->type == TOKEN_NUM){
@@ -492,7 +495,7 @@ static int distinguish_token_type(tok* token){
                 }
                 //说明没有找到匹配的符号
                 token->type = TOKEN_EEROR;
-                sfree(&token->content,NULL);//释放token->content
+                str_free(&token->content);//释放token->content
                 return merr;
             }
         }
@@ -623,6 +626,8 @@ static tok* get_token(inputstr* instr){
 #define stmtype_STREAM_GET_LEN 39
 #define stmtype_STREAM_SET 40
 #define stmtype_STREAM_SET_CHAR 41
+#define stmtype_KEY_MAKE 42
+#define TOKEN_CHECKOUT TOKEN_GET  // 临时定义，可能需要根据实际需要调整
 /* 
 [LPUSH value;]#标准 LIST_LPUSH 语句，在列表开头添加一个值
 [RPUSH value;]#标准 LIST_RPUSH 语句，在列表末尾添加一个值
@@ -998,13 +1003,16 @@ int distinguish_stmt_type(tok* token,const int len,int* where){
         */
         
         case TOKEN_NUM:
-            if(i == 0){
-                result = stmtype_BACK;
-                break;
-            }
-            else{
-                result = -1;
-                break;
+            {
+                int i = 0;  // 定义局部变量 i
+                if(i == 0){
+                    result = stmtype_BACK;
+                    break;
+                }
+                else{
+                    result = -1;
+                    break;
+                }
             }
         default:
             result = -1;
@@ -1031,7 +1039,7 @@ int main(){
     tok *token = NULL;
     while((token = getoken(&instr)) != NULL){
         sprint(token->content,end);
-        sfree(&token->content);//释放token->content
+        str_free(&token->content);//释放token->content
         free(token);
         token = NULL;
         printf("#\n");
@@ -1059,18 +1067,20 @@ str lexer(char* string,int len){
     tok* cc_token = NULL;//临时存储
     
     //第一步开始解析,把所有的token都放入token数组中
-    while((cc_token = get_token(&instr))!= NULL){
+    while((cc_token = getoken(&instr))!= NULL){
         tok* new_token = realloc(token,(token_num+1)*sizeof(tok));//拓展内存
         if(cc_token->type == TOKEN_EEROR || new_token == NULL ){
             l:
             //说明语法错误或内存分配失败,先释放内存
             for(uint32_t i = 0;i<token_num;i++){
-                sfree(&token[i].content,NULL);//释放每一个token的content
+                str_free(&token[i].content);//释放每一个token的content
             }
             free(token);//释放token数组
-            sfree(&cc_token->content,NULL);//释放cc_token的content
+            str_free(&cc_token->content);//释放cc_token的content
             free(cc_token);//释放cc_token
-            return end; 
+                          str empty_str;
+              str_init(&empty_str);
+              return empty_str; 
         }
         token = new_token;
         token[token_num] = *cc_token;
@@ -1080,7 +1090,8 @@ str lexer(char* string,int len){
     if(token[token_num-1].type != TOKEN_END) goto l;
 
     // 第二步：识别语句类型并生成字节码
-    str stream = end; // 初始化输出流
+    str stream;
+    str_init(&stream); // 初始化输出流
     for(int i=0;i<token_num;){
         int st=i,ed=i;
         while(token[i].type !=TOKEN_END){
@@ -1092,7 +1103,7 @@ str lexer(char* string,int len){
         int stmt_type=distinguish_stmt_type(&token[st],ed-st+1,&where);
         if(stmt_type == -1){
             //说明语法错误
-            sfree(&stream,NULL);
+            str_free(&stream);
             goto l;
         }
 

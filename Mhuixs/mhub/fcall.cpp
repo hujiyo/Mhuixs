@@ -1,17 +1,15 @@
 #include "fcall.hpp"
 
 #define FUNC_NUM 1024
-/*
-给每个函数分配一个编号,通过编号即可调用函数
-*/
+
 //void funtable[FUNC_NUM];
 
-int fun_call_init(){
-    
-    return 0;
-}
+/*
+给每个函数分配一个名字（编号）,通过编号即可调用函数
+*/
 enum FunID{
     HOOK_CREATE,//创建HOOK
+    //...    
 };
 
 mrc Mhuixscall(UID caller,basic_handle_struct bhs,FunID funseq,int argc,void* argv[])
@@ -29,3 +27,11 @@ mrc Mhuixscall(UID caller,basic_handle_struct bhs,FunID funseq,int argc,void* ar
             break;
     }
 }
+
+typedef struct COMMEND{
+    UID caller;//调用者
+    basic_handle_struct bhs;//句柄
+    FunID funseq;//函数编号
+    int argc;//参数数目
+    void* argv[];//参数列表
+} COMMEND;

@@ -17,13 +17,17 @@ Email:hj18914255909@outlook.com
 */
 
 /*
-Mhuixs通过会话来管理客户端连接
+=====================
+session 模块
+=====================
+负责管理客户端连接、每个会话相当于一个"进程"，执行模块就类似处理器，
+每个会话会管理自己的一个队列，执行模块根据优先级在队列中获取任务执行
 */
 #ifndef SESSION_H
 #define SESSION_H
 
 //默认参数定义
-#define PORT 18482                  //Mhuixs默认端口号，1848.2:《共产党宣言》发表
+#define PORT 18482                  //Mhuixs默认端口号
 #define BUFFER_SIZE 1024            // 缓冲区默认初始大小（1KB/8KB/16KB/64KB）
 #define MAX_SESSIONS 64             // 最大会话数量
 #define SESSION_backlog 8           //连接等待队列最大长度
