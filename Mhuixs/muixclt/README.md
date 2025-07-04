@@ -1,5 +1,7 @@
 [👈 返回主项目说明文档](../../README.md)
 
+<img src="logo/.Mhuixs-logo.png" height="130px" />    
+
 # Mhuixs 数据库客户端
 
 欢迎使用 Mhuixs 数据库客户端！本目录包含三个版本的客户端实现：C、C++ 和 Python。

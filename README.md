@@ -2,7 +2,7 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hujiyo/Mhuixs)
 
-<img src="Mhuixs/logo/Mhuixs-logo.png" height="130px" />    
+<img src="logo/.Mhuixs-logo.png" height="130px" />    
 
 # 正在开发的数据库软件
 

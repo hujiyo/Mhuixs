@@ -1025,10 +1025,6 @@ int distinguish_stmt_type(tok* token,const int len,int* where){
 
 
 
-
-
-
-
 /*
 //测试一下getoken函数
 int main(){
