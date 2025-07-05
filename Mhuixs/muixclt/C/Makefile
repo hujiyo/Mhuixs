@@ -6,7 +6,7 @@ CFLAGS = -Wall -Wextra -std=c99 -O2 -g
 LDFLAGS = -lssl -lcrypto -lreadline
 
 # 源文件
-SOURCES = clt.c pkg.c lexer.c logo.c
+SOURCES = muixclt.c pkg.c lexer.c logo.c netlink.c
 OBJECTS = $(SOURCES:.c=.o)
 TARGET = mhuixs-client
 

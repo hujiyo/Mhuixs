@@ -3,6 +3,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
+#include "netlink.h"
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
@@ -10,6 +11,9 @@
 start from 2024.12
 Email:hj18914255909@outlook.com
 */
+
+// 函数前向声明
+void print_mhuixs_logo();
 
 // 打印帮助信息
 void print_help() {

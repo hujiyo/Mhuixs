@@ -1,5 +1,4 @@
-#define PORT 18482
-#define DEFAULT_SERVER_IP "127.0.0.1" //默认服务端在本地
+#include "netlink.h"
 
 int connected = 0;//连接状态
 
@@ -7,8 +6,8 @@ int connected = 0;//连接状态
 static SSL_CTX *ssl_ctx = NULL;
 static SSL *ssl_conn = NULL;//SSL连接的指针
 static int sock_fd = -1;//套接字的文件描述符
-static char server_ip[16] = DEFAULT_SERVER_IP;//服务器IP地址
-static int server_port = PORT;//服务器端口
+char server_ip[16] = DEFAULT_SERVER_IP;//服务器IP地址
+int server_port = PORT;//服务器端口
 
 void init_openssl() {
     SSL_load_error_strings();// 加载错误字符串
