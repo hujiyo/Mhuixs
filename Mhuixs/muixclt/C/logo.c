@@ -11,6 +11,41 @@ start from 2024.12
 Email:hj18914255909@outlook.com
 */
 
+// 打印帮助信息
+void print_help() {
+    printf("muixclt - 用法:\n");
+    printf("  muixclt [选项] [命令]\n\n");
+    printf("选项:\n");
+    printf("  -h, --help              显示此帮助信息\n");
+    printf("  -v, --version           显示版本信息\n");
+    printf("  -s, --server <IP>       指定服务器IP地址 (默认: %s)\n", DEFAULT_SERVER_IP);
+    printf("  -p, --port <端口>       指定服务器端口 (默认: %d)\n", PORT);
+    printf("  -f, --file <文件>       从文件批量执行查询\n");
+    printf("交互式命令:\n");
+    printf("  \\q, \\quit              退出客户端\n");
+    printf("  \\h, \\help              显示帮助信息\n");
+    printf("  \\c, \\connect           连接到服务器\n");
+    printf("  \\d, \\disconnect        断开连接\n");
+    printf("  \\s, \\status            显示连接状态\n");
+    printf("  \\v, \\verbose           切换详细模式\n\n");
+}
+
+// 打印版本信息
+void print_version() {
+    printf("muixclt v0.0.1  Mhuixs client\n"
+           "Copyright (c) HuJi 2024 Email:hj18914255909@outlook.com\n");
+}
+
+// 打印欢迎信息
+void print_welcome() {
+    print_mhuixs_logo();
+    printf("\n");
+    printf("欢迎使用 Mhuixs client!\n");
+    printf("服务器地址: %s:%d\n", server_ip, server_port);
+    printf("输入 \\h 获取帮助信息，输入 \\q 退出\n");
+    printf("----------------------------------------\n");
+}
+
 //开头介绍信息
 static const char* info_lines[] = {
 "",

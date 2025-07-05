@@ -8,6 +8,9 @@ Email:hj18914255909@outlook.com
 #ifndef LOGO_H
 #define LOGO_H
 
-void print_mhuixs_logo();
+void print_mhuixs_logo();//打印Mhuixs的logo
+void print_help();//打印帮助信息
+void print_version();//打印版本信息
+void print_welcome();//打印欢迎信息
 
 #endif
