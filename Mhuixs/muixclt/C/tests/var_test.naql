@@ -1,0 +1,5 @@
+$test_var "hello";
+GET $test_var;
+SET $test_var "world";
+GET $test_var;
+DEL $test_var;

@@ -1,0 +1,172 @@
+# 复杂NAQL语法测试文件
+# 测试目标：验证客户端能正确解析各种NAQL语法结构
+
+# 1. 变量定义和操作测试
+$counter 0;
+$max_value 10;
+$test_key "user_data";
+$condition_flag 1;
+
+# 2. 基础命令测试
+WHERE;
+DESC;
+GET $test_key;
+SET $test_key "initial_value";
+
+# 3. HOOK操作测试
+HOOK KVALOT test_db;
+SET TYPE STREAM key1 key2 key3;
+EXISTS key1 key2 key3;
+
+# 4. 条件判断测试 (IF-ELSE-ELIF)
+IF $condition_flag;
+    GET key1;
+    SET key1 "condition_true";
+    INCR $counter;
+ELIF $counter;
+    GET key2;
+    SET key2 "counter_nonzero";
+ELSE;
+    GET key3;
+    SET key3 "default_case";
+END;
+
+# 5. 简单FOR循环测试
+FOR i 1 5 1;
+    GET key;
+    SET key "loop_value";
+    INCR key;
+END;
+
+# 6. 嵌套循环测试
+FOR outer 1 3 1;
+    FOR inner 1 3 1;
+        GET nested_key;
+        SET nested_key "nested_value";
+    END;
+END;
+
+# 7. WHILE循环测试
+$loop_counter 0;
+WHILE $loop_counter;
+    GET while_key;
+    INCR while_key;
+    DECR $loop_counter;
+END;
+
+# 8. 复杂条件嵌套测试
+IF $condition_flag;
+    FOR j 1 3 1;
+        IF j;
+            GET conditional_key;
+            SET conditional_key "nested_condition";
+        ELSE;
+            DEL conditional_key;
+        END;
+    END;
+ELSE;
+    WHILE $max_value;
+        GET alternative_key;
+        DECR $max_value;
+    END;
+END;
+
+# 9. TABLE操作测试
+HOOK TABLE user_table;
+FIELD ADD name str NOTNULL;
+FIELD ADD age i4 DEFAULT;
+FIELD ADD email str UNIQUE;
+ADD "John" 25 "john@example.com";
+ADD "Jane" 30 "jane@example.com";
+GET 1 2;
+GET WHERE name;
+SET WHERE age name "Updated";
+
+# 10. LIST操作测试
+HOOK LIST task_list;
+LPUSH "task1";
+RPUSH "task2";
+LPUSH "task3";
+GET 0;
+SORT ASC;
+REVERSE;
+
+# 11. BITMAP操作测试
+HOOK BITMAP flags;
+SET 0 1;
+SET 1 0;
+SET 2 1;
+GET 0 2;
+COUNT;
+FLIP 1;
+AND flags;
+
+# 12. STREAM操作测试
+HOOK STREAM data_stream;
+APPEND "Hello";
+APPEND " World";
+GET 0 5;
+GET LEN;
+MERGE data_stream;
+
+# 13. 复杂嵌套结构测试
+FOR main_loop 1 3 1;
+    $temp_var main_loop;
+    IF $temp_var;
+        HOOK KVALOT $temp_var;
+        FOR sub_loop 1 $temp_var 1;
+            SET sub_loop "dynamic_value";
+            IF sub_loop;
+                GET sub_loop;
+                INCR sub_loop;
+            END;
+        END;
+    END;
+END;
+
+# 14. 错误处理和边界测试
+FOR boundary 0 1 1;
+    GET boundary_key;
+    IF boundary;
+        SET boundary_key "boundary_test";
+    END;
+END;
+
+# 15. 系统命令测试
+SYSTEM INFO;
+SYSTEM STATUS;
+LOCK test_lock 1000;
+UNLOCK test_lock;
+WAIT 100;
+
+# 16. 事务测试
+MULTI;
+SET trans_key1 "value1";
+SET trans_key2 "value2";
+GET trans_key1;
+EXEC;
+
+# 17. 异步操作测试
+ASYNC GET async_key;
+SYNC;
+
+# 18. 复杂表达式和运算测试
+$result 0;
+FOR calc 1 5 1;
+    INCR $result;
+    IF $result;
+        DECR calc;
+    END;
+END;
+
+# 19. 导入导出测试
+EXPORT test_db json;
+IMPORT test_db json "test_data";
+
+# 20. 清理测试
+DEL $counter $max_value $test_key;
+HOOK CLEAR test_db;
+
+# 测试完成标记
+SET test_complete "SUCCESS";
+GET test_complete; 

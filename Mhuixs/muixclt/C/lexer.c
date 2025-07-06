@@ -16,10 +16,7 @@ Email:hj18914255909@outlook.com
 #include <arpa/inet.h>  // 用于htonl函数
 
 // 添加缺失的字符串操作函数
-static inline int str_append_string(str *s, const char *cstr) {
-    if (!s || !cstr) return -1;
-    return sappend(s, cstr, strlen(cstr));
-}
+
 
 static inline int str_append_data(str *s, const void *data, uint32_t len) {
     if (!s || !data) return -1;
@@ -380,6 +377,7 @@ typedef enum {
     CMD_GET_VAR = 362,            // [GET $var_name;]
     CMD_SET_VAR_VALUE = 363,      // [SET $var_name value;]
     CMD_DEL_VAR = 364,            // [DEL $var_name;]
+    CMD_SET_VAR_FROM_GET = 365,   // [$var_name = GET command;]
     
     // 持久性和压缩管理命令 (371-380)
     CMD_BACKUP_OBJ = 371,         // [BACKUP objname;]
@@ -438,7 +436,8 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
     (c=='\"')               ||      \
     (c=='\'')               ||      \
     (c==';')                ||      \
-    (c=='\n')                     \
+    (c=='\n')               ||      \
+    (c=='$')                      \
     )
     //判断是否是token的结束字符
     #define is_std_token_end_char(c)  ( \
@@ -482,9 +481,22 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
     int is_word = 0;//函数全局变量：是否是名字:字母、下划线
     int is_number = 0;//函数全局变量：是否是数字:数字
     int is_symbol = 0;//函数全局变量：是否是符号:>(>,>=,><) <(<,<=,<>) =(==) ~(~=) !(!=)
+    int is_macro = 0;//函数全局变量：是否是宏变量:$
 
     //在原来pos的位置基础上先后寻找首个token的起始字符
     for(; instr->pos < instr->string + instr->len ; instr->pos++){
+        // 处理注释行：如果遇到#，跳过整行
+        if(*instr->pos == '#'){
+            // 跳过注释行到行尾
+            while(instr->pos < instr->string + instr->len && *instr->pos != '\n'){
+                instr->pos++;
+            }
+            // 如果找到\n，跳过它
+            if(instr->pos < instr->string + instr->len && *instr->pos == '\n'){
+                instr->pos++;
+            }
+            continue;
+        }
         if(is_std_token_start_char(*instr->pos)){
             //找到token的起始字符了,开始分类处理
             if(*instr->pos == '\"'){
@@ -508,6 +520,10 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
                 is_word = 1;
                 break;
             }
+            if(*instr->pos == '$'){
+                is_macro = 1;
+                break;
+            }
         }
         // 添加对符号的识别
         else if(*instr->pos == '>' || *instr->pos == '<' || *instr->pos == '=' || *instr->pos == '~' || *instr->pos == '!') {
@@ -516,7 +532,7 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
         }
     }
 
-    if(is_number+is_word+is_char + is_string + is_symbol == 0){
+    if(is_number+is_word+is_char + is_string + is_symbol + is_macro == 0){
         //说明没有找到token的起始字符(连结束符都没有找到)
         str_free(&token->content);
         free(token);
@@ -578,9 +594,9 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
             //不用管pos的位置，因为已经TOKEN_EEROR了
             return token; 
         }
-    }    
+    }
     else if(is_string){//字符串处理
-        *instr->pos++;//跳过"
+        instr->pos++;//跳过"
         for(;ed_pos < instr->string+instr->len;ed_pos++){
             //不断判断ed_pos指向的是否是string的结束字符
             if(*ed_pos == '\"' && *(ed_pos-1) != '\\'){
@@ -683,6 +699,36 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
             return token;
         }else{}
     }
+    else if(is_macro){//宏变量处理 $var_name
+        instr->pos++;//跳过$
+        for(;ed_pos < instr->string+instr->len;ed_pos++){
+            //不断判断ed_pos指向的是否是宏变量名的结束字符 ' ' ';' '\n'
+            if(*ed_pos == ' ' || *ed_pos == ';' || *ed_pos == '\n' || *ed_pos == '>' 
+                || *ed_pos == '<' || *ed_pos == '=' || *ed_pos == '~' || *ed_pos == '!'){
+                //宏变量名结束了
+                swrite(&token->content,0,instr->pos,ed_pos-instr->pos);
+                token->type = TOKEN_MACRO;
+                instr->pos = ed_pos;
+                return token;
+            }
+            else if((*ed_pos < 'a' || *ed_pos > 'z') && (*ed_pos < 'A' || *ed_pos > 'Z') 
+                && (*ed_pos < '0' || *ed_pos > '9') && *ed_pos != '_' && *ed_pos < 128){
+                //不是合法的变量名字符
+                token->type = TOKEN_EEROR;
+                return token;
+            }           
+        }
+        //最后一个token是宏变量
+        swrite(&token->content,0,instr->pos,ed_pos-instr->pos);
+        token->type = TOKEN_MACRO;
+        instr->pos = ed_pos;
+        return token;
+    }
+    
+    // 如果到达这里，说明没有找到有效的token
+    str_free(&token->content);
+    free(token);
+    return NULL;
 }
 
 const keyword keyword_map[] = {
@@ -1285,7 +1331,7 @@ str generate_huji_protocol(CommandNumber cmd, tok* params, int param_count) {
     // 添加每个参数
     for(int i = 0; i < param_count; i++) {
         if(params[i].type == TOKEN_VALUES || params[i].type == TOKEN_NAME || 
-           params[i].type == TOKEN_NUM || params[i].type >= TOKEN_TABLE) {
+           params[i].type == TOKEN_NUM || params[i].type == TOKEN_MACRO || params[i].type >= TOKEN_TABLE) {
             
             // 参数长度（字符串数字）
             char len_str[32];
@@ -1391,7 +1437,8 @@ str lexer(char* string, int len) {
             CommandNumber cmd = distinguish_stmt_type(&tokens[stmt_start], stmt_len, &param_start);
             
             if(cmd == CMD_ERROR) {
-                // 语法错误，跳过这个语句
+                // 语法错误，设置错误状态
+                result.state = -1;
                 stmt_start = stmt_end + 1;
                 continue;
             }
@@ -1466,6 +1513,9 @@ static CommandNumber parse_get_statement(tok* token, int len, int* param_start) 
         } else if(token[1].type == TOKEN_NUM) {
             *param_start = 1;
             return CMD_GET_LIST;
+        } else if(token[1].type == TOKEN_MACRO) {
+            *param_start = 1;
+            return CMD_GET_VAR;
         }
     }
     
@@ -1584,6 +1634,9 @@ static CommandNumber parse_set_statement(tok* token, int len, int* param_start) 
     } else if(len == 3 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_VALUES) {
         *param_start = 1;
         return CMD_SET_KEY;
+    } else if(len >= 3 && token[1].type == TOKEN_MACRO) {
+        *param_start = 1;
+        return CMD_SET_VAR_VALUE;
     } else if(len >= 4 && token[1].type == TOKEN_WHERE) {
         *param_start = 2;
         return CMD_SET_WHERE;
@@ -1614,6 +1667,8 @@ static CommandNumber parse_del_statement(tok* token, int len, int* param_start) 
         *param_start = 1;
         if(token[1].type == TOKEN_NUM) {
             return CMD_DEL_RECORD; // TABLE类或其他数值删除
+        } else if(token[1].type == TOKEN_MACRO) {
+            return CMD_DEL_VAR; // 变量删除
         } else {
             return CMD_DEL_KEY; // 键删除
         }
@@ -1759,12 +1814,17 @@ static CommandNumber parse_system_statement(tok* token, int len, int* param_star
 }
 
 static CommandNumber parse_macro_statement(tok* token, int len, int* param_start) {
-    if(len < 2) return CMD_ERROR;
+    if(len < 1) return CMD_ERROR;
     
     // 处理宏变量语法 [$var_name value;]
     if(token[0].type == TOKEN_MACRO) {
-        if(len == 3) {
-            *param_start = 1;
+        if(len == 1) {
+            // [$var_name;] - 只有变量名，可能是获取变量值
+            *param_start = 0;
+            return CMD_GET_VAR;
+        } else if(len >= 2) {
+            // [$var_name value;] 或 [$var_name value1 value2 ...;]
+            *param_start = 0;
             return CMD_SET_VAR;
         }
     }
@@ -1772,152 +1832,76 @@ static CommandNumber parse_macro_statement(tok* token, int len, int* param_start
     return CMD_ERROR;
 }
 
-// 本地变量管理
-typedef struct {
-    str name;
-    str value;
-} Variable;
+// 包含变量系统
+#include "variable.h"
 
-static Variable* local_vars = NULL;
-static int var_count = 0;
-static int var_capacity = 0;
 
-// 条件控制状态管理
-typedef struct {
-    int condition_depth;
-    int loop_depth;
-    int if_stack[32];     // IF语句栈
-    int loop_stack[32];   // 循环语句栈
-} ControlState;
-
-static ControlState control_state = {0, 0, {0}, {0}};
-
-// 本地变量操作函数
-int set_local_variable(const char* name, const char* value) {
-    // 查找是否已存在
-    for(int i = 0; i < var_count; i++) {
-        if(strncmp(local_vars[i].name.string, name, local_vars[i].name.len) == 0) {
-            // 更新现有变量
-            str_free(&local_vars[i].value);
-            str_init(&local_vars[i].value);
-            str_append_string(&local_vars[i].value, value);
-            return 0;
-        }
-    }
-    
-    // 添加新变量
-    if(var_count >= var_capacity) {
-        var_capacity = var_capacity == 0 ? 8 : var_capacity * 2;
-        Variable* new_vars = realloc(local_vars, var_capacity * sizeof(Variable));
-        if(!new_vars) return -1;
-        local_vars = new_vars;
-    }
-    
-    str_init(&local_vars[var_count].name);
-    str_init(&local_vars[var_count].value);
-    str_append_string(&local_vars[var_count].name, name);
-    str_append_string(&local_vars[var_count].value, value);
-    var_count++;
-    
-    return 0;
-}
-
-const char* get_local_variable(const char* name) {
-    for(int i = 0; i < var_count; i++) {
-        if(strncmp(local_vars[i].name.string, name, local_vars[i].name.len) == 0) {
-            return local_vars[i].value.string;
-        }
-    }
-    return NULL;
-}
-
-int delete_local_variable(const char* name) {
-    for(int i = 0; i < var_count; i++) {
-        if(strncmp(local_vars[i].name.string, name, local_vars[i].name.len) == 0) {
-            str_free(&local_vars[i].name);
-            str_free(&local_vars[i].value);
-            // 移动后面的变量
-            for(int j = i; j < var_count - 1; j++) {
-                local_vars[j] = local_vars[j + 1];
-            }
-            var_count--;
-            return 0;
-        }
-    }
-    return -1; // 变量不存在
-}
 
 // 本地命令处理函数
 int process_local_command(CommandNumber cmd, tok* params, int param_count) {
     switch(cmd) {
         case CMD_SET_VAR:
             if(param_count >= 2) {
-                return set_local_variable(params[0].content.string, params[1].content.string);
+                // 第一个参数是$var_name（TOKEN_MACRO），第二个参数是value
+                char* var_name = str_to_cstr(&params[0].content);
+                char* var_value = str_to_cstr(&params[1].content);
+                int result = set_local_variable(var_name, var_value);
+                free(var_name);
+                free(var_value);
+                return result;
             }
             break;
             
         case CMD_GET_VAR:
             if(param_count >= 1) {
-                const char* value = get_local_variable(params[0].content.string);
-                if(value) {
-                    printf("%s\n", value);
-                    return 0;
-                }
+                // 参数是$var_name（TOKEN_MACRO）
+                char* var_name = str_to_cstr(&params[0].content);
+                print_variable_info(var_name);
+                free(var_name);
+                return 0;
             }
             break;
             
         case CMD_DEL_VAR:
             if(param_count >= 1) {
-                return delete_local_variable(params[0].content.string);
+                // 参数是$var_name（TOKEN_MACRO）
+                char* var_name = str_to_cstr(&params[0].content);
+                int result = delete_local_variable(var_name);
+                free(var_name);
+                return result;
             }
             break;
             
         case CMD_IF:
             // IF条件处理 - 这里简化处理，实际应该解析条件表达式
-            control_state.if_stack[control_state.condition_depth] = 1; // 假设条件为真
-            control_state.condition_depth++;
-            return 0;
+            return push_if_condition(1); // 假设条件为真
             
         case CMD_ELSE:
-            if(control_state.condition_depth > 0) {
-                control_state.if_stack[control_state.condition_depth - 1] = 
-                    !control_state.if_stack[control_state.condition_depth - 1];
-            }
-            return 0;
+            return push_if_condition(!get_current_if_state());
             
         case CMD_ELIF:
             // ELIF处理 - 简化处理
-            if(control_state.condition_depth > 0) {
-                control_state.if_stack[control_state.condition_depth - 1] = 0; // 简化为假
-            }
-            return 0;
+            return push_if_condition(0); // 简化为假
             
         case CMD_END:
-            if(control_state.condition_depth > 0) {
-                control_state.condition_depth--;
-            } else if(control_state.loop_depth > 0) {
-                control_state.loop_depth--;
+            if(get_current_if_state() >= 0) {
+                return pop_if_condition();
+            } else if(get_current_loop_state() > 0) {
+                return pop_loop_state();
             }
             return 0;
             
         case CMD_WHILE:
             // WHILE循环处理 - 简化处理
-            control_state.loop_stack[control_state.loop_depth] = 1;
-            control_state.loop_depth++;
-            return 0;
+            return push_loop_state();
             
         case CMD_FOR:
             // FOR循环处理 - 简化处理
-            control_state.loop_stack[control_state.loop_depth] = 1;
-            control_state.loop_depth++;
-            return 0;
+            return push_loop_state();
             
         case CMD_BREAK:
             // 跳出循环
-            if(control_state.loop_depth > 0) {
-                control_state.loop_stack[control_state.loop_depth - 1] = 0;
-            }
-            return 0;
+            return 0; // 简化处理
             
         case CMD_CONTINUE:
             // 继续循环
@@ -1938,16 +1922,5 @@ int is_local_command(CommandNumber cmd) {
 
 // 资源清理函数
 void cleanup_local_resources() {
-    for(int i = 0; i < var_count; i++) {
-        str_free(&local_vars[i].name);
-        str_free(&local_vars[i].value);
-    }
-    free(local_vars);
-    local_vars = NULL;
-    var_count = 0;
-    var_capacity = 0;
-    
-    // 重置控制状态
-    control_state.condition_depth = 0;
-    control_state.loop_depth = 0;
+    variable_system_cleanup();
 }

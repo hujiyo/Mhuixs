@@ -1,0 +1,175 @@
+# 重点语法测试文件 - 专门测试容易出错的语法解析
+
+# 测试1: 变量定义和引用
+$var1 "test_value";
+$var2 123;
+$var3 $var2;
+GET $var1;
+SET $var1 $var2;
+
+# 测试2: 基本条件判断
+IF $var2;
+    GET success_key;
+    SET success_key "if_worked";
+END;
+
+# 测试3: IF-ELSE结构
+IF $var3;
+    GET if_key;
+ELSE;
+    GET else_key;
+END;
+
+# 测试4: IF-ELIF-ELSE结构
+$test_num 2;
+IF $test_num;
+    SET result "first_condition";
+ELIF $test_num;
+    SET result "second_condition";
+ELSE;
+    SET result "default";
+END;
+
+# 测试5: 简单FOR循环
+FOR i 1 4 1;
+    GET key;
+    SET key "loop_iteration";
+END;
+
+# 测试6: FOR循环与变量
+$start 1;
+$end 3;
+$step 1;
+FOR j $start $end $step;
+    GET loop_key;
+    INCR loop_key;
+END;
+
+# 测试7: 嵌套FOR循环
+FOR outer 1 3 1;
+    FOR inner 1 2 1;
+        GET nested;
+        SET nested "nested_value";
+    END;
+END;
+
+# 测试8: WHILE循环
+$counter 3;
+WHILE $counter;
+    GET while_key;
+    DECR $counter;
+END;
+
+# 测试9: 条件嵌套在循环中
+FOR k 1 3 1;
+    IF k;
+        GET conditional;
+        SET conditional "in_loop";
+    ELSE;
+        DEL conditional;
+    END;
+END;
+
+# 测试10: 循环嵌套在条件中
+$enable_loop 1;
+IF $enable_loop;
+    FOR m 1 2 1;
+        GET enabled;
+        SET enabled "loop_enabled";
+    END;
+ELSE;
+    GET disabled;
+END;
+
+# 测试11: 复杂嵌套结构
+$outer_condition 1;
+IF $outer_condition;
+    FOR n 1 2 1;
+        $inner_condition n;
+        IF $inner_condition;
+            WHILE $inner_condition;
+                GET complex;
+                SET complex "deeply_nested";
+                DECR $inner_condition;
+            END;
+        END;
+    END;
+END;
+
+# 测试12: 错误边界测试
+FOR boundary 0 1 1;
+    GET boundary_test;
+END;
+
+# 测试13: 变量作用域测试
+$global_var "global";
+FOR scope_test 1 2 1;
+    $local_var "local";
+    GET $global_var;
+    GET $local_var;
+END;
+
+# 测试14: 多重条件判断
+$cond1 1;
+$cond2 0;
+IF $cond1;
+    IF $cond2;
+        SET result "both_true";
+    ELSE;
+        SET result "first_true";
+    END;
+ELSE;
+    SET result "first_false";
+END;
+
+# 测试15: 循环中的BREAK和CONTINUE
+FOR break_test 1 5 1;
+    IF break_test;
+        BREAK;
+    END;
+    GET never_reached;
+END;
+
+FOR continue_test 1 3 1;
+    IF continue_test;
+        CONTINUE;
+    END;
+    GET also_never_reached;
+END;
+
+# 测试16: 变量递增递减
+$inc_test 0;
+INCR $inc_test;
+GET $inc_test;
+DECR $inc_test;
+GET $inc_test;
+
+# 测试17: 字符串变量测试
+$str_var "hello";
+GET $str_var;
+SET $str_var "world";
+GET $str_var;
+
+# 测试18: 数字变量运算
+$num_var 10;
+INCR $num_var;
+DECR $num_var;
+GET $num_var;
+
+# 测试19: 混合数据类型
+$mixed1 "string";
+$mixed2 42;
+GET $mixed1;
+GET $mixed2;
+SET $mixed1 $mixed2;
+
+# 测试20: 清理变量
+DEL $var1;
+DEL $var2;
+DEL $var3;
+DEL $test_num;
+DEL $counter;
+
+# 测试完成
+SET test_status "SYNTAX_TEST_COMPLETE";
+GET test_status; 

@@ -177,8 +177,6 @@ Packet* deserialize_packet(const uint8_t *buffer, uint32_t buffer_size) {
     return packet;
 }
 
-
-
 // 获取包数据长度
 uint32_t get_packet_data_length(const Packet *packet) {
     if (!packet) return 0;
@@ -210,11 +208,6 @@ int is_valid_packet(const Packet *packet) {
     return 1;
 }
 
-// 查找包边界的辅助函数
-// 这个函数用于在流式数据中查找第一个完整的包
-// 返回1表示找到完整包，0表示未找到
-// start_index: 包开始位置的索引
-// packet_size: 完整包的大小
 int find_packet_boundary(const uint8_t *buffer, uint32_t buffer_size, uint32_t *start_index, uint32_t *packet_size) {
     if (!buffer || !start_index || !packet_size || buffer_size < PACKET_HEADER_SIZE) {
         return 0;

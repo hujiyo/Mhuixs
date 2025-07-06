@@ -21,12 +21,7 @@ typedef struct str {
     int state;          // 状态码（0=正常，非0=错误）
 } str;
 
-// 常量定义
 #define merr (-1)  // 错误返回值常量
-
-// 函数声明 - 使用内联实现，无需单独声明
-
-// 函数实现部分（内联实现）
 
 static inline void str_init(str *s) {
     if (s) {
@@ -177,6 +172,25 @@ static inline int sappend(str *s, const void *data, uint32_t len) {
     return swrite(s, s->len, data, len);
 }
 
+static inline int str_append_string(str *s, const char *cstr) {
+    if (!s || !cstr) return -1;
+    return swrite(s, s->len, cstr, strlen(cstr));
+}
+
+// 添加一个确保字符串以空字符结尾的函数
+static inline int str_ensure_null_terminated(str *s) {
+    if (!s) return -1;
+    
+    // 检查最后一个字符是否已经是空字符
+    if (s->len > 0 && s->string[s->len - 1] == '\0') {
+        return 0; // 已经是空字符结尾
+    }
+    
+    // 添加空字符
+    uint8_t null_char = '\0';
+    return swrite(s, s->len, &null_char, 1);
+}
+
 static inline void sprint(str s, str end_marker) {
     str_print(&s);
     if (end_marker.len > 0) {
@@ -191,4 +205,4 @@ static const str end = {NULL, 0, 0};
 }
 #endif
 
-#endif /* STDSTR_H */ 
+#endif

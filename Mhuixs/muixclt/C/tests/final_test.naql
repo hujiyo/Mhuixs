@@ -1,0 +1,28 @@
+# 最终变量系统测试
+# 测试字符串变量
+$name "Alice";
+GET $name;
+
+# 测试数字变量
+$age 25;
+GET $age;
+
+# 测试浮点数变量
+$height 175.5;
+GET $height;
+
+# 测试布尔变量
+$is_student true;
+GET $is_student;
+
+# 测试变量重新赋值
+$name "Bob";
+GET $name;
+
+# 测试变量删除
+DEL $age;
+GET $age;
+
+# 测试中文变量名
+$姓名 "张三";
+GET $姓名; 

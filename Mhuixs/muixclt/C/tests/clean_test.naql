@@ -1,0 +1,10 @@
+WHERE;
+DESC;
+GET test_key;
+GET 1;
+GET 0 5;
+GET LEN;
+GET COUNT;
+GET KEYS;
+SET test_key "test_value";
+SET 1 "list_value";

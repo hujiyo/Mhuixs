@@ -4,12 +4,22 @@
 #任何人或组织在未经版权所有者同意的情况下禁止使用、修改、分发此作品
 Email:hj18914255909@outlook.com
 */
+
+// 调试模式宏定义
+#define DEBUG_MODE 1  // 设置为1启用调试模式，0禁用调试模式
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <signal.h>
 #include <time.h> // 用于测试函数的随机数
+#include <arpa/inet.h> // 用于ntohl函数
+
+// 定义strdup函数以避免编译警告
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
 
 /*
 Mhuxis客户端包括以下功能：
@@ -42,9 +52,214 @@ lexer需要将NAQL语句转换为：
 #include "netlink.h"
 #include "lexer.h"
 #include "logo.h"
+#include "pkg.h"
+#include "variable.h"
 
 // 全局变量
 static SSL_CTX *ssl_ctx = NULL;
+
+// 调试模式下的脚本执行状态
+typedef struct {
+    char **lines;           // 脚本行数组
+    int line_count;         // 总行数
+    int current_line;       // 当前执行行
+    int loop_var;           // 循环变量值
+    int loop_start;         // 循环开始值
+    int loop_end;           // 循环结束值
+    int loop_step;          // 循环步长
+    int loop_begin_line;    // 循环开始行
+    int in_loop;            // 是否在循环中
+    char loop_var_name[64]; // 循环变量名
+} DebugScriptState;
+
+static DebugScriptState debug_state = {0};
+
+// 调试模式下执行单行脚本
+int debug_execute_single_line(const char *line) {
+    // 使用lexer解析NAQL语句
+    str result = lexer((char*)line, strlen(line));
+    
+    // 注意：本地命令不会生成协议数据，所以result.len可能为0
+    // 但这不意味着解析失败，需要检查result.state
+    if (result.state != 0) {
+        printf("错误: 无法解析命令: %s\n", line);
+        str_free(&result);
+        return -1;
+    }
+    
+    // 打印解包后的内容（仅当有协议数据时）
+    if(result.len > 0) {
+        debug_print_packet_content(result.string, result.len);
+    }
+    
+    str_free(&result);
+    return 0;
+}
+
+// 调试模式下解析和执行多行脚本
+int debug_execute_script(const char *script) {
+    // 使用lexer解析整个脚本
+    str result = lexer((char*)script, strlen(script));
+    
+    if (result.len == 0) {
+        printf("错误: 无法解析脚本\n");
+        str_free(&result);
+        return -1;
+    }
+    
+    // 解析并打印每个数据包
+    const char* data = result.string;
+    int remaining = result.len;
+    int offset = 0;
+    
+    while (offset < remaining) {
+        // 检查是否有足够的数据读取基本头部
+        if (offset + 8 > remaining) {
+            break;
+        }
+        
+        // 检查HUJI魔数
+        if (strncmp(data + offset, "HUJI", 4) != 0) {
+            printf("错误: 无效的协议魔数在偏移 %d\n", offset);
+            break;
+        }
+        
+        // 读取命令编号
+        uint32_t cmd_num;
+        memcpy(&cmd_num, data + offset + 4, 4);
+        cmd_num = ntohl(cmd_num);
+        
+        // 计算这个数据包的长度
+        int packet_len = 8; // HUJI + cmd_num
+        
+        // 读取参数数目
+        if (offset + 8 < remaining) {
+            int param_count = (unsigned char)data[offset + 8];
+            packet_len += 2; // param_count + @
+            
+            // 计算参数部分的长度
+            int param_offset = offset + 10; // 跳过HUJI(4) + cmd_num(4) + param_count(1) + @(1)
+            for (int i = 0; i < param_count && param_offset < remaining; i++) {
+                // 读取参数长度
+                int len_start = param_offset;
+                while (param_offset < remaining && data[param_offset] != '@') {
+                    param_offset++;
+                }
+                if (param_offset >= remaining) break;
+                
+                // 解析长度
+                char len_str[32];
+                int len_str_len = param_offset - len_start;
+                if (len_str_len > 31) len_str_len = 31;
+                memcpy(len_str, data + len_start, len_str_len);
+                len_str[len_str_len] = '\0';
+                int param_len = atoi(len_str);
+                
+                param_offset++; // 跳过@
+                param_offset += param_len; // 跳过参数内容
+                if (param_offset < remaining && data[param_offset] == '@') {
+                    param_offset++; // 跳过结尾@
+                }
+            }
+            
+            packet_len = param_offset - offset;
+        }
+        
+        // 确保不超出边界
+        if (offset + packet_len > remaining) {
+            packet_len = remaining - offset;
+        }
+        
+        // 打印这个数据包
+        debug_print_packet_content(data + offset, packet_len);
+        
+        offset += packet_len;
+    }
+    
+    str_free(&result);
+    return 0;
+}
+
+// 调试模式下的数据包解析和打印函数
+void debug_print_packet_content(const char* protocol_data, int data_len) {
+    if (data_len < 9) { // HUJI(4) + 编号(4) + 最少1字节数据
+        printf("错误: 数据包太小\n");
+        return;
+    }
+    
+    // 检查HUJI魔数
+    if (strncmp(protocol_data, "HUJI", 4) != 0) {
+        printf("错误: 无效的协议魔数\n");
+        return;
+    }
+    
+    // 提取命令编号（网络字节序）
+    uint32_t cmd_num;
+    memcpy(&cmd_num, protocol_data + 4, 4);
+    cmd_num = ntohl(cmd_num);
+    
+    // 解析参数流
+    const char* param_stream = protocol_data + 8;
+    int param_stream_len = data_len - 8;
+    
+    if (param_stream_len < 1) {
+        printf("错误: 参数流为空\n");
+        return;
+    }
+    
+    // 获取参数数目
+    int param_count = (unsigned char)param_stream[0];
+    printf("%u %d", cmd_num, param_count);
+    
+    // 解析参数
+    int offset = 2; // 跳过参数数目和@符号
+    for (int i = 0; i < param_count && offset < param_stream_len; i++) {
+        // 读取参数长度
+        int param_len = 0;
+        int len_start = offset;
+        while (offset < param_stream_len && param_stream[offset] != '@') {
+            offset++;
+        }
+        if (offset >= param_stream_len) break;
+        
+        // 解析长度字符串
+        char len_str[32];
+        int len_str_len = offset - len_start;
+        if (len_str_len > 31) len_str_len = 31;
+        memcpy(len_str, param_stream + len_start, len_str_len);
+        len_str[len_str_len] = '\0';
+        param_len = atoi(len_str);
+        
+        offset++; // 跳过@符号
+        
+        // 读取参数内容
+        if (offset + param_len <= param_stream_len) {
+            printf(" \"");
+            for (int j = 0; j < param_len; j++) {
+                char c = param_stream[offset + j];
+                if (c == '"') {
+                    printf("\\\"");
+                } else if (c == '\\') {
+                    printf("\\\\");
+                } else if (c >= 32 && c <= 126) {
+                    printf("%c", c);
+                } else {
+                    printf("\\x%02x", (unsigned char)c);
+                }
+            }
+            printf("\"");
+            offset += param_len;
+            if (offset < param_stream_len && param_stream[offset] == '@') {
+                offset++;
+            }
+        }
+    }
+    printf("\n");
+}
+
+// 多行脚本缓冲区
+static char multiline_buffer[4096] = {0};
+static int in_multiline = 0;
 
 // 处理单条语句的函数，返回0=成功，-1=失败，1=多行
 int deal_with_the_line(const char *line) {
@@ -57,6 +272,40 @@ int deal_with_the_line(const char *line) {
     -1:表示执行失败
     1:表示这是一个多行语句,内部会临时保存这个语句
     */
+    
+#if DEBUG_MODE
+    // 调试模式：处理多行脚本
+    
+    // 检查是否开始FOR循环
+    if (strncmp(line, "FOR ", 4) == 0) {
+        in_multiline = 1;
+        strcpy(multiline_buffer, line);
+        strcat(multiline_buffer, "\n");
+        return 1; // 表示多行语句开始
+    }
+    
+    // 如果在多行模式中
+    if (in_multiline) {
+        strcat(multiline_buffer, line);
+        strcat(multiline_buffer, "\n");
+        
+        // 检查是否结束
+        if (strncmp(line, "END", 3) == 0) {
+            in_multiline = 0;
+            // 执行完整的多行脚本
+            debug_execute_script(multiline_buffer);
+            multiline_buffer[0] = '\0'; // 清空缓冲区
+            return 0;
+        }
+        
+        return 1; // 继续多行模式
+    }
+    
+    // 单行命令
+    return debug_execute_single_line(line);
+    
+#else
+    // 正常模式：发送到服务器
     if (!connected) {
         printf("error: 未连接到服务器，请使用 \\c 命令连接\n");
         return -1;
@@ -73,9 +322,8 @@ int deal_with_the_line(const char *line) {
     } else {
         return -1;
     }
-
+#endif
 }
-
 
 // 信号处理函数,当接收到中断信号时，断开连接，清理资源，退出程序
 void signal_handler(int signum) {
@@ -142,10 +390,14 @@ void interactive_mode() {
     
     print_welcome();
     
+#if DEBUG_MODE
+    printf("调试模式已启用 - 命令将在本地解析和模拟执行\n");
+#else
     // 自动连接到服务器
     if (connect_to_server(server_ip, server_port) != 0) {
         printf("警告: auto连接服务器失败，可使用 \\c 命令手动连接\n");
     }
+#endif
     int is_lines=0;//是否是多行命令
 
     while (1) {
@@ -220,13 +472,20 @@ void batch_mode(const char *filename) {
         return;
     }
     printf("正在执行批处理文件: %s\n", filename);
+    
+#if DEBUG_MODE
+    printf("调试模式已启用 - 命令将在本地解析和模拟执行\n");
+#else
     if (connect_to_server(server_ip, server_port) != 0) {
         fprintf(stderr, "错误: 无法连接到服务器\n");
         fclose(file);
         return;
     }
+#endif
     char line[MAX_QUERY_LENGTH];
     int line_number = 0;
+    int in_multiline_batch = 0;  // 批处理模式下的多行状态
+    
     while (fgets(line, sizeof(line), file)) {
         line_number++;
         char *newline = strchr(line, '\n');
@@ -234,10 +493,21 @@ void batch_mode(const char *filename) {
         if (strlen(line) == 0 || line[0] == '#') {
             continue;
         }
-        printf("执行第 %d 行: %s\n", line_number, line);
+        
+        // 在批处理模式中也需要处理多行状态
+        if (!in_multiline_batch) {
+            printf("执行第 %d 行: %s\n", line_number, line);
+        } else {
+            printf("     -> %s\n", line);
+        }
+        
         int ret = deal_with_the_line(line);
         if (ret == -1) {
             printf("[error to run this sentence!]\n");
+        } else if (ret == 1) {
+            in_multiline_batch = 1;  // 进入多行模式
+        } else if (ret == 0 && in_multiline_batch) {
+            in_multiline_batch = 0;  // 退出多行模式
         }
     }
     fclose(file);
@@ -248,6 +518,9 @@ int main(int argc, char *argv[]) {
     // 设置信号处理
     signal(SIGINT, signal_handler);//Ctrl+C
     signal(SIGTERM, signal_handler);//Ctrl+Z
+    
+    // 初始化变量系统
+    variable_system_init();
     
     // 初始化OpenSSL
     init_openssl();
@@ -271,6 +544,7 @@ int main(int argc, char *argv[]) {
     
     // 清理资源
     disconnect_from_server();
+    variable_system_cleanup();
     cleanup_openssl();    
     return 0;
 }
