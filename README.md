@@ -169,8 +169,8 @@ END;
 
 欢迎对数据库、AI数据库方向感兴趣的朋友加入，一起完成 Mhuixs！
 
-- Email：hj18914255909@outlook.com
-- 微信：wx17601516389
+- Email：Mhuxis@outlook.com | Mhuxis.db@gmail.com | Mhuxis.db@outlook.com 
+- WeChat：wx17601516389
 
 ## 6.重要日期
 
