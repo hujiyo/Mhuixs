@@ -1,6 +1,6 @@
 <img src=".logo/Mhuixs-logo.png" height="130px" />    
 
-# 正在开发的数据库软件
+# Mhuixs 数据库
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hujiyo/Mhuixs)
 
@@ -9,6 +9,8 @@
 Mhuixs 是一个基于内存的数据库，致力于为用户提供高效、灵活的数据管理能力。
 
 本项目结合了关系型与非关系型数据库的优势，目标是实现国产化、易于集成、支持多样化数据结构，并具备简洁的语言特性。
+
+**当前状态**: 客户端 muixclt 已基本完成，支持完整的 NAQL 语法解析和网络通信功能。
 
 ## 2. 目标 & 特色
 
@@ -29,10 +31,17 @@ Mhuixs 是一个基于内存的数据库，致力于为用户提供高效、灵�
 - `module`：核心数据结构实现（表、键库、列表、位图、流等）。
 - `mlib`：基础库与工具集（类型定义、内存池、加密、会话等）。
 - `mhub`：服务端主控模块与执行引擎。
-- `muixclt`：客户端命令行工具及相关库。
+- `muixclt`：**客户端命令行工具（已完成）**，包含完整的 NAQL 解析器和网络通信功能。
 - `share`：共享模块。
 
-## 4. 客户端README
+### 开发进度
+
+- ✅ **muixclt 客户端**: 已完成基本功能，支持 NAQL 语法解析、网络通信、变量管理等
+- 🚧 **mhub 服务端**: 开发中
+- 🚧 **module 数据结构**: 开发中
+- 🚧 **mlib 基础库**: 开发中
+
+## 4. 客户端 muixclt
 
 <!-- 客户端 muixclt 说明文档折叠开始 -->
 <details>
@@ -40,327 +49,115 @@ Mhuixs 是一个基于内存的数据库，致力于为用户提供高效、灵�
 
 # Mhuixs 数据库客户端
 
-## 特点简介
+## 核心特性
 
-Mhuxis不采用redis的瘦客户端模式，
+muixclt 是一个完整的 NAQL 解释器，采用厚客户端模式，具备：
 
-而是采用正常客户端模式，客户端Mshell是一个简单的解释器，
+- **NAQL 词法分析器**: 1926行代码，支持完整的 NAQL 语法解析
+- **MUIX 包协议**: 自定义二进制协议，提供可靠的数据传输
+- **HUJI 命令协议**: 高效的命令序列化和传输机制
+- **本地控制器**: 支持 IF/WHILE/FOR 等控制语句的本地执行
+- **变量系统**: 客户端变量管理和宏替换功能
 
-本质包括以下部分：
-
-- 1.扩展语法解释器(用户可定制这部分,将用户喜欢的语法解释为NAQL,可选，暂时不实现)
-
-- 2.标准基础NAQL解释器(标准NAQL语法解释器，用于解释标准NAQL语法)
-
-- 3.本地基础执行器(将部分特殊命令本地执行,与数据相关的命令发送给服务器执行)
-
-
-## 目录结构
-
-```
-muixclt/
-├── C/                  # C版本客户端
-│   ├── clt.c          # 主程序
-│   ├── pkg.c          # 数据包处理
-│   ├── pkg.h          # 数据包处理头文件
-│   ├── lexer.c        # 词法分析器
-│   ├── lexer.h        # 词法分析器头文件
-│   ├── logo.c         # Logo显示
-│   ├── logo.h         # Logo显示头文件
-│   └── Makefile       # 构建脚本
-├── Cpp/               # C++版本客户端
-│   ├── clt.cpp        # 主程序
-│   └── CMakeLists.txt # 构建脚本
-├── Python/            # Python版本客户端
-│   ├── clt.py         # 主程序
-│   └── requirements.txt # 依赖文件
-├── build.sh           # 总构建脚本
-├── NAQL.txt          # NAQL语言文档
-└── README.md         # 说明文档（本文件）
-```
-
-## 快速开始
-
-### 1. 检查依赖并构建所有版本
+## 构建和运行
 
 ```bash
-# 进入客户端目录
-cd muixclt
+# 构建
+cd Mhuixs/muixclt && make
 
-# 构建所有版本的客户端
-./build.sh
-
-# 或者检查依赖
-./build.sh deps
+# 运行
+./muixclt                    # 交互模式
+./muixclt -f script.naql     # 批处理模式
+./muixclt -s IP -p PORT      # 连接指定服务器
 ```
 
-### 2. 单独构建特定版本
+**系统要求**: Linux, GCC 4.9+, OpenSSL, Readline
 
-```bash
-# 仅构建C版本
-./build.sh c
+## 协议架构
 
-# 仅构建C++版本  
-./build.sh cpp
+### MUIX 包协议 (pkg.h)
 
-# 仅准备Python版本
-./build.sh python
-```
-
-### 3. 运行客户端
-
-```bash
-# C版本
-./C/mhuixs-client
-
-# C++版本
-./Cpp/build/bin/mhuixs-client-cpp
-
-# Python版本
-python3 ./Python/clt.py
-```
-
-## 系统要求
-
-### 基本依赖
-
-- **操作系统**: Linux (Ubuntu/Debian/CentOS/RHEL)
-- **编译器**: GCC 4.9+ 或 Clang 3.5+
-- **构建工具**: Make, CMake 3.12+
-- **Python**: Python 3.6+
-
-### 开发库
-
-- **OpenSSL**: libssl-dev (Ubuntu/Debian) 或 openssl-devel (CentOS/RHEL)
-- **Readline**: libreadline-dev (Ubuntu/Debian) 或 readline-devel (CentOS/RHEL)
-
-### 安装依赖命令
-
-**Ubuntu/Debian:**
-```bash
-sudo apt-get update
-sudo apt-get install build-essential cmake python3 libssl-dev libreadline-dev
-```
-
-## 详细构建说明
-
-### C 版本
-
-C版本使用传统的Makefile构建系统：
-
-```bash
-cd C
-make all          # 编译
-make clean        # 清理
-make install-deps # 安装依赖（Ubuntu/Debian）
-make run          # 编译并运行
-make help         # 显示帮助
-```
-
-### C++ 版本
-
-C++版本使用CMake构建系统：
-
-```bash
-cd Cpp
-mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release ..
-make -j$(nproc)
-```
-
-或使用构建脚本：
-```bash
-./build.sh cpp
-```
-
-### Python 版本
-
-Python版本使用标准库，无需编译：
-
-```bash
-cd Python
-chmod +x clt.py
-python3 clt.py
-```
-
-## 使用说明
-
-### 命令行选项
-
-所有版本的客户端都支持以下选项：
-
-```bash
--h, --help              显示帮助信息
--v, --version           显示版本信息
--s, --server <IP>       指定服务器IP地址 (默认: 127.0.0.1)
--p, --port <端口>       指定服务器端口 (默认: 18482)
--f, --file <文件>       从文件批量执行查询
--V, --verbose           详细模式
--q, --quiet             静默模式
-```
-
-### 交互式命令
-
-在交互模式下，支持以下内置命令：
+用于客户端与服务器间的可靠数据传输：
 
 ```
-\q, \quit              退出客户端
-\h, \help              显示帮助信息
-\c, \connect           连接到服务器
-\d, \disconnect        断开连接
-\s, \status            显示连接状态
-\v, \verbose           切换详细模式
-\clear                 清屏
+包结构: [MUIX(4字节)] + [长度(4字节)] + [$(1字节)] + [用户数据]
+- 魔数: 'M''U''I''X'
+- 长度: 大端字节序，表示用户数据长度
+- 结束符: '$'
+- 最大包大小: 4KB
 ```
 
-### 使用示例
+核心功能：
+- `create_packet()`: 创建数据包
+- `serialize_packet()`: 序列化为网络传输格式
+- `deserialize_packet()`: 反序列化接收数据
+- `find_packet_boundary()`: 流式数据中定位完整包
 
-#### 基本使用
+### HUJI 命令协议 (muixclt.c)
 
-```bash
-# 启动交互模式（自动连接到本地服务器）
-./C/mhuixs-client
+NAQL 语句转换为二进制命令格式：
 
-# 连接到指定服务器
-./C/mhuixs-client -s 192.168.1.100 -p 18482
-
-# 批量执行查询文件
-./C/mhuixs-client -f queries.naql
-
-# 详细模式
-./C/mhuixs-client -v
+```
+命令格式: [HUJI(4字节)] + [编号(4字节)] + [参数流]
+参数流: [参数数目(1字节)] + [@] + [参数1长度] + [@] + [参数1] + [@] + ...
 ```
 
-#### NAQL 查询示例
+**命令编号体系**:
+- 1-50: 基础语法 (GET, HOOK, DESC 等)
+- 51-70: 事务控制 (MULTI, EXEC, ASYNC)
+- 71-90: 控制语句 (IF, WHILE, FOR - 本地处理)
+- 101-150: TABLE 操作 (FIELD, ADD, SET 等)
+- 151-200: KVALOT 操作 (EXISTS, SET, GET 等)
+- 201-280: STREAM/LIST 操作
+- 281-330: BITMAP 操作
+- 361-370: 变量管理 (本地处理)
+
+**本地处理**: 控制语句和变量操作在客户端本地执行，不发送给服务器。
+
+## NAQL 语法示例
 
 ```sql
-# 创建表
+# 表操作
 HOOK TABLE users;
-
-# 添加字段
 FIELD ADD id i4 PKEY;
 FIELD ADD name str NOTNULL;
-FIELD ADD age i4;
-FIELD ADD email str UNIQUE;
+ADD 1 'Alice' 25;
+GET WHERE id == 1;
 
-# 插入数据
-ADD 1 '张三' 25 'zhangsan@example.com';
-ADD 2 '李四' 30 'lisi@example.com';
+# 键值操作
+HOOK KVALOT cache;
+SET user:1 'Alice';
+GET user:1;
 
-# 查询数据
-GET;                        # 查询所有数据
-WHERE name == '张三';       # 条件查询
-GET FIELD name;             # 查询指定字段
-
-# 更新数据
-SET 1 2 30;                 # 更新第1行第2个字段为30
-
-# 删除数据
-DEL 2;                      # 删除第2行
+# 控制语句 (本地执行)
+$counter = 0;
+FOR i 1 10 1;
+    ADD $i 'user$i';
+    $counter = $counter + 1;
+END;
 ```
 
-#### 批处理文件示例
+## 交互命令
 
-创建文件 `example.naql`：
-
-```sql
-# 示例批处理文件
-HOOK TABLE test_table;
-FIELD ADD id i4;
-FIELD ADD name str;
-ADD 1 'test1';
-ADD 2 'test2';
-GET;
+```
+\q, \quit      退出
+\h, \help      帮助
+\c, \connect   连接服务器
+\s, \status    显示状态
+\v, \verbose   切换详细模式
 ```
 
-执行批处理：
+## 调试功能
 
 ```bash
-./C/mhuixs-client -f example.naql
+./muixclt -d    # 调试模式，显示协议数据包内容
+./muixclt -v    # 详细模式，显示网络通信信息
 ```
 
-## 故障排除
-
-### 常见问题
-
-1. **编译错误**: 缺少依赖库
-   ```bash
-   # 检查依赖
-   ./build.sh deps
-   
-   # 安装依赖
-   sudo apt-get install libssl-dev libreadline-dev  # Ubuntu/Debian
-   sudo yum install openssl-devel readline-devel    # CentOS/RHEL
-   ```
-
-2. **连接失败**: 服务器未启动或网络问题
-   ```bash
-   # 检查服务器状态
-   telnet 127.0.0.1 18482
-   
-   # 使用详细模式查看错误信息
-   ./C/mhuixs-client -v
-   ```
-
-3. **权限错误**: 执行权限不足
-   ```bash
-   chmod +x build.sh
-   chmod +x Python/clt.py
-   ```
-
-### 调试模式
-
-```bash
-# C版本调试
-cd C
-make debug
-gdb ./mhuixs-client
-
-# C++版本调试
-cd Cpp/build
-make debug_run
-
-# Python版本调试
-python3 -m pdb Python/clt.py
-```
-
-## 开发指南
-
-### 添加新功能
-
-1. 修改对应版本的源代码
-2. 更新构建脚本（如需要）
-3. 添加测试用例
-4. 更新文档
-
-### 代码规范
-
-- **C版本**: 遵循C99标准
-- **C++版本**: 遵循C++17标准，使用现代C++特性
-- **Python版本**: 遵循PEP 8规范
-
-### 测试
-
-```bash
-# 运行所有测试
-./build.sh test
-
-# 单独测试某个版本
-./C/mhuixs-client --help
-python3 ./Python/clt.py --help
-./Cpp/build/bin/mhuixs-client-cpp --help
-```
-
-## 协议说明
-
-客户端与服务器使用自定义的二进制协议通信：
-
-- **传输**: SSL/TLS加密的TCP连接
-- **端口**: 18482 (默认)
-- **包格式**: 包头(16字节) + 数据 + 校验和(4字节)
-- **字节序**: 网络字节序 (大端)
-
-详细协议规范请参考源代码中的 `pkg.h` 或 `pkg.c` 文件。
+调试模式下可查看：
+- NAQL 语句的词法分析结果
+- 生成的 HUJI 协议数据包
+- 网络传输的 MUIX 包格式
 
 </details>
 <!-- 客户端 muixclt 说明文档折叠结束 -->
@@ -375,11 +172,11 @@ python3 ./Python/clt.py --help
 - Email：hj18914255909@outlook.com
 - 微信：wx17601516389
 
-## 6.重要日期  : ; :
+## 6.重要日期
 
 - 项目开始：2024.10.17
-- 上次README更新时间：2025.5.10
-- 本次更新时间：2025.7.4
+- muixclt 客户端完成：2024.12.20
+- 本次README更新时间：2024.12.20
 
 ## 7.NAQL草案 >~<
 
@@ -389,7 +186,13 @@ NAQL：NAture-language Query Language
 
 未来我们会出一版专门提供给AI看的查询语言 " 学习资料 "。
 
-[👉 NAQL基础语法文档](Mhuixs/muixclt/C/NAQL.txt)
+[👉 NAQL基础语法文档](Mhuixs/muixclt/NAQL.txt)
+
+**NAQL 语法特点**：
+- 接近自然语言的语法设计
+- 简洁明了的命令结构
+- 支持复杂的数据查询和操作
+- 专为 AI 优化的语法规则
 
 基础语法是lexer直接解释和转化的，lexer之前还需要有个环节将不定形式的语法转化为标准语法
 
