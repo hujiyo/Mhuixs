@@ -1,4 +1,0 @@
-WHERE;
-DESC;
-GET test_key;
-SET test_key "value";

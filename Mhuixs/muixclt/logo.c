@@ -52,11 +52,10 @@ void print_welcome() {
 
 //开头介绍信息
 static const char* info_lines[] = {
-"",
 "                         Mhuixs",
 "        Memory-based Hybrid Universal Index System",
 "",
-"            Welcome to Mhuixs Database Client",
+"          Welcome to use  Mhuixs Database Client",
 "",
 "                 Copyright (c) 2024 HuJi.",
 "       Licensed under the Apache License,Version 2.0.",

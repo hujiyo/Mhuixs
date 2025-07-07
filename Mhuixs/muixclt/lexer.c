@@ -229,33 +229,35 @@ typedef enum {
     CMD_HOOK_COPY = 9,            // [HOOK COPY src_objname dst_objname;]
     CMD_HOOK_SWAP = 10,           // [HOOK SWAP src_objname dst_objname;]
     CMD_HOOK_MERGE = 11,          // [HOOK MERGE src_objname dst_objname;]
-    CMD_RANK_SET = 12,            // [RANK objname rank;]
-    CMD_GET_RANK = 13,            // [GET RANK objname;]
-    CMD_GET_TYPE = 14,            // [GET TYPE objname;]
-    CMD_LOCK = 15,                // [LOCK objname timeout;]
-    CMD_UNLOCK = 16,              // [UNLOCK objname;]
-    CMD_EXPORT = 17,              // [EXPORT objname format;]
-    CMD_IMPORT = 18,              // [IMPORT objname format data;]
-    CMD_HOOK_RENAME = 19,         // [HOOK RENAME old_key new_key;]
+    CMD_HOOK_RENAME = 12,         // [HOOK RENAME old_key new_key;]
+    CMD_RANK_SET = 13,            // [RANK objname rank;]
+    CMD_GET_RANK = 14,            // [GET RANK objname;]
+    CMD_GET_TYPE = 15,            // [GET TYPE objname;]
+    CMD_LOCK = 16,                // [LOCK objname timeout;]
+    CMD_UNLOCK = 17,              // [UNLOCK objname;]
+    CMD_EXPORT = 18,              // [EXPORT objname format;]
+    CMD_IMPORT = 19,              // [IMPORT objname format data;]
     CMD_CHMOD = 20,               // [CHMOD objname mode;]
     CMD_GET_CHMOD = 21,           // [GET CHMOD objname;]
     CMD_WAIT = 22,                // [WAIT timeout;]
+    CMD_MULTI = 23,               // [MULTI;]
+    CMD_EXEC = 24,                // [EXEC;]
+    CMD_ASYNC = 25,               // [ASYNC command;]
+    CMD_SYNC = 26,                // [SYNC;]
     
-    // 事务控制命令 (51-70)
-    CMD_MULTI = 51,               // [MULTI;]
-    CMD_EXEC = 52,                // [EXEC;]
-    CMD_ASYNC = 53,               // [ASYNC command;]
-    CMD_SYNC = 54,                // [SYNC;]
-    
-    // 条件控制命令 (客户端本地处理 - 71-90)
-    CMD_IF = 71,                  // [IF condition;]
-    CMD_ELSE = 72,                // [ELSE;]
-    CMD_ELIF = 73,                // [ELIF condition;]
-    CMD_WHILE = 74,               // [WHILE condition;]
-    CMD_FOR = 75,                 // [FOR var start end step;]
-    CMD_END = 76,                 // [END;]
-    CMD_BREAK = 77,               // [BREAK;]
-    CMD_CONTINUE = 78,            // [CONTINUE;]
+    // 添加INDEX命令编号
+    CMD_INDEX_CREATE = 27,        // [INDEX CREATE field_name index_type;]
+    CMD_INDEX_DEL = 28,           // [INDEX DEL field_name;]
+
+    // 条件控制命令 (51-70) - 本地处理
+    CMD_IF = 51,                  // [IF condition;]
+    CMD_ELSE = 52,                // [ELSE;]
+    CMD_ELIF = 53,                // [ELIF condition;]
+    CMD_WHILE = 54,               // [WHILE condition;]
+    CMD_FOR = 55,                 // [FOR var start end step;]
+    CMD_END = 56,                 // [END;]
+    CMD_BREAK = 57,               // [BREAK;]
+    CMD_CONTINUE = 58,            // [CONTINUE;]
     
     // TABLE类语法命令 (101-150)
     CMD_FIELD_ADD = 101,          // [FIELD ADD field_name datatype restraint;]
@@ -277,8 +279,6 @@ typedef enum {
     CMD_SET_WHERE = 117,          // [SET WHERE condition field_name value;]
     CMD_DEL_WHERE = 118,          // [DEL WHERE condition;]
     CMD_SORT = 119,               // [SORT field_name order;]
-    CMD_INDEX_CREATE = 120,       // [INDEX CREATE field_name index_type;]
-    CMD_INDEX_DEL = 121,          // [INDEX DEL field_name;]
     
     // KVALOT类语法命令 (151-200)
     CMD_EXISTS = 151,             // [EXISTS key1 key2 ...;]
@@ -701,6 +701,24 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
     }
     else if(is_macro){//宏变量处理 $var_name
         instr->pos++;//跳过$
+        
+        // 检查第一个字符必须是字母或下划线
+        if(instr->pos < instr->string+instr->len) {
+            uint8_t first_char = *instr->pos;
+            // 检查是否是有效的变量名首字符：字母、下划线或Unicode字符(>=128)
+            int is_valid_first_char = 
+                (first_char >= 'a' && first_char <= 'z') ||
+                (first_char >= 'A' && first_char <= 'Z') ||
+                (first_char == '_') ||
+                (first_char >= 128);
+                
+            if(!is_valid_first_char) {
+                // 第一个字符不是有效的变量名首字符
+                token->type = TOKEN_EEROR;
+                return token;
+            }
+        }
+        
         for(;ed_pos < instr->string+instr->len;ed_pos++){
             //不断判断ed_pos指向的是否是宏变量名的结束字符 ' ' ';' '\n'
             if(*ed_pos == ' ' || *ed_pos == ';' || *ed_pos == '\n' || *ed_pos == '>' 
@@ -713,7 +731,7 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
             }
             else if((*ed_pos < 'a' || *ed_pos > 'z') && (*ed_pos < 'A' || *ed_pos > 'Z') 
                 && (*ed_pos < '0' || *ed_pos > '9') && *ed_pos != '_' && *ed_pos < 128){
-                //不是合法的变量名字符
+                //不是合法的变量名字符（不包括Unicode字符）
                 token->type = TOKEN_EEROR;
                 return token;
             }           
@@ -834,7 +852,6 @@ const keyword keyword_map[] = {
     {"datetime", TOKEN_datetime},
     {"bool", TOKEN_bool},
     {"blob", TOKEN_blob},
-    {"json", TOKEN_json},
     
     // 键关键字
     {"PKEY", TOKEN_PKEY}, {"pkey", TOKEN_PKEY},
@@ -857,10 +874,7 @@ const keyword keyword_map[] = {
     {"BREAK", TOKEN_BREAK}, {"break", TOKEN_BREAK},
     {"CONTINUE", TOKEN_CONTINUE}, {"continue", TOKEN_CONTINUE},
     
-    // 逻辑关键字
-    {"AND", TOKEN_AND_LOGIC}, {"and", TOKEN_AND_LOGIC},
-    {"OR", TOKEN_OR_LOGIC}, {"or", TOKEN_OR_LOGIC},
-    {"NOT", TOKEN_NOT_LOGIC}, {"not", TOKEN_NOT_LOGIC},
+    // 逻辑关键字 - 删除重复的AND、OR、NOT定义
     {"IN", TOKEN_IN}, {"in", TOKEN_IN},
     {"BETWEEN", TOKEN_BETWEEN}, {"between", TOKEN_BETWEEN},
     {"LIKE", TOKEN_LIKE}, {"like", TOKEN_LIKE},
@@ -924,6 +938,7 @@ static CommandNumber parse_flip_statement(tok* token, int len, int* param_start)
 static CommandNumber parse_shift_statement(tok* token, int len, int* param_start);
 static CommandNumber parse_system_statement(tok* token, int len, int* param_start);
 static CommandNumber parse_macro_statement(tok* token, int len, int* param_start);
+static CommandNumber parse_index_statement(tok* token, int len, int* param_start);
 static int is_local_command(CommandNumber cmd);
 static int process_local_command(CommandNumber cmd, tok* params, int param_count);
 
@@ -954,7 +969,8 @@ static int distinguish_token_type(tok* token){
             if(keyword_map[i].type == TOKEN_DY){
                 // 说明找到了第一个">"符号
                 for(int j = 0;j < SYMBOL_NUM;j++){
-                    if(strncmp(token->content.string,keyword_map[i+j].keyword,token->content.len) == 0){
+                    if(strncmp(token->content.string,keyword_map[i+j].keyword,token->content.len) == 0 && 
+                       strlen(keyword_map[i+j].keyword) == token->content.len){
                         // 说明找到了匹配的符号
                         token->type = keyword_map[i+j].type;
                         return 0;
@@ -970,7 +986,8 @@ static int distinguish_token_type(tok* token){
     if(token->type == TOKEN_UNKNOWN){
         // 判断是否是关键字
         for(int i = 0;i < sizeof(keyword_map)/sizeof(keyword_map[0]);i++){
-            if(strncmp(token->content.string,keyword_map[i].keyword,token->content.len) == 0){
+            if(strncmp(token->content.string,keyword_map[i].keyword,token->content.len) == 0 && 
+               strlen(keyword_map[i].keyword) == token->content.len){
                 // 说明是关键字
                 token->type = keyword_map[i].type;
                 return 0; 
@@ -1044,19 +1061,24 @@ CommandNumber distinguish_stmt_type(tok* token, const int len, int* param_start)
             }
             break;
         case TOKEN_EXPORT:
-            if(len == 3 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_NAME){
+            if(len == 3 && token[1].type == TOKEN_NAME && 
+               (token[2].type == TOKEN_NAME || token[2].type == TOKEN_JSON_FORMAT || 
+                token[2].type == TOKEN_json || token[2].type == TOKEN_CSV || token[2].type == TOKEN_BINARY)){
                 *param_start = 1;
                 return CMD_EXPORT;
             }
             break;
         case TOKEN_IMPORT:
-            if(len == 4 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_NAME && token[3].type == TOKEN_VALUES){
+            if(len == 4 && token[1].type == TOKEN_NAME && 
+               (token[2].type == TOKEN_NAME || token[2].type == TOKEN_JSON_FORMAT || 
+                token[2].type == TOKEN_json || token[2].type == TOKEN_CSV || token[2].type == TOKEN_BINARY) && 
+               token[3].type == TOKEN_VALUES){
                 *param_start = 1;
                 return CMD_IMPORT;
             }
             break;
         case TOKEN_CHMOD:
-            if(len == 3 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_NAME){
+            if(len == 3 && token[1].type == TOKEN_NAME && (token[2].type == TOKEN_NAME || token[2].type == TOKEN_NUM)){
                 *param_start = 1;
                 return CMD_CHMOD;
             }
@@ -1123,7 +1145,7 @@ CommandNumber distinguish_stmt_type(tok* token, const int len, int* param_start)
         case TOKEN_KEY:
             return parse_key_statement(token, len, param_start);
         case TOKEN_COPY:
-            if(len == 3 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_NAME){
+            if(len == 3 && (token[1].type == TOKEN_NAME || token[1].type == TOKEN_NUM) && (token[2].type == TOKEN_NAME || token[2].type == TOKEN_NUM)){
                 *param_start = 1;
                 return CMD_COPY_KEY;
             }
@@ -1153,19 +1175,19 @@ CommandNumber distinguish_stmt_type(tok* token, const int len, int* param_start)
             }
             break;
         case TOKEN_INCR:
-            if(len == 2 && token[1].type == TOKEN_NAME){
+            if(len == 2 && (token[1].type == TOKEN_NAME || token[1].type == TOKEN_MACRO)){
                 *param_start = 1;
                 return CMD_INCR;
-            } else if(len == 3 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_NUM){
+            } else if(len == 3 && (token[1].type == TOKEN_NAME || token[1].type == TOKEN_MACRO) && token[2].type == TOKEN_NUM){
                 *param_start = 1;
                 return CMD_INCR_BY;
             }
             break;
         case TOKEN_DECR:
-            if(len == 2 && token[1].type == TOKEN_NAME){
+            if(len == 2 && (token[1].type == TOKEN_NAME || token[1].type == TOKEN_MACRO)){
                 *param_start = 1;
                 return CMD_DECR;
-            } else if(len == 3 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_NUM){
+            } else if(len == 3 && (token[1].type == TOKEN_NAME || token[1].type == TOKEN_MACRO) && token[2].type == TOKEN_NUM){
                 *param_start = 1;
                 return CMD_DECR_BY;
             }
@@ -1230,7 +1252,7 @@ CommandNumber distinguish_stmt_type(tok* token, const int len, int* param_start)
         case TOKEN_FLIP:
             return parse_flip_statement(token, len, param_start);
         case TOKEN_FILL:
-            if(len == 2 && token[1].type == TOKEN_VALUES){
+            if(len == 2 && (token[1].type == TOKEN_VALUES || token[1].type == TOKEN_NUM)){
                 *param_start = 1;
                 return CMD_FILL_BIT;
             }
@@ -1293,11 +1315,16 @@ CommandNumber distinguish_stmt_type(tok* token, const int len, int* param_start)
         case TOKEN_FOR:
             return CMD_FOR; // 本地处理
         case TOKEN_END:
-            return CMD_END; // 本地处理
+            if(len == 1){
+                return CMD_END; // 本地处理
+            }
+            break;
         case TOKEN_BREAK:
             return CMD_BREAK; // 本地处理
         case TOKEN_CONTINUE:
             return CMD_CONTINUE; // 本地处理
+        case TOKEN_INDEX:
+            return parse_index_statement(token, len, param_start);
         default:
             return CMD_ERROR;
     }
@@ -1507,6 +1534,8 @@ static CommandNumber parse_get_statement(tok* token, int len, int* param_start) 
             return CMD_GET_COUNT;
         } else if(token[1].type == TOKEN_KEYS) {
             return CMD_GET_KEYS;
+        } else if(token[1].type == TOKEN_SIZE) {
+            return CMD_GET_BIT_SIZE;
         } else if(token[1].type == TOKEN_NAME) {
             *param_start = 1;
             return CMD_GET_KEY;
@@ -1557,7 +1586,7 @@ static CommandNumber parse_hook_statement(tok* token, int len, int* param_start)
         return CMD_HOOK_ROOT;
     }
     
-    if(len == 2 && token[1].type == TOKEN_NAME) {
+    if(len == 2 && (token[1].type == TOKEN_NAME || token[1].type == TOKEN_VALUES)) {
         *param_start = 1;
         return CMD_HOOK_SWITCH;
     }
@@ -1574,19 +1603,19 @@ static CommandNumber parse_hook_statement(tok* token, int len, int* param_start)
         } else if(token[1].type == TOKEN_CLEAR) {
             *param_start = 2;
             return CMD_HOOK_CLEAR;
-        } else if(token[1].type == TOKEN_COPY && len == 3) {
+        } else if(token[1].type == TOKEN_COPY && len == 4) {
             *param_start = 2;
             return CMD_HOOK_COPY;
-        } else if(token[1].type == TOKEN_SWAP && len == 3) {
+        } else if(token[1].type == TOKEN_SWAP && len == 4) {
             *param_start = 2;
             return CMD_HOOK_SWAP;
-        } else if(token[1].type == TOKEN_MERGE && len == 3) {
+        } else if(token[1].type == TOKEN_MERGE && len == 4) {
             *param_start = 2;
             return CMD_HOOK_MERGE;
-        } else if(token[1].type == TOKEN_RENAME && len == 3) {
+        } else if(token[1].type == TOKEN_RENAME && len == 4) {
             *param_start = 2;
             return CMD_HOOK_RENAME;
-        } else if(token[1].type == TOKEN_JOIN && len == 4) {
+        } else if(token[1].type == TOKEN_JOIN && len == 5) {
             *param_start = 2;
             return CMD_HOOK_JOIN;
         }
@@ -1668,7 +1697,7 @@ static CommandNumber parse_del_statement(tok* token, int len, int* param_start) 
         if(token[1].type == TOKEN_NUM) {
             return CMD_DEL_RECORD; // TABLE类或其他数值删除
         } else if(token[1].type == TOKEN_MACRO) {
-            return CMD_DEL_VAR; // 变量删除
+            return CMD_DEL_VAR; // 变量删除，支持多个变量
         } else {
             return CMD_DEL_KEY; // 键删除
         }
@@ -1682,7 +1711,8 @@ static CommandNumber parse_swap_statement(tok* token, int len, int* param_start)
         *param_start = 1;
         if(token[1].type == TOKEN_NUM && token[2].type == TOKEN_NUM) {
             return CMD_SWAP_RECORD; // TABLE类记录交换
-        } else if(token[1].type == TOKEN_NAME && token[2].type == TOKEN_NAME) {
+        } else if((token[1].type == TOKEN_NAME || token[1].type == TOKEN_VALUES) && 
+                  (token[2].type == TOKEN_NAME || token[2].type == TOKEN_VALUES)) {
             return CMD_SWAP_KEY; // 键交换
         }
     }
@@ -1693,7 +1723,7 @@ static CommandNumber parse_swap_statement(tok* token, int len, int* param_start)
 static CommandNumber parse_key_statement(tok* token, int len, int* param_start) {
     if(len < 2) return CMD_ERROR;
     
-    if(token[1].type == TOKEN_NAME) {
+    if(token[1].type == TOKEN_NAME || token[1].type == TOKEN_VALUES) {
         *param_start = 1;
         return CMD_KEY_ENTER;
     } else if(len >= 4 && token[1].type == TOKEN_JOIN) {
@@ -1923,4 +1953,21 @@ int is_local_command(CommandNumber cmd) {
 // 资源清理函数
 void cleanup_local_resources() {
     variable_system_cleanup();
+}
+
+// 添加parse_index_statement函数
+static CommandNumber parse_index_statement(tok* token, int len, int* param_start) {
+    if(len < 2) return CMD_ERROR;
+    
+    if(token[1].type == TOKEN_CREATE && len >= 4) {
+        // [INDEX CREATE field_name index_type;]
+        *param_start = 2;
+        return CMD_INDEX_CREATE;
+    } else if(token[1].type == TOKEN_DEL && len >= 3) {
+        // [INDEX DEL field_name;]
+        *param_start = 2;
+        return CMD_INDEX_DEL;
+    }
+    
+    return CMD_ERROR;
 }

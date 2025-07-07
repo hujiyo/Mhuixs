@@ -1,0 +1,9 @@
+#下面语句之间没有任何逻辑，本文件单纯是易发生错误的集锦
+
+CHMOD test_obj 755;# 775应当被识别为字符串
+INCR $counter;# 这一句应该是本地执行
+DECR $loop_counter;#这个语句应该被识别为本地执行
+FOR $counter 1 10 1;
+GET $counter;#这个语句应该是将$counter变量的值作为hook名，相当于执行GET hook命令。注意这个语句在循环里
+END; #这个关键字不需要真的去解析，他只是一个结束标志，表示FOR循环的下限，可以开始执行循环体了
+

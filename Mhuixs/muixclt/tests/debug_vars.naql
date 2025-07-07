@@ -1,3 +1,0 @@
-# 简单变量测试
-$test_var "hello";
-GET $test_var; 

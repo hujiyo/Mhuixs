@@ -1,0 +1,62 @@
+# 变量系统测试
+
+# 测试字符串变量
+$name "Alice";
+GET $name;
+$str_var "Hello World";
+GET $str_var;
+$num_var "现在是字符串";
+GET $num_var; 
+
+# 测试数字变量
+$age 25;
+GET $age;
+$num_var 42;
+GET $num_var;
+# 另一个数字变量
+$float_var 3.14;
+GET $float_var;
+
+
+# 测试浮点数变量
+$height 175.5;
+GET $height;
+
+# 测试布尔变量
+$is_student true;
+GET $is_student;
+# 布尔变量
+$bool_var true;
+GET $bool_var;
+
+# 测试变量重新赋值
+$name "Bob";
+GET $name;
+
+# 测试变量删除
+DEL $age;
+GET $age;
+DEL $str_var;
+GET $str_var;
+
+# 测试中文变量名
+$姓名 "张三";
+GET $姓名; 
+
+# 从GET命令获取结果赋值给变量的示例
+# 这里模拟一个GET命令的结果
+$result_var "从GET命令获取的结果";
+GET $result_var;
+
+#综合测试
+$test_var "hello";
+GET $test_var;
+SET $test_var "world";
+GET $test_var;
+DEL $test_var;
+
+
+
+
+
+
