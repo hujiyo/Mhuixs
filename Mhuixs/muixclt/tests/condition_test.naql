@@ -1,0 +1,69 @@
+# 条件控制系统测试文件
+
+# 测试基本变量操作
+INCR $test_var;
+INCR $counter;
+
+# 简单FOR循环测试
+FOR $i 1 2 1;
+  GET test;
+END; 
+
+# 测试IF语句
+IF $counter;
+  GET test1;
+  INCR $if_executed;
+END;
+
+# 测试ELSE语句 
+IF 0;
+  GET test2;
+ELSE;
+  GET test3;
+  INCR $else_executed;
+END;
+
+# 测试ELIF语句
+IF 0;
+  GET test4;
+ELIF $counter;
+  GET test5;
+  INCR $elif_executed;
+ELSE;
+  GET test6;
+END;
+
+# 测试WHILE循环
+WHILE $counter;
+  GET while_test;
+  DECR $counter;
+END;
+
+# 重置计数器用于FOR循环测试
+INCR $start_val;
+INCR $end_val;
+INCR $end_val;
+INCR $end_val;
+
+# 测试FOR循环
+FOR $i $start_val $end_val 1;
+  GET for_test;
+  INCR $for_executed;
+END;
+
+# 显示最终结果
+GET $if_executed;
+GET $else_executed;
+GET $elif_executed;
+GET $for_executed; 
+
+# 特殊
+FOR $i 1 1 1;
+END; 
+
+# 简单的IF测试
+INCR $test_var;# 设置变量
+IF 1;
+  GET test_hook;# 简单的IF语句
+END;
+GET $test_var; # 显示结果

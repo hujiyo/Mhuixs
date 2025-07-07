@@ -14,6 +14,16 @@ Email:hj18914255909@outlook.com
 #include <stdlib.h>
 #include <stdio.h>
 #include <arpa/inet.h>  // 用于htonl函数
+#include "variable.h"   // 包含变量系统
+#include "flow_controller.h"
+
+// 静态流程控制器变量
+static FlowController* g_flow_controller = NULL;
+
+// 流程控制器设置函数
+void set_flow_controller(FlowController* controller) {
+    g_flow_controller = controller;
+}
 
 // 添加缺失的字符串操作函数
 
@@ -633,7 +643,7 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
                 || *ed_pos == '<' || *ed_pos == '=' || *ed_pos == '~' || *ed_pos == '!'){
                 //数字结束了
                 swrite(&token->content,0,instr->pos,ed_pos-instr->pos);
-                token->type = TOKEN_NUM;
+                token->type = TOKEN_VALUES; // 将数字视为字符串值
                 instr->pos = ed_pos;
                 return token;
             }
@@ -645,7 +655,7 @@ static tok* getoken(inputstr* instr)//返回的token记得释放
         }
         //最后一个token是数字
         swrite(&token->content,0,instr->pos,ed_pos-instr->pos);
-        token->type = TOKEN_NUM;
+        token->type = TOKEN_VALUES; // 将数字视为字符串值
         instr->pos = ed_pos;
         return token;
     }
@@ -959,8 +969,8 @@ static int distinguish_token_type(tok* token){
         str_free(&token->content);
         return 0;
     }
-    if(token->type == TOKEN_VALUES || token->type == TOKEN_NUM){
-        return 0;
+    if(token->type == TOKEN_VALUES){
+        return 1;
     }
     if(token->type == TOKEN_SYMBOL){
        // 由于关键字地图中的符号是连续的,所以先扫描整个关键字表找到第一个符号,然后再往后对比是否有匹配的符号
@@ -1043,13 +1053,13 @@ CommandNumber distinguish_stmt_type(tok* token, const int len, int* param_start)
         case TOKEN_HOOK:
             return parse_hook_statement(token, len, param_start);
         case TOKEN_RANK:
-            if(len == 3 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_NUM){
+            if(len == 3 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_VALUES){
                 *param_start = 1;
                 return CMD_RANK_SET;
             }
             break;
         case TOKEN_LOCK:
-            if(len == 3 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_NUM){
+            if(len == 3 && token[1].type == TOKEN_NAME && token[2].type == TOKEN_VALUES){
                 *param_start = 1;
                 return CMD_LOCK;
             }
@@ -1078,13 +1088,13 @@ CommandNumber distinguish_stmt_type(tok* token, const int len, int* param_start)
             }
             break;
         case TOKEN_CHMOD:
-            if(len == 3 && token[1].type == TOKEN_NAME && (token[2].type == TOKEN_NAME || token[2].type == TOKEN_NUM)){
+            if(len == 3 && token[1].type == TOKEN_NAME && (token[2].type == TOKEN_NAME || token[2].type == TOKEN_VALUES)){
                 *param_start = 1;
                 return CMD_CHMOD;
             }
             break;
         case TOKEN_WAIT:
-            if(len == 2 && token[1].type == TOKEN_NUM){
+            if(len == 2 && token[1].type == TOKEN_VALUES){
                 *param_start = 1;
                 return CMD_WAIT;
             }
@@ -1119,7 +1129,7 @@ CommandNumber distinguish_stmt_type(tok* token, const int len, int* param_start)
             }
             break;
         case TOKEN_INSERT:
-            if(len >= 3 && token[1].type == TOKEN_NUM){
+            if(len >= 3 && token[1].type == TOKEN_VALUES){
                 *param_start = 1;
                 return CMD_INSERT_RECORD;
             }
@@ -1145,7 +1155,7 @@ CommandNumber distinguish_stmt_type(tok* token, const int len, int* param_start)
         case TOKEN_KEY:
             return parse_key_statement(token, len, param_start);
         case TOKEN_COPY:
-            if(len == 3 && (token[1].type == TOKEN_NAME || token[1].type == TOKEN_NUM) && (token[2].type == TOKEN_NAME || token[2].type == TOKEN_NUM)){
+            if(len == 3 && (token[1].type == TOKEN_NAME || token[1].type == TOKEN_VALUES) && (token[2].type == TOKEN_NAME || token[2].type == TOKEN_VALUES)){
                 *param_start = 1;
                 return CMD_COPY_KEY;
             }
@@ -1305,14 +1315,18 @@ CommandNumber distinguish_stmt_type(tok* token, const int len, int* param_start)
         case TOKEN_MACRO:
             return parse_macro_statement(token, len, param_start);
         case TOKEN_IF:
+            *param_start = 1;
             return CMD_IF; // 本地处理
         case TOKEN_ELSE:
             return CMD_ELSE; // 本地处理
         case TOKEN_ELIF:
+            *param_start = 1;
             return CMD_ELIF; // 本地处理
         case TOKEN_WHILE:
+            *param_start = 1;
             return CMD_WHILE; // 本地处理
         case TOKEN_FOR:
+            *param_start = 1;
             return CMD_FOR; // 本地处理
         case TOKEN_END:
             if(len == 1){
@@ -1360,15 +1374,38 @@ str generate_huji_protocol(CommandNumber cmd, tok* params, int param_count) {
         if(params[i].type == TOKEN_VALUES || params[i].type == TOKEN_NAME || 
            params[i].type == TOKEN_NUM || params[i].type == TOKEN_MACRO || params[i].type >= TOKEN_TABLE) {
             
+            // 处理变量替换
+            str param_content;
+            str_init(&param_content);
+            
+            if(params[i].type == TOKEN_MACRO) {
+                // 这是一个变量，需要获取其值
+                char* var_name = str_to_cstr(&params[i].content);
+                const char* var_value = get_local_variable(var_name);
+                if(var_value) {
+                    str_append_string(&param_content, var_value);
+                } else {
+                    // 变量不存在，使用原始变量名（包含$）
+                    str_append_string(&param_content, "$");
+                    str_append_data(&param_content, params[i].content.string, params[i].content.len);
+                }
+                free(var_name);
+            } else {
+                // 直接使用原始内容
+                str_append_data(&param_content, params[i].content.string, params[i].content.len);
+            }
+            
             // 参数长度（字符串数字）
             char len_str[32];
-            snprintf(len_str, sizeof(len_str), "%d", params[i].content.len);
+            snprintf(len_str, sizeof(len_str), "%d", param_content.len);
             str_append_string(&param_stream, len_str);
             str_append_string(&param_stream, "@");
             
             // 参数内容
-            str_append_data(&param_stream, params[i].content.string, params[i].content.len);
+            str_append_data(&param_stream, param_content.string, param_content.len);
             str_append_string(&param_stream, "@");
+            
+            str_free(&param_content);
         }
     }
     
@@ -1481,8 +1518,31 @@ str lexer(char* string, int len) {
                     params = &tokens[stmt_start + param_start];
                 }
                 
-                // 本地处理
-                process_local_command(cmd, params, param_count);
+                // 检查是否在控制块中且不是控制命令本身
+                if(flow_controller_should_cache(g_flow_controller) && 
+                   cmd != CMD_IF && cmd != CMD_ELSE && cmd != CMD_ELIF && 
+                   cmd != CMD_WHILE && cmd != CMD_FOR && cmd != CMD_END && cmd != CMD_BREAK && cmd != CMD_CONTINUE) {
+                    // 在控制块中，缓存语句而不是执行
+                    str stmt_str;
+                    str_init(&stmt_str);
+                    
+                    // 重建语句字符串
+                    for(int i = stmt_start; i < stmt_end; i++) {
+                        str_append_data(&stmt_str, tokens[i].content.string, tokens[i].content.len);
+                        if(i < stmt_end - 1) {
+                            str_append_string(&stmt_str, " ");
+                        }
+                    }
+                    str_append_string(&stmt_str, ";");
+                    
+                    char* stmt_cstr = str_to_cstr(&stmt_str);
+                    flow_controller_cache_statement(g_flow_controller, stmt_cstr);
+                    free(stmt_cstr);
+                    str_free(&stmt_str);
+                } else {
+                    // 本地处理（控制命令或不在控制块中）
+                    process_local_command(cmd, params, param_count);
+                }
                 stmt_start = stmt_end + 1;
                 continue;
             }
@@ -1496,13 +1556,34 @@ str lexer(char* string, int len) {
                 params = &tokens[stmt_start + param_start];
             }
             
-            // 生成HUJI协议数据
-            str protocol_data = generate_huji_protocol(cmd, params, param_count);
-            
-            // 添加到结果中
-            str_append_data(&result, protocol_data.string, protocol_data.len);
-            
-            str_free(&protocol_data);
+            // 检查是否在控制块中
+            if(flow_controller_should_cache(g_flow_controller)) {
+                // 在控制块中，缓存语句而不是生成协议
+                str stmt_str;
+                str_init(&stmt_str);
+                
+                // 重建语句字符串
+                for(int i = stmt_start; i < stmt_end; i++) {
+                    str_append_data(&stmt_str, tokens[i].content.string, tokens[i].content.len);
+                    if(i < stmt_end - 1) {
+                        str_append_string(&stmt_str, " ");
+                    }
+                }
+                str_append_string(&stmt_str, ";");
+                
+                char* stmt_cstr = str_to_cstr(&stmt_str);
+                flow_controller_cache_statement(g_flow_controller, stmt_cstr);
+                free(stmt_cstr);
+                str_free(&stmt_str);
+            } else {
+                // 生成HUJI协议数据
+                str protocol_data = generate_huji_protocol(cmd, params, param_count);
+                
+                // 添加到结果中
+                str_append_data(&result, protocol_data.string, protocol_data.len);
+                
+                str_free(&protocol_data);
+            }
         }
         
         stmt_start = stmt_end + 1;
@@ -1536,15 +1617,17 @@ static CommandNumber parse_get_statement(tok* token, int len, int* param_start) 
             return CMD_GET_KEYS;
         } else if(token[1].type == TOKEN_SIZE) {
             return CMD_GET_BIT_SIZE;
-        } else if(token[1].type == TOKEN_NAME) {
+        } else if(token[1].type == TOKEN_NAME || token[1].type == TOKEN_VALUES) {
             *param_start = 1;
             return CMD_GET_KEY;
         } else if(token[1].type == TOKEN_NUM) {
             *param_start = 1;
             return CMD_GET_LIST;
         } else if(token[1].type == TOKEN_MACRO) {
+            // GET $variable 应该被解释为使用变量值作为hook名的GET命令
+            // 而不是本地的GET_VAR命令
             *param_start = 1;
-            return CMD_GET_VAR;
+            return CMD_GET_OBJECT;  // 改为CMD_GET_OBJECT，让变量替换机制处理
         }
     }
     
@@ -1862,8 +1945,7 @@ static CommandNumber parse_macro_statement(tok* token, int len, int* param_start
     return CMD_ERROR;
 }
 
-// 包含变量系统
-#include "variable.h"
+// 变量系统已在文件开头包含
 
 
 
@@ -1902,39 +1984,178 @@ int process_local_command(CommandNumber cmd, tok* params, int param_count) {
             }
             break;
             
+        case CMD_INCR:
+        case CMD_INCR_BY:
+            if(param_count >= 1 && params[0].type == TOKEN_MACRO) {
+                // 本地变量递增
+                char* var_name = str_to_cstr(&params[0].content);
+                const char* current_val = get_local_variable(var_name);
+                if(current_val) {
+                    int val = atoi(current_val);
+                    int increment = 1;
+                    if(cmd == CMD_INCR_BY && param_count >= 2) {
+                        char* inc_str = str_to_cstr(&params[1].content);
+                        increment = atoi(inc_str);
+                        free(inc_str);
+                    }
+                    val += increment;
+                    char new_val[32];
+                    snprintf(new_val, sizeof(new_val), "%d", val);
+                    set_local_variable(var_name, new_val);
+                    printf("变量 %s 递增后值为: %d\n", var_name, val);
+                } else {
+                    // 变量不存在，初始化为increment值
+                    int increment = 1;
+                    if(cmd == CMD_INCR_BY && param_count >= 2) {
+                        char* inc_str = str_to_cstr(&params[1].content);
+                        increment = atoi(inc_str);
+                        free(inc_str);
+                    }
+                    char new_val[32];
+                    snprintf(new_val, sizeof(new_val), "%d", increment);
+                    set_local_variable(var_name, new_val);
+                    printf("变量 %s 初始化为: %d\n", var_name, increment);
+                }
+                free(var_name);
+                return 0;
+            }
+            break;
+            
+        case CMD_DECR:
+        case CMD_DECR_BY:
+            if(param_count >= 1 && params[0].type == TOKEN_MACRO) {
+                // 本地变量递减
+                char* var_name = str_to_cstr(&params[0].content);
+                const char* current_val = get_local_variable(var_name);
+                if(current_val) {
+                    int val = atoi(current_val);
+                    int decrement = 1;
+                    if(cmd == CMD_DECR_BY && param_count >= 2) {
+                        char* dec_str = str_to_cstr(&params[1].content);
+                        decrement = atoi(dec_str);
+                        free(dec_str);
+                    }
+                    val -= decrement;
+                    char new_val[32];
+                    snprintf(new_val, sizeof(new_val), "%d", val);
+                    set_local_variable(var_name, new_val);
+                    printf("变量 %s 递减后值为: %d\n", var_name, val);
+                } else {
+                    // 变量不存在，初始化为-decrement值
+                    int decrement = 1;
+                    if(cmd == CMD_DECR_BY && param_count >= 2) {
+                        char* dec_str = str_to_cstr(&params[1].content);
+                        decrement = atoi(dec_str);
+                        free(dec_str);
+                    }
+                    char new_val[32];
+                    snprintf(new_val, sizeof(new_val), "%d", -decrement);
+                    set_local_variable(var_name, new_val);
+                    printf("变量 %s 初始化为: %d\n", var_name, -decrement);
+                }
+                free(var_name);
+                return 0;
+            }
+            break;
+            
         case CMD_IF:
-            // IF条件处理 - 这里简化处理，实际应该解析条件表达式
-            return push_if_condition(1); // 假设条件为真
+            // IF条件处理 - 使用新的流程控制器
+            if(param_count >= 1) {
+                char* condition_expr = str_to_cstr(&params[0].content);
+                int result = flow_controller_push_if(g_flow_controller, condition_expr);
+                free(condition_expr);
+                return result;
+            }
+            return flow_controller_push_if(g_flow_controller, "1"); // 默认条件为真
             
         case CMD_ELSE:
-            return push_if_condition(!get_current_if_state());
+            return flow_controller_push_else(g_flow_controller);
             
         case CMD_ELIF:
-            // ELIF处理 - 简化处理
-            return push_if_condition(0); // 简化为假
-            
-        case CMD_END:
-            if(get_current_if_state() >= 0) {
-                return pop_if_condition();
-            } else if(get_current_loop_state() > 0) {
-                return pop_loop_state();
+            // ELIF处理 - 使用新的流程控制器
+            if(param_count >= 1) {
+                char* condition_expr = str_to_cstr(&params[0].content);
+                int result = flow_controller_push_elif(g_flow_controller, condition_expr);
+                free(condition_expr);
+                return result;
             }
-            return 0;
+            return flow_controller_push_elif(g_flow_controller, "0"); // 默认条件为假
             
         case CMD_WHILE:
-            // WHILE循环处理 - 简化处理
-            return push_loop_state();
+            // WHILE循环处理 - 使用新的流程控制器
+            if(param_count >= 1) {
+                char* condition_expr = str_to_cstr(&params[0].content);
+                int result = flow_controller_push_while(g_flow_controller, condition_expr);
+                free(condition_expr);
+                return result;
+            }
+            return flow_controller_push_while(g_flow_controller, "1"); // 默认条件为真
             
         case CMD_FOR:
-            // FOR循环处理 - 简化处理
-            return push_loop_state();
-            
+            // FOR循环处理 - 使用新的流程控制器
+            if(param_count >= 4) {
+                char* var_name = str_to_cstr(&params[0].content);
+                
+                // 解析开始值（可能是变量）
+                int start_val = 0;
+                if(params[1].type == TOKEN_MACRO) {
+                    char* start_var = str_to_cstr(&params[1].content);
+                    const char* start_str = get_local_variable(start_var);
+                    start_val = start_str ? atoi(start_str) : 0;
+                    free(start_var);
+                } else {
+                    char* start_str = str_to_cstr(&params[1].content);
+                    start_val = atoi(start_str);
+                    free(start_str);
+                }
+                
+                // 解析结束值（可能是变量）
+                int end_val = 0;
+                if(params[2].type == TOKEN_MACRO) {
+                    char* end_var = str_to_cstr(&params[2].content);
+                    const char* end_str = get_local_variable(end_var);
+                    end_val = end_str ? atoi(end_str) : 0;
+                    free(end_var);
+                } else {
+                    char* end_str = str_to_cstr(&params[2].content);
+                    end_val = atoi(end_str);
+                    free(end_str);
+                }
+                
+                // 解析步长（可能是变量）
+                int step_val = 1;
+                if(params[3].type == TOKEN_MACRO) {
+                    char* step_var = str_to_cstr(&params[3].content);
+                    const char* step_str = get_local_variable(step_var);
+                    step_val = step_str ? atoi(step_str) : 1;
+                    free(step_var);
+                } else {
+                    char* step_str = str_to_cstr(&params[3].content);
+                    step_val = atoi(step_str);
+                    free(step_str);
+                }
+                
+                // 使用新的流程控制器推入FOR循环
+                int result = flow_controller_push_for(g_flow_controller, var_name, start_val, end_val, step_val);
+                free(var_name);
+                return result;
+            }
+            return -1; // 参数不足
         case CMD_BREAK:
-            // 跳出循环
-            return 0; // 简化处理
+            // 跳出循环 - 使用新的流程控制器
+            return flow_controller_break(g_flow_controller);
             
         case CMD_CONTINUE:
-            // 继续循环
+            // 继续循环 - 使用新的流程控制器
+            return flow_controller_continue(g_flow_controller);
+            
+        case CMD_END:
+            // END命令 - 使用新的流程控制器
+            if(flow_controller_is_in_block(g_flow_controller)) {
+                // 使用外部定义的语句执行器
+                extern int flow_aware_statement_executor(const char* statement);
+                return flow_controller_end_block(g_flow_controller, flow_aware_statement_executor);
+            }
             return 0;
             
         default:
@@ -1947,7 +2168,8 @@ int process_local_command(CommandNumber cmd, tok* params, int param_count) {
 // 检查命令是否需要本地处理
 int is_local_command(CommandNumber cmd) {
     return (cmd >= CMD_IF && cmd <= CMD_CONTINUE) || 
-           (cmd >= CMD_SET_VAR && cmd <= CMD_DEL_VAR);
+           (cmd >= CMD_SET_VAR && cmd <= CMD_DEL_VAR) ||
+           (cmd == CMD_INCR || cmd == CMD_DECR || cmd == CMD_INCR_BY || cmd == CMD_DECR_BY);
 }
 
 // 资源清理函数
@@ -1970,4 +2192,15 @@ static CommandNumber parse_index_statement(tok* token, int len, int* param_start
     }
     
     return CMD_ERROR;
+}
+
+// 执行语句的函数指针
+int (*execute_statement_function)(const char* statement) = NULL;
+
+// 简单的语句执行函数（避免递归）
+int simple_execute_statement(const char* statement) {
+    if(!statement) return -1;
+    // 避免递归调用lexer，使用简化的解析和执行
+    printf("直接执行语句: %s\n", statement);
+    return 0;
 }

@@ -6,7 +6,7 @@ CFLAGS = -Wall -Wextra -std=c99 -O2 -g
 LDFLAGS = -lssl -lcrypto -lreadline
 
 # 源文件
-SOURCES = muixclt.c pkg.c lexer.c variable.c logo.c netlink.c
+SOURCES = muixclt.c pkg.c lexer.c variable.c flow_controller.c logo.c netlink.c
 OBJECTS = $(SOURCES:.c=.o)
 TARGET = muixclt
 

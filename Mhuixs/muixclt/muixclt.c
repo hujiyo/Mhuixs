@@ -16,6 +16,8 @@ Email:hj18914255909@outlook.com
 #include <time.h> // 用于测试函数的随机数
 #include <arpa/inet.h> // 用于ntohl函数
 
+#define _MUIXCLT_ //Mhuixs客户端标志宏
+
 // 定义strdup函数以避免编译警告
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
@@ -54,9 +56,13 @@ lexer需要将NAQL语句转换为：
 #include "logo.h"
 #include "pkg.h"
 #include "variable.h"
+#include "flow_controller.h"
 
 // 全局变量
 static SSL_CTX *ssl_ctx = NULL;
+
+// 全局流程控制器
+static FlowController* global_flow_controller = NULL;
 
 // 调试模式下的脚本执行状态
 typedef struct {
@@ -101,10 +107,18 @@ int debug_execute_script(const char *script) {
     // 使用lexer解析整个脚本
     str result = lexer((char*)script, strlen(script));
     
-    if (result.len == 0) {
+    // 检查是否解析失败（通过state字段判断，而不是len）
+    if (result.state != 0) {
         printf("错误: 无法解析脚本\n");
         str_free(&result);
         return -1;
+    }
+    
+    // 如果没有协议数据（本地命令），直接返回成功
+    if (result.len == 0) {
+        printf("脚本执行完成（本地命令）\n");
+        str_free(&result);
+        return 0;
     }
     
     // 解析并打印每个数据包
@@ -274,34 +288,8 @@ int deal_with_the_line(const char *line) {
     */
     
 #if DEBUG_MODE
-    // 调试模式：处理多行脚本
-    
-    // 检查是否开始FOR循环
-    if (strncmp(line, "FOR ", 4) == 0) {
-        in_multiline = 1;
-        strcpy(multiline_buffer, line);
-        strcat(multiline_buffer, "\n");
-        return 1; // 表示多行语句开始
-    }
-    
-    // 如果在多行模式中
-    if (in_multiline) {
-        strcat(multiline_buffer, line);
-        strcat(multiline_buffer, "\n");
-        
-        // 检查是否结束
-        if (strncmp(line, "END", 3) == 0) {
-            in_multiline = 0;
-            // 执行完整的多行脚本
-            debug_execute_script(multiline_buffer);
-            multiline_buffer[0] = '\0'; // 清空缓冲区
-            return 0;
-        }
-        
-        return 1; // 继续多行模式
-    }
-    
-    // 单行命令
+    // 调试模式：使用新的流程控制器系统
+    // 所有命令都通过单行执行器处理，流程控制由流程控制器管理
     return debug_execute_single_line(line);
     
 #else
@@ -514,6 +502,18 @@ void batch_mode(const char *filename) {
     printf("批处理完成\n");
 }
 
+// 流程控制器感知的语句执行器
+int flow_aware_statement_executor(const char* statement) {
+    if(!statement) return -1;
+    
+    printf("流程控制器执行语句: %s\n", statement);
+    
+    // 这里可以添加简单的语句解析和执行
+    // 暂时只打印，实际项目中可以调用lexer的简化版本
+    
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
     // 设置信号处理
     signal(SIGINT, signal_handler);//Ctrl+C
@@ -521,6 +521,19 @@ int main(int argc, char *argv[]) {
     
     // 初始化变量系统
     variable_system_init();
+    
+    // 初始化流程控制器
+    global_flow_controller = flow_controller_create();
+    if(!global_flow_controller) {
+        fprintf(stderr, "错误: 无法创建流程控制器\n");
+        return 1;
+    }
+    
+    // 将流程控制器设置到lexer中
+    set_flow_controller(global_flow_controller);
+    
+    // 设置语句执行函数指针
+    execute_statement_function = simple_execute_statement;
     
     // 初始化OpenSSL
     init_openssl();
@@ -545,6 +558,7 @@ int main(int argc, char *argv[]) {
     // 清理资源
     disconnect_from_server();
     variable_system_cleanup();
+    flow_controller_destroy(global_flow_controller);
     cleanup_openssl();    
     return 0;
 }

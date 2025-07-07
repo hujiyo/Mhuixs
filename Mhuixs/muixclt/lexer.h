@@ -10,6 +10,7 @@ Email:hj18914255909@outlook.com
 #define LEXER_H
 
 #include "stdstr.h"
+#include "flow_controller.h"
 
 // 主要lexer函数
 // 将NAQL语句转换为HUJI协议格式的数据流
@@ -38,6 +39,13 @@ int delete_local_variable(const char* name);
 // 清理本地资源
 // 释放所有本地变量和控制状态
 void cleanup_local_resources();
+
+// 语句执行函数
+extern int (*execute_statement_function)(const char* statement);
+int simple_execute_statement(const char* statement);
+
+// 流程控制器设置函数
+void set_flow_controller(FlowController* controller);
 
 #endif // LEXER_H
 

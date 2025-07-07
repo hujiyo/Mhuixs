@@ -1,3 +1,7 @@
+#ifndef _GNU_SOURCE
+#define _GNU_SOURCE
+#endif
+
 #include "variable.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,7 +13,10 @@ static int var_count = 0;
 static int var_capacity = 0;
 
 // 控制流状态
-static ControlState control_state = {0, 0, {0}, {0}};
+static FlowControlState flow_control = {0};
+
+// 执行语句的函数指针（由外部设置）
+extern int (*execute_statement_function)(const char* statement);
 
 // 变量系统初始化
 void variable_system_init(void) {
@@ -38,6 +45,16 @@ void variable_system_cleanup(void) {
     var_count = 0;
     var_capacity = 0;
     
+    // 清理FOR循环栈
+    for(int i = 0; i < flow_control.for_depth; i++) {
+        if(flow_control.for_stack[i].cached_lines) {
+            for(int j = 0; j < flow_control.for_stack[i].cached_count; j++) {
+                free(flow_control.for_stack[i].cached_lines[j]);
+            }
+            free(flow_control.for_stack[i].cached_lines);
+        }
+    }
+    
     // 重置控制状态
     control_state_init();
 }
@@ -46,19 +63,12 @@ void variable_system_cleanup(void) {
 VariableType detect_variable_type(const char* value) {
     if(value == NULL) return VAR_TYPE_STRING;
     
-    // 检查是否是数字
-    char* endptr;
-    strtod(value, &endptr);
-    if(*endptr == '\0' && *value != '\0') {
-        return VAR_TYPE_NUMBER;
-    }
-    
     // 检查是否是布尔值
     if(strcmp(value, "true") == 0 || strcmp(value, "false") == 0) {
         return VAR_TYPE_BOOLEAN;
     }
     
-    // 默认为字符串
+    // 所有其他值（包括数字）都视为字符串
     return VAR_TYPE_STRING;
 }
 
@@ -291,7 +301,6 @@ void print_variable_info(const char* name) {
                 const char* type_name = "";
                 switch(local_vars[i].type) {
                     case VAR_TYPE_STRING: type_name = "字符串"; break;
-                    case VAR_TYPE_NUMBER: type_name = "数字"; break;
                     case VAR_TYPE_BOOLEAN: type_name = "布尔"; break;
                     case VAR_TYPE_LIST: type_name = "列表"; break;
                 }
@@ -307,46 +316,364 @@ void print_variable_info(const char* name) {
 
 // 控制流管理
 void control_state_init(void) {
-    control_state.condition_depth = 0;
-    control_state.loop_depth = 0;
-    memset(control_state.if_stack, 0, sizeof(control_state.if_stack));
-    memset(control_state.loop_stack, 0, sizeof(control_state.loop_stack));
+    flow_control.for_depth = 0;
+    flow_control.control_depth = 0;
+    flow_control.condition_depth = 0;
+    flow_control.loop_depth = 0;
+    memset(flow_control.for_stack, 0, sizeof(flow_control.for_stack));
+    memset(flow_control.control_stack, 0, sizeof(flow_control.control_stack));
+    memset(flow_control.if_stack, 0, sizeof(flow_control.if_stack));
+    memset(flow_control.loop_stack, 0, sizeof(flow_control.loop_stack));
 }
 
-int push_if_condition(int condition_result) {
-    if(control_state.condition_depth >= 32) return -1;
-    control_state.if_stack[control_state.condition_depth] = condition_result;
-    control_state.condition_depth++;
+// 新的条件控制管理函数
+int push_control_state(ControlType type, int condition_result, const char* condition_expr) {
+    if(flow_control.control_depth >= 32) return -1;
+    
+    ControlState* state = &flow_control.control_stack[flow_control.control_depth];
+    state->type = type;
+    state->condition_result = condition_result;
+    state->has_executed = 0;
+    state->is_active = 1;
+    state->cached_lines = NULL;
+    state->cached_count = 0;
+    state->condition_expr = condition_expr ? strdup(condition_expr) : NULL;
+    
+    // 初始化FOR循环特有数据
+    if(type == CONTROL_TYPE_FOR) {
+        memset(state->var_name, 0, sizeof(state->var_name));
+        state->start_value = 0;
+        state->end_value = 0;
+        state->step_value = 1;
+        state->current_value = 0;
+    }
+    
+    flow_control.control_depth++;
+    printf("推入%s控制块，条件结果: %d\n", 
+           type == CONTROL_TYPE_IF ? "IF" :
+           type == CONTROL_TYPE_ELIF ? "ELIF" :
+           type == CONTROL_TYPE_ELSE ? "ELSE" :
+           type == CONTROL_TYPE_WHILE ? "WHILE" :
+           type == CONTROL_TYPE_FOR ? "FOR" : "UNKNOWN",
+           condition_result);
     return 0;
 }
 
-int pop_if_condition(void) {
-    if(control_state.condition_depth <= 0) return -1;
-    control_state.condition_depth--;
-    return control_state.if_stack[control_state.condition_depth];
-}
-
-int get_current_if_state(void) {
-    if(control_state.condition_depth <= 0) return 1; // 默认为真
-    return control_state.if_stack[control_state.condition_depth - 1];
-}
-
-int push_loop_state(void) {
-    if(control_state.loop_depth >= 32) return -1;
-    control_state.loop_stack[control_state.loop_depth] = 1;
-    control_state.loop_depth++;
+int pop_control_state(void) {
+    if(flow_control.control_depth <= 0) return -1;
+    
+    ControlState* state = &flow_control.control_stack[flow_control.control_depth - 1];
+    
+    // 清理缓存的语句
+    if(state->cached_lines) {
+        for(int i = 0; i < state->cached_count; i++) {
+            free(state->cached_lines[i]);
+        }
+        free(state->cached_lines);
+    }
+    
+    // 清理条件表达式
+    if(state->condition_expr) {
+        free(state->condition_expr);
+    }
+    
+    printf("弹出%s控制块\n", 
+           state->type == CONTROL_TYPE_IF ? "IF" :
+           state->type == CONTROL_TYPE_ELIF ? "ELIF" :
+           state->type == CONTROL_TYPE_ELSE ? "ELSE" :
+           state->type == CONTROL_TYPE_WHILE ? "WHILE" :
+           state->type == CONTROL_TYPE_FOR ? "FOR" : "UNKNOWN");
+    
+    flow_control.control_depth--;
     return 0;
 }
 
-int pop_loop_state(void) {
-    if(control_state.loop_depth <= 0) return -1;
-    control_state.loop_depth--;
-    return control_state.loop_stack[control_state.loop_depth];
+ControlState* get_current_control_state(void) {
+    if(flow_control.control_depth <= 0) return NULL;
+    return &flow_control.control_stack[flow_control.control_depth - 1];
 }
 
-int get_current_loop_state(void) {
-    if(control_state.loop_depth <= 0) return 0; // 不在循环中
-    return control_state.loop_stack[control_state.loop_depth - 1];
+int is_in_control_block(void) {
+    return flow_control.control_depth > 0;
+}
+
+int should_execute_current_block(void) {
+    ControlState* state = get_current_control_state();
+    if(!state) return 1; // 不在控制块中，正常执行
+    
+    switch(state->type) {
+        case CONTROL_TYPE_IF:
+        case CONTROL_TYPE_ELIF:
+            return state->condition_result && !state->has_executed;
+        case CONTROL_TYPE_ELSE:
+            // ELSE块只有在前面的IF/ELIF都没有执行时才执行
+            return !state->has_executed;
+        case CONTROL_TYPE_WHILE:
+        case CONTROL_TYPE_FOR:
+            return state->condition_result;
+        default:
+            return 1;
+    }
+}
+
+int add_control_statement(const char* statement) {
+    ControlState* state = get_current_control_state();
+    if(!state) return -1;
+    
+    // 扩展缓存数组
+    char** new_lines = realloc(state->cached_lines, 
+                              (state->cached_count + 1) * sizeof(char*));
+    if(!new_lines) return -1;
+    
+    state->cached_lines = new_lines;
+    state->cached_lines[state->cached_count] = strdup(statement);
+    state->cached_count++;
+    
+    printf("缓存控制块语句: %s\n", statement);
+    return 0;
+}
+
+int execute_control_block(void) {
+    ControlState* state = get_current_control_state();
+    if(!state) return -1;
+    
+    if(!should_execute_current_block()) {
+        printf("跳过控制块执行\n");
+        return 0;
+    }
+    
+    printf("执行控制块，包含 %d 条语句\n", state->cached_count);
+    
+    // 标记为已执行（用于IF/ELIF链）
+    state->has_executed = 1;
+    
+    // 执行缓存的语句
+    for(int i = 0; i < state->cached_count; i++) {
+        printf("  执行: %s\n", state->cached_lines[i]);
+        
+        // 如果有外部执行函数，调用它
+        if(execute_statement_function) {
+            int result = execute_statement_function(state->cached_lines[i]);
+            if(result != 0) {
+                printf("语句执行失败: %s\n", state->cached_lines[i]);
+                return -1;
+            }
+        }
+    }
+    
+    return 1;
+}
+
+// 条件评估函数
+int evaluate_condition(const char* condition_expr) {
+    if(!condition_expr) return 0;
+    
+    // 简单的条件评估（调试用）
+    if(strcmp(condition_expr, "0") == 0) {
+        printf("评估条件: %s -> 0\n", condition_expr);
+        return 0;
+    } else if(strcmp(condition_expr, "1") == 0) {
+        printf("评估条件: %s -> 1\n", condition_expr);
+        return 1;
+    } else if(condition_expr[0] == '$') {
+        // 变量条件：检查变量值
+        const char* var_value = get_local_variable(condition_expr);
+        if(var_value) {
+            int val = atoi(var_value);
+            printf("评估条件: %s (值=%s) -> %d\n", condition_expr, var_value, val ? 1 : 0);
+            return val ? 1 : 0;
+        } else {
+            printf("评估条件: %s (未定义) -> 0\n", condition_expr);
+            return 0;
+        }
+    } else {
+        // 其他表达式，暂时返回1（调试）
+        printf("评估条件: %s -> 1 (默认)\n", condition_expr);
+        return 1;
+    }
+}
+
+int evaluate_simple_condition(const char* left, const char* op, const char* right) {
+    if(!left || !op || !right) return 0;
+    
+    // 简单比较操作（调试用）
+    printf("评估简单条件: %s %s %s\n", left, op, right);
+    return 1; // 暂时返回真
+}
+
+// WHILE循环管理
+int push_while_loop(const char* condition_expr) {
+    int condition_result = evaluate_condition(condition_expr);
+    return push_control_state(CONTROL_TYPE_WHILE, condition_result, condition_expr);
+}
+
+int execute_while_iteration(void) {
+    ControlState* state = get_current_control_state();
+    if(!state || state->type != CONTROL_TYPE_WHILE) return -1;
+    
+    // 重新评估条件
+    state->condition_result = evaluate_condition(state->condition_expr);
+    
+    if(!state->condition_result) {
+        printf("WHILE循环条件为假，结束循环\n");
+        return 0; // 循环结束
+    }
+    
+    // 执行循环体
+    execute_control_block();
+    return 1; // 继续循环
+}
+
+// IF/ELSE/ELIF管理
+int push_if_statement(const char* condition_expr) {
+    int condition_result = evaluate_condition(condition_expr);
+    return push_control_state(CONTROL_TYPE_IF, condition_result, condition_expr);
+}
+
+int push_elif_statement(const char* condition_expr) {
+    // 检查前面的IF/ELIF是否已经执行过
+    ControlState* prev_state = get_current_control_state();
+    int has_prev_executed = prev_state ? prev_state->has_executed : 0;
+    
+    int condition_result = has_prev_executed ? 0 : evaluate_condition(condition_expr);
+    ControlState* state = &flow_control.control_stack[flow_control.control_depth - 1];
+    
+    // 更新当前状态为ELIF
+    state->type = CONTROL_TYPE_ELIF;
+    state->condition_result = condition_result;
+    if(state->condition_expr) free(state->condition_expr);
+    state->condition_expr = condition_expr ? strdup(condition_expr) : NULL;
+    
+    printf("处理ELIF，条件结果: %d\n", condition_result);
+    return 0;
+}
+
+int push_else_statement(void) {
+    ControlState* prev_state = get_current_control_state();
+    int has_prev_executed = prev_state ? prev_state->has_executed : 0;
+    
+    // ELSE只有在前面的IF/ELIF都没有执行时才执行
+    ControlState* state = &flow_control.control_stack[flow_control.control_depth - 1];
+    state->type = CONTROL_TYPE_ELSE;
+    state->condition_result = !has_prev_executed;
+    
+    printf("处理ELSE，条件结果: %d\n", state->condition_result);
+    return 0;
+}
+
+int should_skip_to_end(void) {
+    ControlState* state = get_current_control_state();
+    if(!state) return 0;
+    
+    // 如果是IF/ELIF且已经有条件成功执行，跳过后续的ELIF/ELSE
+    if((state->type == CONTROL_TYPE_IF || state->type == CONTROL_TYPE_ELIF) 
+       && state->has_executed) {
+        return 1;
+    }
+    
+    return 0;
+}
+
+// FOR循环管理函数
+int push_for_loop(const char* var_name, int start, int end, int step) {
+    if(flow_control.for_depth >= 16) return -1; // 最多支持16层嵌套
+    
+    ForLoopState* loop = &flow_control.for_stack[flow_control.for_depth];
+    strncpy(loop->var_name, var_name, sizeof(loop->var_name) - 1);
+    loop->var_name[sizeof(loop->var_name) - 1] = '\0';
+    loop->start_value = start;
+    loop->end_value = end;
+    loop->step_value = step;
+    loop->current_value = start;
+    loop->loop_start_line = 0;
+    loop->cached_lines = NULL;
+    loop->cached_count = 0;
+    loop->is_active = 1;
+    
+    // 设置循环变量的初始值
+    char val_str[32];
+    snprintf(val_str, sizeof(val_str), "%d", start);
+    set_local_variable(var_name, val_str);
+    
+    flow_control.for_depth++;
+    printf("开始FOR循环: %s = %d 到 %d，步长 %d\n", var_name, start, end, step);
+    return 0;
+}
+
+int pop_for_loop(void) {
+    if(flow_control.for_depth <= 0) return -1;
+    
+    ForLoopState* loop = &flow_control.for_stack[flow_control.for_depth - 1];
+    
+    // 清理缓存的语句
+    if(loop->cached_lines) {
+        for(int i = 0; i < loop->cached_count; i++) {
+            free(loop->cached_lines[i]);
+        }
+        free(loop->cached_lines);
+    }
+    
+    printf("结束FOR循环: %s\n", loop->var_name);
+    flow_control.for_depth--;
+    return 0;
+}
+
+int get_current_for_depth(void) {
+    return flow_control.for_depth;
+}
+
+ForLoopState* get_current_for_loop(void) {
+    if(flow_control.for_depth <= 0) return NULL;
+    return &flow_control.for_stack[flow_control.for_depth - 1];
+}
+
+int execute_for_loop_iteration(void) {
+    ForLoopState* loop = get_current_for_loop();
+    if(!loop || !loop->is_active) return -1;
+    
+    // 检查循环是否应该继续
+    if((loop->step_value > 0 && loop->current_value > loop->end_value) ||
+       (loop->step_value < 0 && loop->current_value < loop->end_value)) {
+        // 循环结束
+        return 0;
+    }
+    
+    // 更新循环变量
+    char val_str[32];
+    snprintf(val_str, sizeof(val_str), "%d", loop->current_value);
+    set_local_variable(loop->var_name, val_str);
+    
+    // 执行缓存的语句
+    for(int i = 0; i < loop->cached_count; i++) {
+        printf("执行循环体语句: %s\n", loop->cached_lines[i]);
+        // 这里应该调用lexer来执行语句，暂时只打印
+    }
+    
+    // 更新循环变量值
+    loop->current_value += loop->step_value;
+    
+    return 1; // 继续循环
+}
+
+int add_for_loop_statement(const char* statement) {
+    ForLoopState* loop = get_current_for_loop();
+    if(!loop || !loop->is_active) return -1;
+    
+    // 扩展缓存数组
+    char** new_lines = realloc(loop->cached_lines, 
+                              (loop->cached_count + 1) * sizeof(char*));
+    if(!new_lines) return -1;
+    
+    loop->cached_lines = new_lines;
+    loop->cached_lines[loop->cached_count] = strdup(statement);
+    loop->cached_count++;
+    
+    printf("缓存FOR循环语句: %s\n", statement);
+    return 0;
+}
+
+int is_in_for_loop(void) {
+    return flow_control.for_depth > 0;
 }
 
 // 从GET命令结果设置变量
@@ -354,4 +681,41 @@ int set_variable_from_command_result(const char* name, const char* result) {
     // 这里可以解析GET命令的结果，支持不同格式
     // 简单实现：直接将结果作为字符串赋值
     return set_local_variable(name, result);
+}
+
+// 保持向后兼容性的函数
+int push_if_condition(int condition_result) {
+    if(flow_control.condition_depth >= 32) return -1;
+    flow_control.if_stack[flow_control.condition_depth] = condition_result;
+    flow_control.condition_depth++;
+    return 0;
+}
+
+int pop_if_condition(void) {
+    if(flow_control.condition_depth <= 0) return -1;
+    flow_control.condition_depth--;
+    return flow_control.if_stack[flow_control.condition_depth];
+}
+
+int get_current_if_state(void) {
+    if(flow_control.condition_depth <= 0) return 1; // 默认为真
+    return flow_control.if_stack[flow_control.condition_depth - 1];
+}
+
+int push_loop_state(void) {
+    if(flow_control.loop_depth >= 32) return -1;
+    flow_control.loop_stack[flow_control.loop_depth] = 1;
+    flow_control.loop_depth++;
+    return 0;
+}
+
+int pop_loop_state(void) {
+    if(flow_control.loop_depth <= 0) return -1;
+    flow_control.loop_depth--;
+    return flow_control.loop_stack[flow_control.loop_depth];
+}
+
+int get_current_loop_state(void) {
+    if(flow_control.loop_depth <= 0) return 0; // 不在循环中
+    return flow_control.loop_stack[flow_control.loop_depth - 1];
 } 
