@@ -5,12 +5,22 @@
 #任何人或组织在未经版权所有者同意的情况下禁止使用、修改、分发此作品
 Email:hj18914255909@outlook.com
 */
-
 #ifndef LEXER_H
 #define LEXER_H
 
-#include "stdstr.h"
-#include "flow_controller.h"
+#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
+#include <stdlib.h>
+#include <time.h>
+#include <arpa/inet.h>  // 用于htonl函数
+
+#include "merr.h" //错误码日志库
+#include "variable.h"//包含变量系统
+#include "stdstr.h"//字符串库
+#include "token.h"//关键字表
+#include "funseq.h"//命令编号表
+#include "controller.h"//静态流程控制器
 
 // 主要lexer函数
 // 将NAQL语句转换为HUJI协议格式的数据流

@@ -56,13 +56,21 @@ lexer需要将NAQL语句转换为：
 #include "logo.h"
 #include "pkg.h"
 #include "variable.h"
-#include "flow_controller.h"
+#include "controller.h"
+
+// 前向声明
 
 // 全局变量
+#ifdef start_tls
 static SSL_CTX *ssl_ctx = NULL;
+#endif
 
 // 全局流程控制器
 static FlowController* global_flow_controller = NULL;
+
+// 函数声明
+void debug_print_packet_content(const uint8_t* protocol_data, int data_len);
+void batch_mode(const char *filename);
 
 // 调试模式下的脚本执行状态
 typedef struct {
@@ -122,7 +130,7 @@ int debug_execute_script(const char *script) {
     }
     
     // 解析并打印每个数据包
-    const char* data = result.string;
+    const uint8_t* data = result.string;
     int remaining = result.len;
     int offset = 0;
     
@@ -133,7 +141,7 @@ int debug_execute_script(const char *script) {
         }
         
         // 检查HUJI魔数
-        if (strncmp(data + offset, "HUJI", 4) != 0) {
+        if (strncmp((const char*)(data + offset), "HUJI", 4) != 0) {
             printf("错误: 无效的协议魔数在偏移 %d\n", offset);
             break;
         }
@@ -195,14 +203,14 @@ int debug_execute_script(const char *script) {
 }
 
 // 调试模式下的数据包解析和打印函数
-void debug_print_packet_content(const char* protocol_data, int data_len) {
+void debug_print_packet_content(const uint8_t* protocol_data, int data_len) {
     if (data_len < 9) { // HUJI(4) + 编号(4) + 最少1字节数据
         printf("错误: 数据包太小\n");
         return;
     }
     
     // 检查HUJI魔数
-    if (strncmp(protocol_data, "HUJI", 4) != 0) {
+    if (strncmp((const char*)protocol_data, "HUJI", 4) != 0) {
         printf("错误: 无效的协议魔数\n");
         return;
     }
@@ -213,7 +221,7 @@ void debug_print_packet_content(const char* protocol_data, int data_len) {
     cmd_num = ntohl(cmd_num);
     
     // 解析参数流
-    const char* param_stream = protocol_data + 8;
+    const char* param_stream = (const char*)(protocol_data + 8);
     int param_stream_len = data_len - 8;
     
     if (param_stream_len < 1) {
@@ -315,9 +323,12 @@ int deal_with_the_line(const char *line) {
 
 // 信号处理函数,当接收到中断信号时，断开连接，清理资源，退出程序
 void signal_handler(int signum) {
+    (void)signum; // 避免未使用参数警告
     printf("\n\n接收到中断信号，正在清理资源...\n");
     disconnect_from_server();//断开连接
+#ifdef start_tls
     cleanup_openssl();//清理资源
+#endif
     exit(0);//退出程序
 }
 
@@ -376,7 +387,7 @@ void interactive_mode() {
     char *input;
     char *response;
     
-    print_welcome();
+    print_welcome(server_ip, server_port);
     
 #if DEBUG_MODE
     printf("调试模式已启用 - 命令将在本地解析和模拟执行\n");
@@ -535,6 +546,7 @@ int main(int argc, char *argv[]) {
     // 设置语句执行函数指针
     execute_statement_function = simple_execute_statement;
     
+#ifdef start_tls
     // 初始化OpenSSL
     init_openssl();
     
@@ -544,11 +556,14 @@ int main(int argc, char *argv[]) {
         cleanup_openssl();
         return 1;
     }
+#endif
     
     // 解析命令行参数，批处理模式包含在这
     int parse_result = parse_command_line(argc, argv);
     if (parse_result != 0) {
+#ifdef start_tls
         cleanup_openssl();
+#endif
         return parse_result == 1 ? 0 : 1;
     }
     
@@ -559,6 +574,8 @@ int main(int argc, char *argv[]) {
     disconnect_from_server();
     variable_system_cleanup();
     flow_controller_destroy(global_flow_controller);
-    cleanup_openssl();    
+#ifdef start_tls
+    cleanup_openssl();
+#endif
     return 0;
 }

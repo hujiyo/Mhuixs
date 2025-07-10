@@ -11,7 +11,8 @@
 
 #include "Mhudef.hpp"
 #include "mshare.hpp"
-#define merr -1
+#include "merr.h"  // 引入merr库的错误处理机制
+#include "stdstr.h" // 引入str结构支持
 /*
 #版权所有 (c) HUJI 2025
 #许可证协议:
@@ -53,20 +54,22 @@ public:
         int setname(str &key_name){//设置键名
             OFFSET name_ = g_memap.smalloc(key_name.len + sizeof(uint32_t));
             if (name_ == NULL_OFFSET) {
-                printf("KVALOT::KEY::setname:Error: Memory allocation failed for key name.\n");
+                report(merr, kvalot_module, "Memory allocation failed for key name");
                 return merr;// 错误处理
             }
             *(uint32_t*)g_memap.addr(name_) = key_name.len;
             memcpy(g_memap.addr(name_) + sizeof(uint32_t), key_name.string, key_name.len);
             this->name = name_;
-            return 0;
+            return success;
         }
         void clear_self(){
             bhs.clear_self();
             //获得键名的长度
-            uint32_t len = *(uint32_t*)g_memap.addr(name);
-            g_memap.sfree(name,len + sizeof(uint32_t));
-            name = NULL_OFFSET;
+            if (name != NULL_OFFSET) {
+                uint32_t len = *(uint32_t*)g_memap.addr(name);
+                g_memap.sfree(name, len + sizeof(uint32_t));
+                name = NULL_OFFSET;
+            }
             hash_index = NULL_OFFSET;
         }
     };
@@ -79,13 +82,21 @@ private:
     uint32_t keynum;//键数量
 
     string kvalot_name;//键值对池名称
+    
+    mrc state;//对象状态，使用merr库的错误码
 
     static uint32_t bits(uint32_t X);
     int rise_capacity();
     static uint32_t murmurhash(str& stream, uint32_t result_bits);
+    
+    // 辅助函数：C风格的内存管理
+    int tong_ensure_capacity(HASH_TONG* tong, uint32_t needed_capacity);
+    int validate_key_name(str* key_name);
+    uint32_t find_key_in_tong(HASH_TONG* tong, str* key_name);
+    int copy_bhs(basic_handle_struct* dest, const basic_handle_struct* src);
 public:
     KVALOT(str* kvalot_name);
-    //KVALOT(const KVALOT& kvalot);
+    KVALOT(const KVALOT& kvalot);
     ~KVALOT();
 
 
@@ -94,8 +105,30 @@ public:
     int  add_key(str* key_name, obj_type type,void* parameter1, void* parameter2,void* parameter3);
     str get_name();
 
-    int iserr();        
+    mrc iserr();  // 返回merr库的错误码
+    const char* get_error_msg(); // 获取错误信息
+    
+    // 调试和统计功能
+    uint32_t get_key_count() const; // 获取键数量
+    uint32_t get_bucket_count() const; // 获取桶数量
+    float get_load_factor() const; // 获取装载因子
+    void print_statistics() const; // 打印统计信息
 };
 
+// C风格的便利函数声明
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// 验证哈希表完整性
+int kvalot_validate_integrity(KVALOT* kvalot);
+
+// C风格的KVALOT对象管理
+KVALOT* kvalot_create(const char* name);
+void kvalot_destroy(KVALOT* kvalot);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

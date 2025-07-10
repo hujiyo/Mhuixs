@@ -13,7 +13,7 @@
 typedef uint32_t OFFSET;
 
 // 自动扩容时每次增加的块数基数
-const uint32_t add_block_num = 1024;
+#define add_block_num 1024
 
 struct MEMAP {
     void* strpool; // 首池指针，兼容旧接口

@@ -2,11 +2,12 @@
 #define _GNU_SOURCE
 #endif
 
-#include "flow_controller.h"
+#include "controller.h"
 #include "variable.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 #define MAX_FLOW_BLOCKS 32
 #define MAX_STATEMENTS_PER_BLOCK 256

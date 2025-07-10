@@ -3,7 +3,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
-#include "netlink.h"
+#include "logo.h"
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
@@ -11,7 +11,6 @@
 start from 2024.12
 Email:hj18914255909@outlook.com
 */
-
 // 打印帮助信息 (Client && Server)
 void print_help() {
     #ifdef _MHUIXS_
@@ -152,7 +151,7 @@ void print_mhuixs_logo()
 }
 
 // 打印欢迎信息 (Client && Server)
-void print_welcome() {
+void print_welcome(const char* server_ip, int server_port) {
     print_mhuixs_logo();
 
     #ifdef _MHUIXS_

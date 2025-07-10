@@ -3,9 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-
-// 前向声明
-typedef struct str str;
+#include "stdstr.h"
 
 // 控制类型枚举
 typedef enum {

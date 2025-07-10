@@ -9,8 +9,6 @@ Email:hj18914255909@outlook.com
 这个文件将会对数据进行打包、解包操作。
 采用简化的包结构：MUIX + 数据长度 + $ + 用户数据
 */
-
-
 #include "pkg.h"
 
 // 协议常量定义
@@ -20,190 +18,101 @@ Email:hj18914255909@outlook.com
 #define MHUIXS_MAGIC3 'X'
 #define MHUIXS_DELIMITER '$'
 
-// 内部函数：验证包头
-static int validate_packet_header(const PacketHeader *header) {
-    if (!header) return 0;
-    
-    // 检查魔数
-    if (header->magic[0] != MHUIXS_MAGIC0 ||
-        header->magic[1] != MHUIXS_MAGIC1 ||
-        header->magic[2] != MHUIXS_MAGIC2 ||
-        header->magic[3] != MHUIXS_MAGIC3) {
-        printf("错误: 无效的魔数 %c%c%c%c\n", 
-               header->magic[0], header->magic[1], 
-               header->magic[2], header->magic[3]);
-        return 0;
-    }
-    
-    // 检查结束符
-    if (header->delimiter != MHUIXS_DELIMITER) {
-        printf("错误: 无效的结束符 '%c'，期望 '$'\n", header->delimiter);
-        return 0;
-    }
-    
-    // 检查数据长度（需要转换为主机字节序）
-    uint32_t data_length = ntohl(header->data_length);
-    if (data_length > MAX_PACKET_SIZE - PACKET_HEADER_SIZE) {
-        printf("错误: 数据长度过大 %u\n", data_length);
-        return 0;
-    }
-    
-    return 1;
-}
+// 包头结构
+typedef struct {
+    uint8_t magic[4];      // 魔数 'M''U''I''X'
+    uint32_t data_length;  // 数据长度（大端字节序）
+    uint8_t delimiter;     // 结束符 '$'
+} __attribute__((packed)) PacketHeader;
 
-// 用户API：创建数据包
-Packet* create_packet(const void *data, uint32_t data_length) {
-    // 检查数据长度
-    if (data_length > MAX_PACKET_SIZE - PACKET_HEADER_SIZE) {
-        printf("错误: 数据长度过大 %u，最大支持 %u 字节\n", 
-               data_length, MAX_PACKET_SIZE - PACKET_HEADER_SIZE);
-        return NULL;
+
+str packing(uint8_t *data,uint32_t data_length){
+    // 检查数据长度是否合法
+    if (data_length > MAX_PACKET_SIZE - PACKET_HEADER_SIZE ||
+        !data || !data_length) {
+        return end;
     }
-    
-    // 分配内存
-    Packet *packet = (Packet*)malloc(sizeof(Packet));
-    if (!packet) {
-        printf("错误: 内存分配失败\n");
-        return NULL;
-    }
-    
     // 初始化包头
-    packet->header.magic[0] = MHUIXS_MAGIC0;
-    packet->header.magic[1] = MHUIXS_MAGIC1;
-    packet->header.magic[2] = MHUIXS_MAGIC2;
-    packet->header.magic[3] = MHUIXS_MAGIC3;
-    packet->header.data_length = htonl(data_length);  // 转换为大端字节序
-    packet->header.delimiter = MHUIXS_DELIMITER;
-    
-    // 复制数据
-    if (data_length > 0 && data) {
-        packet->data = (uint8_t*)malloc(data_length);
-        if (!packet->data) {
-            printf("错误: 数据内存分配失败\n");
-            free(packet);
-            return NULL;
-        }
-        memcpy(packet->data, data, data_length);
-    } else {
-        packet->data = NULL;
-    }
-    
-    return packet;
-}
+    PacketHeader header = {
+        .magic[0] = MHUIXS_MAGIC0,
+        .magic[1] = MHUIXS_MAGIC1,
+        .magic[2] = MHUIXS_MAGIC2,
+        .magic[3] = MHUIXS_MAGIC3,
+        .data_length = htonl(data_length),
+        .delimiter = MHUIXS_DELIMITER
+    };
 
-// 用户API：销毁数据包
-void destroy_packet(Packet *packet) {
-    if (!packet) return;
-    
-    if (packet->data) {
-        free(packet->data);
-    }
-    free(packet);
-}
-
-// 用户API：序列化数据包
-uint8_t* serialize_packet(const Packet *packet, uint32_t *total_size) {
-    if (!packet || !total_size) return NULL;
-    
-    uint32_t data_length = ntohl(packet->header.data_length);
-    *total_size = PACKET_HEADER_SIZE + data_length;
-    
-    uint8_t *buffer = (uint8_t*)malloc(*total_size);
+    //序列化数据包
+    uint8_t *buffer = (uint8_t*)malloc(PACKET_HEADER_SIZE + data_length);
     if (!buffer) {
         printf("错误: 序列化缓冲区分配失败\n");
-        return NULL;
+        return end;
     }
-    
-    // 复制包头
-    memcpy(buffer, &packet->header, PACKET_HEADER_SIZE);
-    
-    // 复制数据
-    if (data_length > 0 && packet->data) {
-        memcpy(buffer + PACKET_HEADER_SIZE, packet->data, data_length);
-    }
-    
-    return buffer;
+    memcpy(buffer, &header, PACKET_HEADER_SIZE);// 复制包头
+    memcpy(buffer + PACKET_HEADER_SIZE, data, data_length);// 复制数据  
+
+    str ret = {
+        .string = buffer,
+        .len = PACKET_HEADER_SIZE + data_length,
+        .state = 0
+    };
+    return ret;
 }
 
-// 用户API：反序列化数据包
-Packet* deserialize_packet(const uint8_t *buffer, uint32_t buffer_size) {
-    if (!buffer || buffer_size < PACKET_HEADER_SIZE) {
-        printf("错误: 缓冲区无效或过小\n");
-        return NULL;
+//解包：解包失败表示数据包非法
+str unpacking(const uint8_t *packet, uint32_t packet_length) {
+    str result = {
+        .string = NULL,
+        .len = 0,
+        .state = 0
+    };    
+    // 检查基本条件
+    if (!packet || packet_length < PACKET_HEADER_SIZE) {
+        return result; // 返回空字符串表示错误
+    }    
+    // 检查魔数
+    if (packet[0] != MHUIXS_MAGIC0 || 
+        packet[1] != MHUIXS_MAGIC1 || 
+        packet[2] != MHUIXS_MAGIC2 || 
+        packet[3] != MHUIXS_MAGIC3) {
+        return result;
     }
+    // 检查分隔符
+    if (packet[PACKET_HEADER_SIZE - 1] != MHUIXS_DELIMITER) {
+        return result;
+    }    
+    // 提取数据长度
+    uint32_t data_length;
+    memcpy(&data_length, packet + 4, sizeof(uint32_t)); // 假设数据长度在魔数后的4字节
+    data_length = ntohl(data_length);//转化为主机字节序
     
-    Packet *packet = (Packet*)malloc(sizeof(Packet));
-    if (!packet) {
-        printf("错误: 包内存分配失败\n");
-        return NULL;
-    }
-    
-    // 解析包头
-    memcpy(&packet->header, buffer, PACKET_HEADER_SIZE);
-    
-    // 验证包头
-    if (!validate_packet_header(&packet->header)) {
-        free(packet);
-        return NULL;
-    }
-    
-    uint32_t data_length = ntohl(packet->header.data_length);
-    uint32_t expected_size = PACKET_HEADER_SIZE + data_length;
-    
-    if (buffer_size < expected_size) {
-        printf("错误: 缓冲区大小不足，期望 %u，实际 %u\n", expected_size, buffer_size);
-        free(packet);
-        return NULL;
-    }
-    
-    // 解析数据
-    if (data_length > 0) {
-        packet->data = (uint8_t*)malloc(data_length);
-        if (!packet->data) {
-            printf("错误: 数据内存分配失败\n");
-            free(packet);
-            return NULL;
-        }
-        memcpy(packet->data, buffer + PACKET_HEADER_SIZE, data_length);
-    } else {
-        packet->data = NULL;
-    }
-    
-    return packet;
-}
-
-// 获取包数据长度
-uint32_t get_packet_data_length(const Packet *packet) {
-    if (!packet) return 0;
-    return ntohl(packet->header.data_length);
-}
-
-// 获取包数据
-const uint8_t* get_packet_data(const Packet *packet) {
-    if (!packet) return NULL;
-    return packet->data;
-}
-
-// 验证数据包
-int is_valid_packet(const Packet *packet) {
-    if (!packet) return 0;
-    
-    // 验证包头
-    if (!validate_packet_header(&packet->header)) {
-        return 0;
-    }
-    
-    // 验证数据部分
-    uint32_t data_length = ntohl(packet->header.data_length);
-    if (data_length > 0 && !packet->data) {
-        printf("错误: 数据长度不为0但数据指针为空\n");
-        return 0;
-    }
-    
-    return 1;
+    // 检查数据长度是否合理
+    if (data_length > MAX_PACKET_SIZE - PACKET_HEADER_SIZE || 
+        PACKET_HEADER_SIZE + data_length != packet_length) {
+        return result;
+    }    
+    // 分配内存并复制数据
+    uint8_t *data = (uint8_t*)malloc(data_length); // +1 用于字符串终止符
+    if (!data) {
+        printf("错误: 分配内存失败\n");
+        return result;
+    }    
+    memcpy(data, packet + PACKET_HEADER_SIZE, data_length);
+    result.string = data;
+    result.len = data_length;
+    result.state = 0;
+    return result;
 }
 
 int find_packet_boundary(const uint8_t *buffer, uint32_t buffer_size, uint32_t *start_index, uint32_t *packet_size) {
+    /*
+    这个函数用于在流式数据buffer中查找第一个完整的包
+    最大寻找buffer_size个字节
+    返回1表示找到完整包，0表示未找到
+
+    start_index:包开始位置,为输出参数
+    packet_size:包大小,为输出参数
+    */
     if (!buffer || !start_index || !packet_size || buffer_size < PACKET_HEADER_SIZE) {
         return 0;
     }
@@ -242,8 +151,7 @@ int find_packet_boundary(const uint8_t *buffer, uint32_t buffer_size, uint32_t *
                 return 0;  // 包不完整，没有足够的数据
             }
         }
-    }
-    
+    }    
     return 0;  // 没有找到有效的包
 }
 

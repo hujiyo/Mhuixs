@@ -140,7 +140,7 @@ void MEMAP::sfree(OFFSET offset, uint32_t /*len*/) {
 int MEMAP::iserr(OFFSET offset) {
     if (!tlsf || offset == NULL_OFFSET) return merr;
     void* ptr = nullptr;
-    if ((offset >> 24) == 0) {
+    if ( offset >> 24 == 0) {
         ptr = (uint8_t*)strpool + offset;
         if ((uint8_t*)ptr < (uint8_t*)strpool ||
             (uint8_t*)ptr >= (uint8_t*)strpool + pool_bytes)

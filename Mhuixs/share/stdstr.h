@@ -21,8 +21,6 @@ typedef struct str {
     int state;          // 状态码（0=正常，非0=错误）
 } str;
 
-#define merr (-1)  // 错误返回值常量
-
 static inline void str_init(str *s) {
     if (s) {
         s->string = NULL;

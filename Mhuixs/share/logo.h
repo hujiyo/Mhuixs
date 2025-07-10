@@ -12,9 +12,12 @@ Email:hj18914255909@outlook.com
 extern "C" {
 #endif
 
+#define DEFAULT_SERVER_IP "127.0.0.1"
+#define PORT 18482
+
 void print_help();//打印帮助信息 (Client && Server)
 void print_version();//打印版本信息 (Client && Server)
-void print_welcome();//打印欢迎信息 (Client && Server)
+void print_welcome(const char* server_ip, int server_port);//打印欢迎信息 (Client && Server)
 
 #ifdef __cplusplus
 }

@@ -15,6 +15,13 @@ Email:hj18914255909@outlook.com
 #include <time.h>
 #include <stdint.h>
 
+#include "stdstr.h"
+#include "merr.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
 这个文件将会对数据进行打包、解包操作。
 MUIX包协议定义：
@@ -31,34 +38,23 @@ MUIX包协议定义：
 #define MAX_PACKET_SIZE 4096 // 最大包大小 4KB
 #define PACKET_HEADER_SIZE 9 // 包头大小：4(MUIX) + 4(长度) + 1($)
 
-// 包头结构
-typedef struct {
-    uint8_t magic[4];      // 魔数 'M''U''I''X'
-    uint32_t data_length;  // 数据长度（大端字节序）
-    uint8_t delimiter;     // 结束符 '$'
-} __attribute__((packed)) PacketHeader;
+/*
+用户需要自己释放返回的str
+*/
+str packing(uint8_t *data,uint32_t data_length);//打包
+str unpacking(const uint8_t *packet, uint32_t packet_length);//解包
 
-// 包结构
-typedef struct {
-    PacketHeader header;    // 包头
-    uint8_t *data;         // 用户数据
-} Packet;
-
-// 用户API
-Packet* create_packet(const void *data, uint32_t data_length);  // 创建包
-void destroy_packet(Packet *packet);                           // 销毁包
-uint8_t* serialize_packet(const Packet *packet, uint32_t *total_size);  // 序列化包
-Packet* deserialize_packet(const uint8_t *buffer, uint32_t buffer_size); // 反序列化包
-
-// 获取包信息的函数
-uint32_t get_packet_data_length(const Packet *packet);
-const uint8_t* get_packet_data(const Packet *packet);
-
-int is_valid_packet(const Packet *packet);// 验证函数
-// 这个函数用于在流式数据中查找第一个完整的包
-// 返回1表示找到完整包，0表示未找到
-// start_index: 包开始位置的索引
-// packet_size: 完整包的大小
 int find_packet_boundary(const uint8_t *buffer, uint32_t buffer_size, uint32_t *start_index, uint32_t *packet_size);
+/*
+这个函数用于在流式数据buffer中查找第一个完整的包
+最大寻找buffer_size个字节
+返回1表示找到完整包，0表示未找到
+
+start_index:包开始位置,为输出参数
+packet_size:包大小,为输出参数
+*/
+#ifdef __cplusplus
+}
+#endif
 
 #endif

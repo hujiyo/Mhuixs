@@ -3,12 +3,15 @@
 int connected = 0;//连接状态
 
 // 全局变量
+#ifdef start_tls
 static SSL_CTX *ssl_ctx = NULL;
 static SSL *ssl_conn = NULL;//SSL连接的指针
+#endif
 static int sock_fd = -1;//套接字的文件描述符
 char server_ip[16] = DEFAULT_SERVER_IP;//服务器IP地址
 int server_port = PORT;//服务器端口
 
+#ifdef start_tls
 void init_openssl() {
     SSL_load_error_strings();// 加载错误字符串
     OpenSSL_add_ssl_algorithms();// 注册SSL算法
@@ -32,6 +35,7 @@ void cleanup_openssl() {
     EVP_cleanup();// 清理EVP EVP:OpenSSL加密库,清理的意思是释放EVP库占用的内存
     ERR_free_strings();// 清理错误字符串 ERR:OpenSSL错误库,清理的意思是释放ERR库占用的内存
 }
+
 /*
 TCP/UDP作为基础传输协议，负责"数据传输",不保证安全性和完整性
 SSL/TLS依赖TCP/UDP的数据传输，在此之上构建安全传输协议，负责"数据加密"和"端到端认证"
@@ -66,8 +70,9 @@ SSL_CTX *create_ssl_context() {
     //==============================================
     return ctx;
 }
+#endif
 
-// 连接到服务器（先用TCP连接到服务器，并建立SSL连接）
+// 连接到服务器
 int connect_to_server(const char *ip, int port) {
     struct sockaddr_in serv_addr;//声明一个sockaddr_in结构体 用于存储服务器地址
     
@@ -93,7 +98,11 @@ int connect_to_server(const char *ip, int port) {
         return -1;
     }
 
-    printf("正在连接到 %s:%d...\n", ip, port);
+#ifdef start_tls
+    printf("正在连接到 %s:%d (TLS模式)...\n", ip, port);
+#else
+    printf("正在连接到 %s:%d (TCP模式)...\n", ip, port);
+#endif
     
     if (connect(sock_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         perror("连接失败");
@@ -102,6 +111,8 @@ int connect_to_server(const char *ip, int port) {
         return -1;
     }
     //至此，已经创建了套接字，并设置了服务器地址，接下来就是连接到服务器（TCP）
+
+#ifdef start_tls
     //此时仅仅建立了TCP连接，但数据传输不安全，接下来建立SSL连接，确保数据传输安全
 
     // 创建SSL连接（SSL/TLS）
@@ -127,7 +138,12 @@ int connect_to_server(const char *ip, int port) {
     //此时，普通TCP被增加了SSL/TLS机制
 
     connected = 1;//将连接状态设置为已连接
-    printf("✓ 已成功连接到 Mhuixs 服务器\n");//打印成功信息
+    printf("✓ 已成功连接到 Mhuixs 服务器 (TLS加密)\n");//打印成功信息
+#else
+    //TCP连接已建立，直接设置为已连接状态
+    connected = 1;//将连接状态设置为已连接
+    printf("✓ 已成功连接到 Mhuixs 服务器 (TCP明文)\n");//打印成功信息
+#endif
     return 0;
 }
 
@@ -137,12 +153,14 @@ void disconnect_from_server() {
     printf("正在断开连接...\n");
     connected = 0;    
 
+#ifdef start_tls
     //SSL/TLS连接断开
     if (ssl_conn) {
         SSL_shutdown(ssl_conn);//关闭SSL连接
         SSL_free(ssl_conn);//释放SSL连接
         ssl_conn = NULL;//将ssl连接设置为NULL
     }
+#endif
     //TCP连接断开
     if (sock_fd >= 0) {
         close(sock_fd);//关闭套接字
@@ -153,6 +171,7 @@ void disconnect_from_server() {
 
 // 发送查询到服务器
 int send_query(const char *query) {
+#ifdef start_tls
     if (!connected || !ssl_conn) {
         fprintf(stderr, "错误: 未连接到服务器\n");
         return -1;
@@ -166,10 +185,25 @@ int send_query(const char *query) {
         return -1;
     }
     return sent;
+#else
+    if (!connected || sock_fd < 0) {
+        fprintf(stderr, "错误: 未连接到服务器\n");
+        return -1;
+    }
+
+    int sent = send(sock_fd, query, strlen(query), 0);
+    
+    if (sent <= 0) {
+        fprintf(stderr, "错误: 发送查询失败\n");
+        return -1;
+    }
+    return sent;
+#endif
 }
 
 // 接收服务器响应
 char* receive_response() {
+#ifdef start_tls
     if (!connected || !ssl_conn) {
         fprintf(stderr, "错误: 未连接到服务器\n");
         return NULL;
@@ -190,6 +224,28 @@ char* receive_response() {
 
     buffer[received] = '\0';
     return buffer;
+#else
+    if (!connected || sock_fd < 0) {
+        fprintf(stderr, "错误: 未连接到服务器\n");
+        return NULL;
+    }
+
+    char *buffer = malloc(BUFFER_SIZE);
+    if (!buffer) {
+        fprintf(stderr, "错误: 内存分配失败\n");
+        return NULL;
+    }
+
+    int received = recv(sock_fd, buffer, BUFFER_SIZE - 1, 0);
+    if (received <= 0) {
+        fprintf(stderr, "错误: 接收响应失败\n");
+        free(buffer);
+        return NULL;
+    }
+
+    buffer[received] = '\0';
+    return buffer;
+#endif
 }
 
 

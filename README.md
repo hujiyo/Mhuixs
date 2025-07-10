@@ -1,15 +1,14 @@
-<img src=".logo/Mhuixs-logo.png" height="130px" />    
+<img src=".logo/Mhuixs-logo.png" height="130px" />     
 
 # Mhuixs 数据库
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hujiyo/Mhuixs)
 
+
 ## 1. 介绍
 
 Mhuixs 是一个基于内存的数据库，致力于为用户提供高效、灵活的数据管理能力。
-
 本项目结合了关系型与非关系型数据库的优势，目标是实现国产化、易于集成、支持多样化数据结构，并具备简洁的语言特性。
-
 **当前状态**: 客户端 muixclt 已基本完成，支持完整的 NAQL 语法解析和网络通信功能。
 
 ## 2. 目标 & 特色
@@ -70,6 +69,108 @@ cd Mhuixs/muixclt && make
 ```
 
 **系统要求**: Linux, GCC 4.9+, OpenSSL, Readline
+
+### TCP/TLS支持说明
+
+muixclt客户端现在支持通过编译时宏 `start_tls` 来控制是否使用TLS加密连接。默认情况下，客户端使用明文TCP连接。
+
+#### 编译模式
+
+##### TCP模式（默认）
+```bash
+make                # 编译TCP版本
+make info           # 查看编译信息
+make run            # 运行TCP版本
+make test           # 测试TCP连接
+```
+
+##### TLS模式
+```bash
+make tls            # 编译TLS版本
+make run-tls        # 运行TLS版本
+make test-tls       # 测试TLS连接
+```
+
+##### 通过环境变量控制
+```bash
+make TLS=1          # 通过环境变量启用TLS
+make TLS=1 run      # 编译并运行TLS版本
+```
+
+
+##### 查看编译信息
+```bash
+make info
+```
+
+输出示例：
+```
+编译信息:
+  CC: gcc
+  CFLAGS: -Wall -Wextra -std=c99 -O2 -g
+  LDFLAGS: -lreadline
+  BUILD_MODE: TCP
+  SOURCES: muixclt.c pkg.c lexer.c variable.c flow_controller.c logo.c netlink.c controller.c merr.c stdstr.c funseq.c
+```
+
+#### 依赖安装
+
+##### 基础依赖（TCP模式）
+```bash
+# Ubuntu/Debian
+make install-deps
+
+# CentOS/RHEL
+make install-deps-rhel
+```
+
+##### TLS依赖（TLS模式）
+```bash
+# Ubuntu/Debian
+make install-deps-tls
+
+# CentOS/RHEL
+make install-deps-tls-rhel
+```
+
+#### 运行时区别
+
+##### TCP模式
+- 连接提示：`正在连接到 127.0.0.1:18482 (TCP模式)...`
+- 成功提示：`✓ 已成功连接到 Mhuixs 服务器 (TCP明文)`
+- 数据传输：明文传输，性能较高
+
+##### TLS模式
+- 连接提示：`正在连接到 127.0.0.1:18482 (TLS模式)...`
+- 成功提示：`✓ 已成功连接到 Mhuixs 服务器 (TLS加密)`
+- 数据传输：加密传输，安全性高
+
+#### 调试和发布版本
+
+##### 调试版本
+```bash
+make debug          # TCP调试版本
+make debug-tls      # TLS调试版本
+```
+
+##### 发布版本
+```bash
+make release        # TCP发布版本
+make release-tls    # TLS发布版本
+```
+
+### 注意事项
+
+1. **服务器兼容性**：确保服务器支持对应的连接模式
+2. **证书配置**：TLS模式需要正确的证书配置
+3. **性能考虑**：TLS模式会有额外的加密开销
+4. **依赖管理**：TLS模式需要安装OpenSSL开发库
+
+
+### 帮助信息
+
+运行 `make help` 查看所有可用的编译选项和使用方法。 #################
+
 
 ## 协议架构
 

@@ -10,102 +10,80 @@ int KVALOT::add_key(str* key_name, obj_type type, void* parameter1, void* parame
     parameter2:其它参数
     parameter3:其它参数
     */
-    //先判断键名是否合法
-    if(key_name==NULL || key_name->string==NULL || key_name->len==0){
+    
+    // 检查对象状态
+    if (state != success) {
+        report(merr, kvalot_module, "KVALOT object is in error state");
         return merr;
     }
-    //先判断哈希桶是不是太少了
+    
+    // 验证键名合法性
+    if (validate_key_name(key_name) != success) {
+        return merr;
+    }
+    
+    // 检查是否需要扩容
     if(keynum+1 >= numof_tong * hash_k ){        
-        //自动对哈希桶数量进行扩容到下一个级别
-        //rise_capacity()函数会自动对哈希桶数量进行扩容到下一个级别
-        if(rise_capacity()==merr){
-           //如果扩容失败，返回错误
-            printf("KVALOT::add_key:Error: rise_capacity error.\n");
+        // 自动对哈希桶数量进行扩容到下一个级别
+        if(rise_capacity() == merr){
+            // 如果扩容失败，返回错误
+            report(merr, kvalot_module, "Failed to expand capacity in add_key");
+            state = merr;
             return merr; 
         }
     }
-    //检查type是否合法
+    
+    // 检查type是否合法
     if(iserr_obj_type(type) || type == M_NULL){
+        report(merr, kvalot_module, "Invalid object type");
         return merr;
     }
 
-    //对键名进行哈希，找到存储对应的哈希桶hash_index并保存
-    uint32_t hash_index=murmurhash(*key_name, bits(numof_tong));//计算哈希表索引
-    //寻找哈希桶内是否存在相同的键名
-    uint32_t numof_key_in_this_tong=hash_table[hash_index].numof_key;
-    uint32_t* offsetof_key=hash_table[hash_index].offsetof_key;
-    if(numof_key_in_this_tong!=0){
-        for(uint32_t i=0;i<numof_key_in_this_tong;i++){//遍历哈希桶内的所有键
-            //先比较长度
-            if(*(uint32_t*)g_memap.addr(offsetof_key[i]) == key_name->len){
-                //再比较内容
-                if( memcmp( g_memap.addr(offsetof_key[i]) + sizeof(uint32_t),
-                            key_name->string,
-                            key_name->len) ==0 ){
-                    //如果相同，返回错误
-                    return merr;
-                }
-            }            
-        }
-    }
-    
-    //上面都是一些检查，下面开始正式添加键值对，首先要创建指定类型的对象，要根据type的类型为KEY的handle分别处理
-    //优化：预分配内存，减少realloc次数
+    // 对键名进行哈希，找到存储对应的哈希桶hash_index并保存
+    uint32_t hash_index = murmurhash(*key_name, bits(numof_tong));
     HASH_TONG* current_tong = &hash_table[hash_index];
     
-    // 检查是否需要扩容桶内数组
-    // 如果当前桶内key数量为0，初始分配4个位置
-    // 如果桶内key数量达到当前分配大小，扩容为2倍
-    if(current_tong->numof_key == 0) {
-        // 初次分配
-        current_tong->offsetof_key = (uint32_t*)malloc(sizeof(uint32_t) * 4);
-        if(current_tong->offsetof_key == NULL) {
-            printf("KVALOT::add_key:Error: Memory allocation failed for offsetof_key.\n");
-            return merr;
-        }
-        current_tong->capacity = 4; // 添加capacity字段来记录分配的大小
-    } else {
-        // 检查是否需要扩容（这里假设HASH_TONG结构已经添加了capacity字段）
-        // 如果没有capacity字段，可以用简单的策略：每次增长时分配 (当前数量 + 4) 的空间
-        if(current_tong->numof_key >= current_tong->capacity) {
-            uint32_t new_capacity = current_tong->capacity * 2;
-            uint32_t* new_offsetof_key = (uint32_t*)realloc(
-                current_tong->offsetof_key,
-                sizeof(uint32_t) * new_capacity);
-            if(new_offsetof_key == NULL) {
-                printf("KVALOT::add_key:Error: Memory allocation failed for offsetof_key.\n");
-                return merr;
-            }
-            current_tong->offsetof_key = new_offsetof_key;
-            current_tong->capacity = new_capacity;
-        }
+    // 检查是否存在同名键
+    uint32_t existing_key_index = find_key_in_tong(current_tong, key_name);
+    if (existing_key_index != UINT32_MAX) {
+        report(merr, kvalot_module, "Key already exists");
+        return merr;
     }
     
-    //keypool增加一个元素,默认添加新键都是存放在键池keypool内的末尾
+    // 确保桶容量足够
+    if (tong_ensure_capacity(current_tong, current_tong->numof_key + 1) != success) {
+        state = merr;
+        return merr;
+    }
+    
+    // keypool增加一个元素,默认添加新键都是存放在键池keypool内的末尾
     keypool.emplace_back();//创建一个空的KEY对象
-    if(keypool[keynum].setname(*key_name)==merr)//设置键名
-    {
-        //如果设置键名失败，返回错误
-        printf("KVALOT::add_key:Error: setname error.\n");
+    
+    // 设置键名
+    if(keypool[keynum].setname(*key_name) == merr) {
+        report(merr, kvalot_module, "Failed to set key name");
         keypool.pop_back();//回滚
+        state = merr;
         return merr;
     }
 
-    int flag = keypool[keynum].bhs.make_self(type,parameter1,parameter2,parameter3);//创建对象
-    if(flag==merr){//如果创建对象失败，返回错误
-        printf("KVALOT::add_key:Error: make_self error.\n");
+    // 创建对象
+    int make_result = keypool[keynum].bhs.make_self(type, parameter1, parameter2, parameter3);
+    if(make_result == merr) {
+        report(merr, kvalot_module, "Failed to create object");
         keypool[keynum].clear_self();//回滚
         keypool.pop_back();//回滚
+        state = merr;
         return merr;
     }
-    keypool[keynum].hash_index=hash_index;//复制哈希表索引
+    keypool[keynum].hash_index = hash_index;//复制哈希表索引
     
-    //接下来才是更新哈希桶内的数据    
+    // 更新哈希桶内的数据    
     current_tong->offsetof_key[current_tong->numof_key] = keypool.size()-1;//桶内的键偏移量,从0开始
     current_tong->numof_key++;//桶内的键数量+1
 
     keynum++;//键数量+1
-    return 0;
+    return success;
 }
 
 int KVALOT::rmv_key(str* key_name)
@@ -114,44 +92,63 @@ int KVALOT::rmv_key(str* key_name)
     如果键类型为非HOOK,则直接删除键值对
     如果键类型为HOOK,则仅仅先断开链接,再删除KEY
     */
-    uint32_t hash_index = murmurhash(*key_name,bits(numof_tong));
+    
+    // 检查对象状态
+    if (state != success) {
+        report(merr, kvalot_module, "KVALOT object is in error state");
+        return merr;
+    }
+    
+    // 验证键名合法性
+    if (validate_key_name(key_name) != success) {
+        return merr;
+    }
+    
+    uint32_t hash_index = murmurhash(*key_name, bits(numof_tong));
     HASH_TONG* hash_tong = &hash_table[hash_index];
-    // 遍历哈希桶内的所有键
-    for (uint32_t i = 0; i < hash_tong->numof_key; i++) {
-        //i是当前键在哈希桶内的索引序号
-        KEY* key = &keypool[hash_tong->offsetof_key[i]];
-        if(*(uint32_t*)g_memap.addr(key->name) == key_name->len )//比较长度
-        {
-            if (memcmp(g_memap.addr(key->name)+sizeof(uint32_t),
-                         key_name->string ,key_name->len) == 0) {
-                //找到了要删除的键                
-                key->clear_self();//清除键值对
-            
-                //清空对应的哈希桶内的数据
-                //保存当前key的偏移量
-                uint32_t offsetof_rmkey=hash_tong->offsetof_key[i];
-                auto midit = keypool.begin()+offsetof_rmkey;
-                *midit = keypool.back();//把最后一个键移动到当前位置
-                //更新原来最后一个键对应的哈希桶内的数据
-                HASH_TONG* hash_tong_tail = &hash_table[midit->hash_index];
-                for(uint32_t i=0;i<hash_tong_tail->numof_key;i++){
-                    if(hash_tong_tail->offsetof_key[i]==keynum-1){
-                        hash_tong_tail->offsetof_key[i]=offsetof_rmkey;
-                        break;
-                    }
-                }
-                keypool.pop_back();//删除最后一个键
-                keynum--;//键数量-1
-
-
-                hash_tong->offsetof_key[i]=hash_tong->offsetof_key[hash_tong->numof_key-1];
-                hash_tong->numof_key--;
-
-                return 0;
+    
+    // 查找要删除的键
+    uint32_t found_index = find_key_in_tong(hash_tong, key_name);
+    if (found_index == UINT32_MAX) {
+        report(merr, kvalot_module, "Key not found for removal");
+        return merr;
+    }
+    
+    // 获取要删除的键
+    uint32_t key_pool_index = hash_tong->offsetof_key[found_index];
+    KEY* key_to_remove = &keypool[key_pool_index];
+    
+    // 清除键值对
+    key_to_remove->clear_self();
+    
+    // 如果不是最后一个键，需要移动数据
+    if (key_pool_index != keynum - 1) {
+        // 将最后一个键移动到当前位置
+        keypool[key_pool_index] = keypool[keynum - 1];
+        
+        // 更新被移动键在哈希桶中的索引
+        KEY* moved_key = &keypool[key_pool_index];
+        HASH_TONG* moved_key_tong = &hash_table[moved_key->hash_index];
+        
+        // 找到并更新移动键的索引
+        for (uint32_t i = 0; i < moved_key_tong->numof_key; i++) {
+            if (moved_key_tong->offsetof_key[i] == keynum - 1) {
+                moved_key_tong->offsetof_key[i] = key_pool_index;
+                break;
             }
         }
     }
-    return merr;
+    
+    // 从keypool中删除最后一个元素
+    keypool.pop_back();
+    keynum--;
+    
+    // 从哈希桶中删除该键的索引
+    // 将最后一个索引移动到当前位置
+    hash_tong->offsetof_key[found_index] = hash_tong->offsetof_key[hash_tong->numof_key - 1];
+    hash_tong->numof_key--;
+
+    return success;
 }
 
 
