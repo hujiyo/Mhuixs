@@ -3,7 +3,7 @@ output/
 
 .vscode/
 
-./todo.list
+todo.list
 
 cmake-build-debug/
 
