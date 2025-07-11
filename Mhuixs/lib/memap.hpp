@@ -24,8 +24,8 @@ struct MEMAP {
     uint32_t block_num;
 
     // 记录所有池指针和大小
-    std::vector<void*> pools;
-    std::vector<uint32_t> pool_sizes;
+    vector<void*> pools;
+    vector<uint32_t> pool_sizes;
 
     MEMAP(uint32_t block_size_, uint32_t block_num_);
     MEMAP(const MEMAP& other);
