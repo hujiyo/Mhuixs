@@ -13,6 +13,7 @@ Email:hj18914255909@outlook.com
 #include "registry.hpp"
 #include "merr.h"
 #include "Mhudef.hpp"
+#include "mtype.hpp"
 
 using namespace std;
 
@@ -23,11 +24,7 @@ hook在Mhuixs中被用来：
 3.分为有权HOOK和无权HOOK
 */
 
-enum Mode_type { 
-    HOOK_READ = 'r', 
-    HOOK_ADD = 'a', 
-    HOOK_DEL = 'd',
-};//HOOK的操作类型
+
 
 struct permission_struct{
     uint16_t ifisinit:1;//是否初始化:一旦初始化权限就生效

@@ -38,6 +38,7 @@ enum mrc {
     null_hook,//hook为空！
 
     permission_denied,//权限不足！
+
     
     //...
     //...

@@ -20,10 +20,14 @@ Email:hj18914255909@outlook.com
 #include "getid.hpp"
 #include "hook.hpp"
 #include "env.hpp"
-#include "mlib/bcrypt.h"
+#include "bcrypt.h"
+#include "merr.h"
 
 using namespace std;
 
+#define no_such_username -1 //没有这个用户名
+#define certificate_failed -2 //认证失败
+#define certificate_success 0 //认证成功
 #define merr -1
 /*
 用户/组管理模块
@@ -75,6 +79,8 @@ public:
     int is_entitled(HOOK &hook,UID applicant_uid,Mode_type mode);//检查用户是否有权限访问钩子 1有权限 0无权限 -1错误
 
     GID get_primary_gid_by_uid(UID uid);
+
+    int certification(SID session_id,string username_to_be_verified,string passwd_to_be_verified);
 
     friend int init_User_group_manager();
 };

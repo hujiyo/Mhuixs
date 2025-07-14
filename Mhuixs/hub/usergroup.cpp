@@ -178,7 +178,7 @@ UID User_group_manager::get_uid_by_username(string username) {
     for (const auto& user : users) {
         if (user.username == username) return user.uid;
     }
-    return merr;
+    return no_such_username;
 }
 
 GID User_group_manager::get_gid_by_groupname(string groupname) {
@@ -230,6 +230,27 @@ int User_group_manager::is_entitled(HOOK &hook, UID applicant_uid, Mode_type mod
         case HOOK_DEL:  return hook.pm_s.other_del ? 1 : 0;
         default: return merr;
     }
+}
+
+int User_group_manager::certification(SID session_id, string username_to_be_verified,string passwd_to_be_verified)
+{
+    UID uid_to_be_verified = get_uid_by_username(username_to_be_verified);
+    if (uid_to_be_verified == no_such_username)  {
+        return certificate_failed;//认证失败
+    }
+    const size_t num = users.size();
+    for (size_t i = 0; i < num; i++)
+    {
+        if (users[i].uid == uid_to_be_verified)   {
+            // 验证密码
+            if (bcrypt_checkpw(passwd_to_be_verified.c_str(), users[i].password.c_str()) != 0)  {
+                return certificate_failed;
+            }
+            auth_session(session_id, uid_to_be_verified);
+            return certificate_success;
+        }
+    }
+    return certificate_failed;
 }
 
 int init_User_group_manager() {    

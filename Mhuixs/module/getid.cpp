@@ -31,9 +31,8 @@ UID Id_alloctor::get_uid(UID_t type) {
     uint32_t start = 0, end = 0;
     switch(type) {
         case ROOT_UID:    start = 0; end = 0; break;
-        case SYSTEM_UID:  start = 1; end = 98; break;
-        case COMMON_UID:  start = 99; end = 49999; break;
-        case TEMP_UID:    start = 50000; end = 65535; break;
+        case SYSTEM_UID:  start = 1; end = 99; break;
+        case COMMON_UID:  start = 100; end = 65535; break;
         default: return merr;
     }
     lock_guard<mutex> lock(uid_mutex);// 锁定用户ID位图
@@ -48,9 +47,8 @@ UID Id_alloctor::del_uid(UID_t type, UID uid) {
     uint32_t start = 0, end = 0;
     switch(type) {
         case ROOT_UID:    start = 0; end = 0; break;
-        case SYSTEM_UID:  start = 1; end = 98; break;
-        case COMMON_UID:  start = 99; end = 49999; break;
-        case TEMP_UID:    start = 50000; end = 65535; break;
+        case SYSTEM_UID:  start = 1; end = 99; break;
+        case COMMON_UID:  start = 100; end = 65535; break;
         default: return merr;
     }
     if(uid < (int)start || uid > (int)end) return merr;
@@ -61,40 +59,52 @@ UID Id_alloctor::del_uid(UID_t type, UID uid) {
 
 // 组ID分配
 GID Id_alloctor::get_gid(GID_t type) {    
-    uint32_t start = 0, end = 0;
+    int start = 0, end = 0;
     switch(type) {
         case SYSTEM_GID:    start = 0; end = 0; break;
         case COMMON_GID:   start = 1; end = 65535; break;
-        case TEMP_GID:  start = 65536; end = 65536; break;
         default: return merr;
     }
     lock_guard<mutex> lock(gid_mutex);// 锁定组ID位图
     int64_t idx = gid_bitmap.find(0, start, end);
     if(idx == merr) return merr;
-    gid_bitmap.set((GID)idx, 1);
-    return (GID)idx;
+    gid_bitmap.set(idx, 1);
+    return idx;
 }
 
 // 释放组ID
 GID Id_alloctor::del_gid(GID_t type, GID gid) {
-    uint32_t start = 0, end = 0;
+    int start = 0, end = 0;
     switch(type) {
         case SYSTEM_GID:    start = 0; end = 0; break;
         case COMMON_GID:   start = 1; end = 65535; break;
-        case TEMP_GID:  start = 65536; end = 65536; break;
         default: return merr;
     }
-    if(gid < (int)start || gid > (int)end) return merr;
+    if(gid < start || gid > end) return merr;
 
     lock_guard<mutex> lock(gid_mutex);// 锁定组ID位图
-    gid_bitmap.set((GID)gid, 0);
+    gid_bitmap.set(gid, 0);
     return 0;
 }
 
-Id_alloctor Idalloc;
-
+static int if_init = 0;
 
 //id分配器模块初始化
-int id_alloc_init(){
-    return 0;
+mrc Id_alloctor::close() {
+    if_init=0;
+    sid_bitmap.~BITMAP();
+    uid_bitmap.~BITMAP();
+    gid_bitmap.~BITMAP();
+    return success;
+}
+mrc Id_alloctor::init()    {
+    sid_bitmap = BITMAP(65536);
+    uid_bitmap = BITMAP(65536);
+    gid_bitmap = BITMAP(65536);
+    if (sid_bitmap.iserr()||uid_bitmap.iserr()||gid_bitmap.iserr()) {
+        close();
+        return init_failed;
+    }
+    if_init=1;
+    return success;
 }
