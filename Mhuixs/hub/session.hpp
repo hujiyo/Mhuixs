@@ -32,13 +32,12 @@
 #define DEFAULT_HEARTBEAT_INTERVAL 10 // 默认心跳间隔(s)
 #define TIMEOUT 300 // 默认超时时间(s)
 #define CLEANUP_INTERVAL 60 //默认会话池清理间隔（s）
-#define HEALTH_CHECK_INTERVAL 30 //会话健康检查间隔
 
 #define MAX_BUFFER_SIZE 256*1024 //默认最大缓冲区为256KB
 #define DEFAULT_BUFFER_SIZE 4*1024 //默认缓冲区大小为4KB
 
 #define EPOLL_MAX_EVENTS 1024 //epoll单批次返回最大事件数
-#define EPOLL_TIMEOUT -1 //epoll超时时间(毫秒) -1:一直等待
+#define EPOLL_TIMEOUT 100 //epoll超时时间(毫秒)
 
 #define PORT 18482
 #define LISTEN_BACKLOG 1024
@@ -69,8 +68,6 @@ typedef enum {
 #define SESS_ERR         -1
 #define SESS_INVALID     -2
 #define SESS_FULL        -3
-#define SESS_NOT_FOUND   -4
-#define SESS_PERMISSION  -5
 
 // 命令结构体
 typedef struct command {
@@ -80,7 +77,6 @@ typedef struct command {
     uint32_t priority;          // 命令优先级
     uint32_t data_len;          // 数据长度
     uint8_t* data;              // 命令数据
-    time_t timestamp;           // 时间戳
     command* next;       // 链表指针
 } command_t;
 
@@ -95,10 +91,6 @@ typedef struct {
     int shutdown;               // 关闭标志
 } command_queue_t;
 
-//=============================================================================
-// 会话结构体 (类比进程描述符PCB)
-//=============================================================================
-
 typedef struct buffer_struct {
     uint8_t* buffer;//缓冲区
     uint32_t capacity;//缓冲区容量
@@ -109,61 +101,40 @@ typedef struct buffer_struct {
 
 command_queue_t* command_queue; // 全局命令队列
 
-// 会话结构体 - 核心会话对象
+
 typedef struct session {
-    SID session_id;                 // 会话ID
-    int socket_fd;                  // 套接字文件描述符
+    SID session_id;               // 会话ID
+    int socket_fd;                // 套接字文件描述符
     sockaddr_storage client_addr; // 客户端地址
-
-    volatile UID user_id;                // 用户认证ID信息（通过执行模块接口修改）
-
-    volatile session_state_t state; // 会话状态
-    time_t last_activity;           // 最后活动时间
-
+    volatile UID user_id;         // 用户认证ID信息（通过执行模块接口修改）
+    volatile session_state_t state;// 会话状态
     buffer_struct recv_buffer;// 接收缓冲区
     buffer_struct send_buffer;// 发送缓冲区
-
-    pthread_mutex_t session_mutex;  // 会话互斥锁
-
-    size_t bytes_received;    // 接收字节数
-    size_t bytes_sent;        // 发送字节数
-} session_t;
+    time_t last_activity;          // 最后活动时间
+    pthread_mutex_t session_mutex; // 会话互斥锁
+} session_t;//会话描述符
 
 // 网络管理器结构体
 struct network_manager_t{
-    //
     session_t* sesspool;            // 会话池
     SIIP* idle_sessions;        // 空闲会话ID数组
     SIIP* active_sessions;      // 活跃会话ID数组
-    SIIP* error_sessions;       // 错误会话ID数组
     volatile uint32_t pool_capacity;  // 会话池容量
-    volatile uint32_t idle_count;   // 空闲会话数
-    volatile uint32_t active_count; // 活跃会话数
-    volatile uint32_t error_count;  // 错误会话数
-
+    volatile uint32_t idle_num;   // 空闲会话数
+    volatile uint32_t active_num; // 活跃会话数
     pthread_mutex_t pool_mutex;     // 池互斥锁
-    //
+
     int listen_fd;                  // 监听套接字
     int epoll_fd;                   // epoll文件描述符:通知
-    
     pthread_t* network_threads;     // 网络线程数组
     pthread_t* worker_threads;      // 工作线程数组
-
     pthread_t cleanup_thread;       // 清理线程
     pthread_t health_check_thread;  // 健康检查线程
     volatile int shutdown_requested;// 关闭请求标志
-
     pthread_mutex_t manager_mutex;  // 管理器锁
     
     volatile int initialized;       // 初始化标志
     volatile int running;           // 运行标志
-
-    // 统计信息
-    volatile uint64_t total_connections; // 总连接数
-
-    volatile uint64_t active_connections; // 活跃连接数
-    volatile uint64_t failed_connections; // 失败连接数
-    volatile uint64_t bytes_processed; // 处理字节数
 };
 
 // 命令队列操作
@@ -176,7 +147,7 @@ void shutdown_command_queue(command_queue_t* queue);//关闭命令队列
 uint32_t command_queue_size(command_queue_t* queue);//获取命令队列大小（线程安全）
 
 // 队列命令操作
-command_t* command_create(CommandNumber cmd_id,uint32_t seq_num,uint32_t priority,
+command_t* command_create(UID caller,CommandNumber cmd_id,uint32_t seq_num,uint32_t priority,
                          const uint8_t* data,uint32_t data_len);//创建命令
 void command_destroy(command_t* cmd);//销毁命令
 int push_command(command_t* cmd);//将命令推入会话队列
@@ -198,19 +169,11 @@ int session_process_incoming_packets(session_t* session);//处理入站数据包
 // 会话状态管理
 void session_set_state(session_t* session, session_state_t new_state);//设置会话状态
 
-// 会话健康检查
-int _session_is_healthy(const session_t* session);//检查会话是否健康
-
-// 会话池操作
-void destroy_pool(network_manager_t* pool);//销毁会话池
-int pool_init(network_manager_t* pool);//初始化会话池
-
 session_t* alloc_with_socket(network_manager_t* pool, int socket_fd,const sockaddr* client_addr);//分配会话
 int recycle_session(network_manager_t* pool, SID session_id);//回收会话
 
 // 统计和维护
 void cleanup_dead_sessions(network_manager_t* pool);//清理死亡会话
-void check_all_sessions(network_manager_t* pool);//检查所有会话的健康状态
 
 // 网络管理器操作
 void _destroy_network_manager(network_manager_t* manager);//销毁网络管理器
@@ -226,16 +189,8 @@ int send_response_to_session(SID session_id, const uint8_t* response, uint32_t r
 int auth_session(SID session_id, UID uid);//认证会话后用户管理模块调用本函数对session信息进行修改
 void invalidate_session_auth(SID session_id);//使会话认证失效
 
-//=============================================================================
-// 全局接口
-//=============================================================================
 int session_system_init();//初始化会话系统,由Mhuixs主线程启动阶段调用
 void shutdown_session_system();//关闭会话系统,由Mhuixs主线程启动阶段调用
-
-//非核心函数
-UID get_session_user_id(SID session_id);//获取会话用户ID
-session_t* pool_find_session_by_uid(network_manager_t* pool, UID user_id);//按用户ID查找会话
-
 
 #ifdef __cplusplus
 }
