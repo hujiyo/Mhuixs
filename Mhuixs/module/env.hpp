@@ -5,20 +5,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/sysinfo.h>
 
 #include <string>
 #include <cctype>
 #include <sstream>
 #include <iostream>
+#include <stdexcept>
 
-#ifdef _WIN32
-#include <windows.h>
-#include <io.h>
-#else
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/sysinfo.h>
-#endif
 using namespace std;
 
 /*
@@ -35,14 +31,17 @@ Mhuixs 环境变量模块
 
 #define ENV_PATH_MAX 256
 
+//字段：
 struct ENV {
     string MhuixsHomePath;// Mhuixs内部储存位置
     int threadslimit;// 线程数量限制
     int memmorylimit;// 内存限制
+    size_t max_sessions;// 最大会话数限制
+    int disablecompression;// 禁用压缩标志
 };
 
 
-extern const ENV Env;// 全局唯一环境配置结构体
+extern ENV Env;// 全局唯一环境配置结构体
 
 int env_init();//返回0成功，非0失败
 

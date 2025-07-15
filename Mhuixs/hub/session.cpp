@@ -1,12 +1,33 @@
 #include "session.hpp"
 
-extern Id_alloctor Idalloc;
-
 // 全局变量
+extern Id_alloctor Idalloc;
 static network_manager_t* g_network_manager = NULL;//网络管理器
-static session_pool_t* g_session_pool = NULL;//会话池
-static pthread_mutex_t g_global_mutex = PTHREAD_MUTEX_INITIALIZER;//全局互斥锁
 
+////本地函数////
+int _init_session_on(session_t* session);//初始化会话
+void _destroy_session_on(session_t* session);//销毁会话
+int _create_session_on(session_t* session, int socket_fd, const sockaddr* client_addr);//初始化会话
+void _shutdown_session_on(session_t* session);//关闭会话
+session_t* _alloc_session(network_manager_t* pool);//从空闲池中分配新会话
+int _network_manager_init(network_manager_t* manager);//初始化网络管理器
+session_t* _try_get_session(SIIP siid);//按会话SIID查找会话
+int _set_socket_nonblocking(int sockfd);//设置套接字非阻塞
+
+
+int _set_socket_nonblocking(int sockfd) {
+    int flags = fcntl(sockfd, F_GETFL, 0);
+    if (flags == -1) {
+        return SESS_ERROR;
+    }
+
+    if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK) == -1) {
+        return SESS_ERROR;
+    }
+
+    return SESS_OK;
+}
+//命令队列相关函数
 command_queue_t* create_command_queue(uint32_t max_size) {
     command_queue_t* queue =(command_queue_t*)calloc(1,sizeof(command_queue_t));
     if (!queue) return NULL;
@@ -24,7 +45,6 @@ command_queue_t* create_command_queue(uint32_t max_size) {
     }
     return queue;
 }
-
 void destroy_command_queue(command_queue_t* queue) {
     /*
      *确保：
@@ -50,7 +70,6 @@ void destroy_command_queue(command_queue_t* queue) {
     pthread_cond_destroy(&queue->cond);
     free(queue);
 }
-
 int command_queue_push(command_queue_t* queue, command_t* cmd) {
     if (!queue || !cmd) return SESS_INVALID;
     
@@ -92,9 +111,9 @@ command_t* command_queue_pop(command_queue_t* queue, uint32_t timeout_ms) {
     
     pthread_mutex_lock(&queue->mutex);
     
-    struct timespec ts;
+    timespec ts;
     if (timeout_ms > 0) {
-        struct timeval tv;
+        timeval tv;
         gettimeofday(&tv, NULL);
         ts.tv_sec = tv.tv_sec + timeout_ms / 1000;
         ts.tv_nsec = (tv.tv_usec + (timeout_ms % 1000) * 1000) * 1000;
@@ -143,9 +162,6 @@ command_t* command_queue_try_pop(command_queue_t* queue) {
     pthread_mutex_unlock(&queue->mutex);
     return cmd;
 }
-
-
-
 void shutdown_command_queue(command_queue_t* queue) {
     if (!queue) return;
     
@@ -154,7 +170,6 @@ void shutdown_command_queue(command_queue_t* queue) {
     pthread_cond_broadcast(&queue->cond);
     pthread_mutex_unlock(&queue->mutex);
 }
-
 uint32_t command_queue_size(command_queue_t* queue) {
     if (!queue) return 0;
     
@@ -164,7 +179,6 @@ uint32_t command_queue_size(command_queue_t* queue) {
     
     return size;
 }
-
 command_t* command_create(const CommandNumber cmd_id,const uint32_t seq_num,const uint32_t priority,
                          const uint8_t* data,const uint32_t data_len) {
     command_t* cmd = (command_t*)malloc(sizeof(command_t));
@@ -188,7 +202,6 @@ command_t* command_create(const CommandNumber cmd_id,const uint32_t seq_num,cons
     
     return cmd;
 }
-
 void command_destroy(command_t* cmd) {
     if (!cmd) return;
     
@@ -197,7 +210,7 @@ void command_destroy(command_t* cmd) {
     }
     free(cmd);
 }
-
+//缓冲区操作函数
 int buffer_write(buffer_struct buffer, const uint8_t* data, uint32_t len) {
     if (!data || len == 0) return SESS_INVALID;
     
@@ -235,7 +248,6 @@ int buffer_write(buffer_struct buffer, const uint8_t* data, uint32_t len) {
     pthread_mutex_unlock(&buffer.mutex);
     return SESS_OK;
 }
-
 uint32_t buffer_read(buffer_struct* buffer, uint8_t* data, uint32_t max_len) {
     if (!buffer || !data || max_len == 0) return 0;
     
@@ -252,7 +264,6 @@ uint32_t buffer_read(buffer_struct* buffer, uint8_t* data, uint32_t max_len) {
     pthread_mutex_unlock(&buffer->mutex);
     return to_read;
 }
-
 uint32_t buffer_peek(buffer_struct* buffer, uint8_t* data, uint32_t max_len) {
     if (!buffer || !data || max_len == 0) return 0;
     
@@ -268,7 +279,6 @@ uint32_t buffer_peek(buffer_struct* buffer, uint8_t* data, uint32_t max_len) {
     pthread_mutex_unlock(&buffer->mutex);
     return to_peek;
 }
-
 uint32_t get_buffer_available_size(buffer_struct* buffer) {
     if (!buffer) return 0;
     
@@ -278,7 +288,6 @@ uint32_t get_buffer_available_size(buffer_struct* buffer) {
     
     return available;
 }
-
 void clear_buffer(buffer_struct* buffer) {
     if (!buffer) return;
     
@@ -287,7 +296,6 @@ void clear_buffer(buffer_struct* buffer) {
     buffer->write_pos = 0;
     pthread_mutex_unlock(&buffer->mutex);
 }
-
 void compact_buffer(buffer_struct* buffer) {
     if (!buffer) return;
     
@@ -304,62 +312,47 @@ void compact_buffer(buffer_struct* buffer) {
     
     pthread_mutex_unlock(&buffer->mutex);
 }
-
-session_t* create_session(const int if_default,const uint32_t max_buffer_size,const int if_disable_cpr) {
-    session_t* session = (session_t*)calloc(1,sizeof(session_t));
-    if (!session) return NULL;
-
+//会话相关函数
+int _init_session_on(session_t* session) {
+    //必须保证地址的有效性
     session->session_id = Idalloc.get_sid();
     session->socket_fd = -1;
     session->state = SESS_IDLE;
-    session->priority = PRIORITY_NORMAL;
     session->last_activity = time(NULL);
-
-    // 复制配置
-    if (if_default) {
-        session->max_buffer_size = max_buffer_size;
-        session->if_disable_cpr = if_disable_cpr;
-    } else { // 默认配置
-        session->max_buffer_size = 4 * 4096;
-        session->if_disable_cpr = 1;//默认不禁用自动压缩
-    }
     
     // 初始化互斥锁
     if (pthread_mutex_init(&session->session_mutex, NULL) != 0) {
         free(session);
-        return NULL;
+        return SESS_ERR;
     }
     
     // 创建网络缓冲区
-    const size_t initial_capacity = session->max_buffer_size / 2;
-    session->recv_buffer.buffer = (uint8_t*)calloc(1,initial_capacity);
-    session->send_buffer.buffer = (uint8_t*)calloc(1,initial_capacity);
+    session->recv_buffer.buffer = (uint8_t*)calloc(1,DEFAULT_BUFFER_SIZE);
+    session->send_buffer.buffer = (uint8_t*)calloc(1,DEFAULT_BUFFER_SIZE);
     if (!session->recv_buffer.buffer ||
         pthread_mutex_init(&session->recv_buffer.mutex, NULL) != 0)   {
         free(session->send_buffer.buffer);
         pthread_mutex_destroy(&session->session_mutex);
         free(session);
-        return NULL;
+        return SESS_ERR;
     }
     if (!session->send_buffer.buffer||
         pthread_mutex_init(&session->send_buffer.mutex, NULL) != 0)   {
         free(session->recv_buffer.buffer);
         pthread_mutex_destroy(&session->session_mutex);
         free(session);
-        return NULL;
+        return SESS_ERR;
     }
-    session->recv_buffer.capacity = initial_capacity;
-    session->send_buffer.capacity = initial_capacity;
+    session->recv_buffer.capacity = DEFAULT_BUFFER_SIZE;
+    session->send_buffer.capacity = DEFAULT_BUFFER_SIZE;
     
     // 初始化认证信息
     session->user_id = 65536;
-    return session;
+    return SESS_OK;
 }
-
-void destroy_session(session_t* session) {
-    if (!session) return;
-    session_shutdown(session);
-    
+void _destroy_session_on(session_t* session) {
+    //必须保证地址的有效性
+    _shutdown_session_on(session);
     //清空接收缓冲区
     pthread_mutex_destroy(&session->recv_buffer.mutex);
     if (session->recv_buffer.buffer) {
@@ -372,10 +365,7 @@ void destroy_session(session_t* session) {
     }
     pthread_mutex_destroy(&session->session_mutex);
 }
-
-int session_init(session_t* session, int socket_fd, const struct sockaddr* client_addr) {
-    if (!session) return SESS_INVALID;
-    
+int _create_session_on(session_t* session, int socket_fd, const sockaddr* client_addr) {
     pthread_mutex_lock(&session->session_mutex);
     
     if (session->state != SESS_IDLE) { //检查是否是空的
@@ -388,14 +378,14 @@ int session_init(session_t* session, int socket_fd, const struct sockaddr* clien
     // 复制客户端地址
     if (client_addr) {
         if (client_addr->sa_family == AF_INET) {
-            memcpy(&session->client_addr, client_addr, sizeof(struct sockaddr_in));
+            memcpy(&session->client_addr, client_addr, sizeof(sockaddr_in));
         } else if (client_addr->sa_family == AF_INET6) {
-            memcpy(&session->client_addr, client_addr, sizeof(struct sockaddr_in6));
+            memcpy(&session->client_addr, client_addr, sizeof(sockaddr_in6));
         }
     }
     
     // 设置套接字为非阻塞
-    if (set_socket_nonblocking(socket_fd) != 0) {
+    if (_set_socket_nonblocking(socket_fd) != 0) {
         pthread_mutex_unlock(&session->session_mutex);
         return SESS_ERROR;
     }
@@ -403,8 +393,6 @@ int session_init(session_t* session, int socket_fd, const struct sockaddr* clien
     // 重置统计信息
     session->bytes_received =0;
     session->bytes_sent =0;
-    session->commands_processed =0;
-    session->commands_queued =0;
     session->last_activity = time(NULL);
     
     // 清理命令队列和缓冲区
@@ -415,260 +403,61 @@ int session_init(session_t* session, int socket_fd, const struct sockaddr* clien
     session->user_id = 65536;
     // 更新状态
     session->state = SESS_ALIVE;
-    session->priority = PRIORITY_NORMAL;
-    session->revisit_count = 0;
     session->last_activity = time(NULL);
     
     pthread_mutex_unlock(&session->session_mutex);
     return SESS_OK;
 }
-
-void session_shutdown(session_t* session) { //客户端断开连接
-    if (!session) return;
-    
+void _shutdown_session_on(session_t* session) {
+    //必须保证地址的有效性
     pthread_mutex_lock(&session->session_mutex);
-    
     if (session->state == SESS_IDLE) {
         pthread_mutex_unlock(&session->session_mutex);
         return;
     }
-    
     session->state = SESS_CLOSING;
 
-    // 发送缓冲区中的剩余数据
-    session_send_data(session);
+    session_send_data(session);// 发送缓冲区中的剩余数据 //////////
+    ////////////////////////////////缓冲区清理
     
-    // 关闭套接字
+    // 关闭套接字 客户端断开连接
     if (session->socket_fd >= 0) {
         close(session->socket_fd);
         session->socket_fd = -1;
     }
     
-    // 清空地址
-    memset(&session->client_addr, 0, sizeof(session->client_addr));
-    
-    session->state = SESS_IDLE;
-    
+    session->state = SESS_IDLE;//标记为空闲，内存清理的事情交给下一个使用者
     pthread_mutex_unlock(&session->session_mutex);
 }
 
-int set_socket_nonblocking(int sockfd) {
-    int flags = fcntl(sockfd, F_GETFL, 0);
-    if (flags == -1) {
-        return SESS_ERROR;
-    }
-    
-    if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK) == -1) {
-        return SESS_ERROR;
-    }
-    
-    return SESS_OK;
-}
-
-const char* session_state_to_string(session_state_t state) {
-    switch (state) {
-        case SESS_IDLE: return "IDLE";
-        case SESS_ALIVE: return "ALIVE";
-        case SESS_SLEEPING: return "SLEEPING";
-        case SESS_BUSY: return "BUSY";
-        case SESS_SUPER: return "SUPER";
-        case SESS_CLOSING: return "CLOSING";
-        case SESS_ERROR: return "ERROR";
-        default: return "UNKNOWN";
-    }
-}
-
-const char* session_priority_to_string(session_priority_t priority) {
-    switch (priority) {
-        case PRIORITY_LOWEST: return "LOWEST";
-        case PRIORITY_LOW: return "LOW";
-        case PRIORITY_NORMAL: return "NORMAL";
-        case PRIORITY_HIGH: return "HIGH";
-        case PRIORITY_HIGHEST: return "HIGHEST";
-        case PRIORITY_SUPER: return "SUPER";
-        default: return "UNKNOWN";
-    }
-}
-
-/*
- * 会话池管理实现
- */
-
-// 清理线程函数
-static void* pool_cleanup_thread(void* arg) {
-    session_pool_t* pool = (session_pool_t*)arg;
-    while (!pool->shutdown_requested) {
+// “死会话清理”-线程函数
+static void* cleanup_thread(void* arg) {
+    network_manager_t* manager = (network_manager_t*)arg;
+    while (!manager->shutdown_requested) {
         sleep(CLEANUP_INTERVAL);
-        pool_cleanup_dead_sessions(pool);
+        cleanup_dead_sessions(manager);
     }
     return NULL;
 }
-
-// 健康检查线程函数
+// “健康检查”-线程函数
 static void* session_pool_health_check_thread(void* arg) {
-    session_pool_t* pool =(session_pool_t*)arg;
+    network_manager_t* pool =(network_manager_t*)arg;
     while (!pool->shutdown_requested) {
         sleep(HEALTH_CHECK_INTERVAL);
-        pool_check_all_sessions(pool);
+        check_all_sessions(pool);
     }
     return NULL;
 }
 
-session_pool_t* create_pool(// 会话池配置
-    int if_default,                 // 是否启动默认配置信息
-    uint32_t max_sessions,          // 最大会话数
-    uint32_t initial_pool_size,     // 初始池大小
-    uint32_t max_idle_sessions,     // 最大空闲会话数
-    int enable_auto_cleanup,        // 是否启用自动清理
-    int enable_session_reuse       // 是否启用会话重用
-    ) {
-    session_pool_t* pool = malloc(sizeof(session_pool_t));
-    if (!pool) return NULL;
-
-    memset(pool, 0, sizeof(session_pool_t));
-
-    // 复制配置
-    if (!if_default) {
-        pool->max_sessions = max_sessions;
-        pool->initial_pool_size = initial_pool_size;
-        pool->max_idle_sessions = max_idle_sessions;
-        pool->enable_auto_cleanup = enable_auto_cleanup;
-        pool->enable_session_reuse = enable_session_reuse;
-    } else {
-        // 默认配置
-        pool->max_sessions = 10000;
-        pool->initial_pool_size = 100;
-        pool->max_idle_sessions = 1000;
-        pool->enable_auto_cleanup = 1;
-        pool->enable_session_reuse = 1;
-    }
-
-    // 分配会话数组
-    pool->sessions = (session_t*)malloc(pool->max_sessions * sizeof(session_t));
-    if (!pool->sessions) {
-        free(pool);
-        return NULL;
-    }
-
-    // 分配索引数组
-    pool->idle_sessions = (uint32_t*)malloc(pool->max_sessions * sizeof(uint32_t));
-    pool->active_sessions = (uint32_t*)malloc(pool->max_sessions * sizeof(uint32_t));
-    pool->error_sessions = (uint32_t*)malloc(pool->max_sessions * sizeof(uint32_t));
-
-    if (!pool->idle_sessions || !pool->active_sessions || !pool->error_sessions) {
-        if (pool->idle_sessions) free(pool->idle_sessions);
-        if (pool->active_sessions) free(pool->active_sessions);
-        if (pool->error_sessions) free(pool->error_sessions);
-        free(pool->sessions);
-        free(pool);
-        return NULL;
-    }
-
-    // 初始化互斥锁
-    if (pthread_mutex_init(&pool->pool_mutex, NULL) != 0) {
-        free(pool->idle_sessions);
-        free(pool->active_sessions);
-        free(pool->error_sessions);
-        free(pool->sessions);
-        free(pool);
-        return NULL;
-    }
-
-    return pool;
-}
-
-void destroy_pool(session_pool_t* pool) {
-    if (!pool) return;
-
-    shutdown_pool(pool);
-
-    // 销毁所有会话
-    for (uint32_t i = 0; i < pool->max_sessions; i++) {
-        destroy_session(&pool->sessions[i]);
-    }
-
-    if (pool->sessions) free(pool->sessions);
-    if (pool->idle_sessions) free(pool->idle_sessions);
-    if (pool->active_sessions) free(pool->active_sessions);
-    if (pool->error_sessions) free(pool->error_sessions);
-
-    pthread_mutex_destroy(&pool->pool_mutex);
-    free(pool);
-}
-
-int pool_init(session_pool_t* pool) {
-    if (!pool) return SESS_INVALID;
-
+session_t* _alloc_session(network_manager_t* pool) {
     pthread_mutex_lock(&pool->pool_mutex);
-
-    // 初始化所有会话为空闲状态
-    for (uint32_t i = 0; i < pool->max_sessions; i++) {
-        session_t* session = create_session(0,4*4096,0);
-
-        if (!session) {
-            pthread_mutex_unlock(&pool->pool_mutex);
-            return SESS_ERROR;
-        }
-
-        pool->sessions[i] = *session;
-        pool->idle_sessions[i] = i;
-        free(session); // 只要内容，不要指针
-    }
-
-    pool->idle_count = pool->max_sessions;
-    pool->active_count = 0;
-    pool->error_count = 0;
-
-    // 启动清理线程
-    if (pthread_create(&pool->cleanup_thread, NULL, pool_cleanup_thread, pool) != 0) {
-        pthread_mutex_unlock(&pool->pool_mutex);
-        return SESS_ERROR;
-    }
-
-    // 启动健康检查线程
-    if (pthread_create(&pool->health_check_thread, NULL, session_pool_health_check_thread, pool) != 0) {
-        pool->shutdown_requested = 1;
-        pthread_join(pool->cleanup_thread, NULL);
-        pthread_mutex_unlock(&pool->pool_mutex);
-        return SESS_ERROR;
-    }
-
-    pthread_mutex_unlock(&pool->pool_mutex);
-    return SESS_OK;
-}
-
-void shutdown_pool(session_pool_t* pool) {
-    if (!pool) return;
-
-    pthread_mutex_lock(&pool->pool_mutex);
-    pool->shutdown_requested = 1;
-    pthread_mutex_unlock(&pool->pool_mutex);
-
-    // 等待线程结束
-    pthread_join(pool->cleanup_thread, NULL);
-    pthread_join(pool->health_check_thread, NULL);
-
-    // 关闭所有活跃会话
-    pthread_mutex_lock(&pool->pool_mutex);
-    for (uint32_t i = 0; i < pool->active_count; i++) {
-        uint32_t session_id = pool->active_sessions[i];
-        session_shutdown(&pool->sessions[session_id]);
-    }
-    pthread_mutex_unlock(&pool->pool_mutex);
-}
-
-session_t* pool_alloc_session(session_pool_t* pool) {
-    if (!pool) return NULL;
-
-    pthread_mutex_lock(&pool->pool_mutex);
-
     if (pool->idle_count == 0) {
         pthread_mutex_unlock(&pool->pool_mutex);
         return NULL; // 没有空闲会话
     }
 
     // 从空闲列表中取出一个会话
-    uint32_t session_id = pool->idle_sessions[pool->idle_count - 1];
+    const uint32_t session_id = pool->idle_sessions[pool->idle_count - 1];
     pool->idle_count--;
 
     // 添加到活跃列表
@@ -679,27 +468,26 @@ session_t* pool_alloc_session(session_pool_t* pool) {
     pool->active_sessions++;
     pool->idle_sessions--;
 
-    session_t* session = &pool->sessions[session_id];
-
+    session_t* session = &pool->sesspool[session_id];
     pthread_mutex_unlock(&pool->pool_mutex);
     return session;
 }
 
-session_t* pool_alloc_with_socket(session_pool_t* pool, int socket_fd,
-                                           const struct sockaddr* client_addr) {
-    session_t* session = pool_alloc_session(pool);
+session_t* alloc_with_socket(network_manager_t* pool, int socket_fd,
+                                           const sockaddr* client_addr) {
+    if (!pool)return NULL;
+    session_t* session = _alloc_session(pool);
     if (!session) return NULL;
 
-    if (session_init(session, socket_fd, client_addr) != SESS_OK) {
-        pool_recycle_session(pool, session->session_id);
+    if (_create_session_on(session, socket_fd, client_addr) != SESS_OK) {
+        recycle_session(pool, session->session_id);
         return NULL;
     }
-
     return session;
 }
 
-int pool_recycle_session(session_pool_t* pool,const SID session_id) {
-    if (!pool || session_id >= pool->max_sessions) return SESS_INVALID;
+int recycle_session(network_manager_t* pool,const SID session_id) {
+    if (!pool || session_id >= Env.max_sessions) return SESS_INVALID;
 
     pthread_mutex_lock(&pool->pool_mutex);
 
@@ -733,7 +521,7 @@ int pool_recycle_session(session_pool_t* pool,const SID session_id) {
 
     if (found) {
         // 重置会话
-        session_shutdown(&pool->sessions[session_id]);
+        _shutdown_session_on(&pool->sesspool[session_id]);
 
         // 添加到空闲列表
         pool->idle_sessions[pool->idle_count] = session_id;
@@ -748,21 +536,19 @@ int pool_recycle_session(session_pool_t* pool,const SID session_id) {
     return found ? SESS_OK : SESS_NOT_FOUND;
 }
 
-session_t* pool_find_session(session_pool_t* pool, SID session_id) {
-    if (!pool || session_id >= pool->max_sessions) return NULL;
-
-    pthread_mutex_lock(&pool->pool_mutex);
-
-    session_t* session = &pool->sessions[session_id];
-    if (session->state == SESS_IDLE) {
-        session = NULL;
-    }
-
-    pthread_mutex_unlock(&pool->pool_mutex);
+session_t* _try_get_session(SIIP siid) {
+    session_t* session = &g_network_manager->sesspool[siid];
+    if (session->state == SESS_IDLE ||
+        siid >= Env.max_sessions ||
+        pthread_mutex_trylock(&session->session_mutex) == EBUSY
+        )return NULL;
     return session;
 }
+int _return_session(SIIP siid) {
 
-session_t* pool_find_session_by_uid(session_pool_t* pool, UID user_id) {
+}
+
+session_t* pool_find_session_by_uid(network_manager_t* pool, UID user_id) {
     if (!pool) return NULL;
 
     pthread_mutex_lock(&pool->pool_mutex);
@@ -772,7 +558,7 @@ session_t* pool_find_session_by_uid(session_pool_t* pool, UID user_id) {
     // 搜索活跃会话
     for (uint32_t i = 0; i < pool->active_count; i++) {
         uint32_t session_id = pool->active_sessions[i];
-        session_t* session = &pool->sessions[session_id];
+        session_t* session = &pool->sesspool[session_id];
 
         if (session->user_id == user_id) {
             found_session = session;
@@ -784,7 +570,7 @@ session_t* pool_find_session_by_uid(session_pool_t* pool, UID user_id) {
     return found_session;
 }
 
-void pool_cleanup_dead_sessions(session_pool_t* pool) {
+void cleanup_dead_sessions(network_manager_t* pool) {
     if (!pool) return;
 
     pthread_mutex_lock(&pool->pool_mutex);
@@ -795,9 +581,9 @@ void pool_cleanup_dead_sessions(session_pool_t* pool) {
     // 检查活跃会话
     for (uint32_t i = 0; i < pool->active_count; ) {
         const uint32_t session_id = pool->active_sessions[i];
-        session_t* session = &pool->sessions[session_id];
+        session_t* session = &pool->sesspool[session_id];
 
-        if (!session_is_healthy(session) ||                 //不健康会话
+        if (!_session_is_healthy(session) ||                 //不健康会话
             current_time - session->last_activity > TIMEOUT ) //会话已经超时
         {
             // 移动到错误列表
@@ -819,7 +605,7 @@ void pool_cleanup_dead_sessions(session_pool_t* pool) {
     // 清理错误会话
     for (uint32_t i = 0; i < pool->error_count; i++) {
         uint32_t session_id = pool->error_sessions[i];
-        session_shutdown(&pool->sessions[session_id]);//关闭会话
+        _shutdown_session_on(&pool->sesspool[session_id]);//关闭会话
 
         // 添加到空闲列表
         pool->idle_sessions[pool->idle_count] = session_id;
@@ -830,8 +616,7 @@ void pool_cleanup_dead_sessions(session_pool_t* pool) {
 
     pthread_mutex_unlock(&pool->pool_mutex);
 }
-
-void pool_check_all_sessions(session_pool_t* pool)
+void check_all_sessions(network_manager_t* pool)
 {
     if (!pool) return;
 
@@ -840,9 +625,9 @@ void pool_check_all_sessions(session_pool_t* pool)
     // 检查所有活跃会话的健康状态
     for (uint32_t i = 0; i < pool->active_count; i++) {
         uint32_t session_id = pool->active_sessions[i];
-        session_t* session = &pool->sessions[session_id];
+        session_t* session = &pool->sesspool[session_id];
 
-        if (!session_is_healthy(session)) {
+        if (!_session_is_healthy(session)) {
             // 标记为错误状态
             session->state = SESS_ERROR;
         }
@@ -853,13 +638,13 @@ void pool_check_all_sessions(session_pool_t* pool)
 
 // 网络线程函数
 static void* network_thread_func(void* arg) {
-    network_manager_t* manager = arg;
+    network_manager_t* manager = (network_manager_t*)arg;
 
-    struct epoll_event events[manager->config.epoll_max_events];
+    epoll_event events[EPOLL_MAX_EVENTS];
 
     while (manager->running) {
-        int nfds = epoll_wait(manager->epoll_fd, events, manager->config.epoll_max_events,
-                             manager->config.epoll_timeout);
+        int nfds = epoll_wait(manager->epoll_fd, events, EPOLL_MAX_EVENTS,
+                             EPOLL_TIMEOUT);
 
         if (nfds == -1) {
             if (errno == EINTR) continue;
@@ -867,33 +652,33 @@ static void* network_thread_func(void* arg) {
         }
 
         for (int i = 0; i < nfds; i++) {
-            struct epoll_event* event = &events[i];
+            epoll_event* event = &events[i];
 
             if (event->data.fd == manager->listen_fd) {
                 // 新连接
-                struct sockaddr_storage client_addr;
+                sockaddr_storage client_addr;
                 socklen_t addr_len = sizeof(client_addr);
-                int client_fd = accept(manager->listen_fd, (struct sockaddr*)&client_addr, &addr_len);
+                int client_fd = accept(manager->listen_fd, (sockaddr*)&client_addr, &addr_len);
 
                 if (client_fd >= 0) {
                     // 检查连接限制
                     char client_ip[INET6_ADDRSTRLEN];
                     if (client_addr.ss_family == AF_INET) {
-                        struct sockaddr_in* addr_in = (struct sockaddr_in*)&client_addr;
+                        sockaddr_in* addr_in = (sockaddr_in*)&client_addr;
                         inet_ntop(AF_INET, &addr_in->sin_addr, client_ip, INET_ADDRSTRLEN);
                     } else {
-                        struct sockaddr_in6* addr_in6 = (struct sockaddr_in6*)&client_addr;
+                        sockaddr_in6* addr_in6 = (sockaddr_in6*)&client_addr;
                         inet_ntop(AF_INET6, &addr_in6->sin6_addr, client_ip, INET6_ADDRSTRLEN);
                     }
 
                     // 分配会话
-                    session_t* session = pool_alloc_with_socket(manager->session_pool,client_fd,(struct sockaddr*)&client_addr);
+                    session_t* session = alloc_with_socket(manager,client_fd,(struct sockaddr*)&client_addr);
 
                     if (session) {
                         // 设置为非阻塞
-                        set_socket_nonblocking(client_fd);
+                        _set_socket_nonblocking(client_fd);
                         // 添加到epoll
-                        struct epoll_event ev;
+                        epoll_event ev;
                         ev.events = EPOLLIN | EPOLLET;
                         ev.data.fd = client_fd;
 
@@ -901,7 +686,7 @@ static void* network_thread_func(void* arg) {
                             __sync_fetch_and_add(&manager->total_connections, 1);
                             __sync_fetch_and_add(&manager->active_connections, 1);
                         } else {
-                            pool_recycle_session(manager->session_pool, session->session_id);
+                            recycle_session(manager, session->session_id);
                             close(client_fd);
                         }
                     } else {
@@ -915,18 +700,18 @@ static void* network_thread_func(void* arg) {
 
                 // 通过文件描述符查找会话
                 session_t* session = NULL;
-                pthread_mutex_lock(&manager->session_pool->pool_mutex);
+                pthread_mutex_lock(&manager->pool_mutex);
 
-                for (uint32_t j = 0; j < manager->session_pool->active_count; j++) {
-                    uint32_t session_id = manager->session_pool->active_sessions[j];
-                    session_t* s = &manager->session_pool->sessions[session_id];
+                for (uint32_t j = 0; j < manager->active_count; j++) {
+                    uint32_t session_id = manager->active_sessions[j];
+                    session_t* s = &manager->sesspool[session_id];
                     if (s->socket_fd == client_fd) {
                         session = s;
                         break;
                     }
                 }
 
-                pthread_mutex_unlock(&manager->session_pool->pool_mutex);
+                pthread_mutex_unlock(&manager->pool_mutex);
 
                 if (session) {
                     if (event->events & EPOLLIN) {
@@ -934,7 +719,7 @@ static void* network_thread_func(void* arg) {
                         if (session_receive_data(session) < 0) {
                             // 连接关闭或错误
                             epoll_ctl(manager->epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
-                            pool_recycle_session(manager->session_pool, session->session_id);
+                            recycle_session(manager, session->session_id);
                             __sync_fetch_and_sub(&manager->active_connections, 1);
                         }
                     }
@@ -947,7 +732,7 @@ static void* network_thread_func(void* arg) {
                     if (event->events & (EPOLLHUP | EPOLLERR)) {
                         // 连接关闭或错误
                         epoll_ctl(manager->epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
-                        pool_recycle_session(manager->session_pool, session->session_id);
+                        recycle_session(manager, session->session_id);
                         __sync_fetch_and_sub(&manager->active_connections, 1);
                     }
                 }
@@ -960,12 +745,12 @@ static void* network_thread_func(void* arg) {
 
 // 工作线程函数
 static void* worker_thread_func(void* arg) {
-    network_manager_t* manager =arg;
+    network_manager_t* manager =(network_manager_t*)arg;
 
     while (manager->running) {
         // 获取有待处理命令的会话
         SID session_ids[100];
-        uint32_t count = pool_get_sessions_with_commands(manager->session_pool, session_ids, 100);
+        const uint32_t count = pool_get_sessions_with_commands(manager, session_ids, 100);
 
         if (count == 0) {
             usleep(1000); // 1ms
@@ -974,7 +759,7 @@ static void* worker_thread_func(void* arg) {
 
         // 处理会话中的数据包
         for (uint32_t i = 0; i < count; i++) {
-            session_t* session = pool_find_session(manager->session_pool, session_ids[i]);
+            session_t* session = find_session(manager, session_ids[i]);
             if (session) {
                 session_process_incoming_packets(session);
             }
@@ -983,165 +768,21 @@ static void* worker_thread_func(void* arg) {
     return NULL;
 }
 
-network_manager_t* create_network_manager(const network_manager_config_t* config) {
-    network_manager_t* manager = malloc(sizeof(network_manager_t));
-    if (!manager) return NULL;
-
-    memset(manager, 0, sizeof(network_manager_t));
-
-    // 复制配置
-    if (config) {
-        manager->config = *config;
-    } else {
-        // 默认配置
-        manager->config.listen_port = 8080;
-        manager->config.address_family = AF_INET;
-        manager->config.listen_backlog = 1024;
-        manager->config.enable_ipv6 = 0;
-        manager->config.network_threads = 4;
-        manager->config.worker_threads = 8;
-        manager->config.epoll_max_events = 1024;
-        manager->config.epoll_timeout = 100;
-        manager->config.connection_timeout = 300;
-
-        // 默认会话池配置
-        manager->config.max_sessions = 10000;
-        manager->config.initial_pool_size = 100;
-        manager->config.cleanup_interval = 60;
-        manager->config.health_check_interval = 30;
-        manager->config.max_idle_sessions = 1000;
-        manager->config.enable_auto_cleanup = 1;
-        manager->config.enable_session_reuse = 1;
-    }
-
-    manager->listen_fd = -1;
-    manager->epoll_fd = -1;
-
-    // 初始化IP连接数互斥锁
-    if (pthread_mutex_init(&manager->total_connections_mutex, NULL) != 0) {
-        free(manager);
-        return NULL;
-    }
-    return manager;
-}
-
-void destroy_network_manager(network_manager_t* manager) {
-    if (!manager) return;
-
-    network_manager_shutdown(manager);
-
-    if (manager->session_pool) {
-        destroy_pool(manager->session_pool);
-    }
-
-    if (manager->network_threads) {
-        free(manager->network_threads);
-    }
-
-    if (manager->worker_threads) {
-        free(manager->worker_threads);
-    }
-
-    pthread_mutex_destroy(&manager->total_connections_mutex);
-    free(manager);
-}
-
-int network_manager_init(network_manager_t* manager) {
-    if (!manager) return SESS_INVALID;
-
-    // 创建会话池
-    manager->session_pool = create_pool(0,manager->config.max_sessions,
-        manager->config.initial_pool_size,
-        manager->config.max_idle_sessions,
-        manager->config.enable_auto_cleanup,
-        manager->config.enable_session_reuse);
-    if (!manager->session_pool) {
-        return SESS_ERROR;
-    }
-
-    if (pool_init(manager->session_pool) != SESS_OK) {
-        destroy_pool(manager->session_pool);
-        manager->session_pool = NULL;
-        return SESS_ERROR;
-    }
-
-    // 创建监听套接字
-    manager->listen_fd = socket(manager->config.address_family, SOCK_STREAM, 0);
-    if (manager->listen_fd < 0) {
-        return SESS_ERROR;
-    }
-
-    // 设置套接字选项
-    int opt = 1;
-    setsockopt(manager->listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-    // 绑定地址
-    struct sockaddr_storage bind_addr = {0};
-
-    if (manager->config.address_family == AF_INET) {
-        struct sockaddr_in* addr_in = (struct sockaddr_in*)&bind_addr;
-        addr_in->sin_family = AF_INET;
-        addr_in->sin_addr.s_addr = INADDR_ANY;
-        addr_in->sin_port = htons(manager->config.listen_port);
-
-        if (bind(manager->listen_fd, (struct sockaddr*)&bind_addr, sizeof(struct sockaddr_in)) < 0) {
-            close(manager->listen_fd);
-            return SESS_ERROR;
+static int _init_sesspool(network_manager_t* manager) {
+    //附属network_manager_init函数,用来初始化池相关部分的成员
+    pthread_mutex_lock(&manager->pool_mutex);
+    //  初始化所有会话为空闲状态
+    for (uint32_t i = 0; i < Env.max_sessions; i++) {
+        if (_init_session_on(&manager->sesspool[i]) == SESS_ERR) {
+            pthread_mutex_unlock(&manager->pool_mutex);
+            return SESS_ERR;
         }
-    } else {
-        struct sockaddr_in6* addr_in6 = (struct sockaddr_in6*)&bind_addr;
-        addr_in6->sin6_family = AF_INET6;
-        addr_in6->sin6_addr = in6addr_any;
-        addr_in6->sin6_port = htons(manager->config.listen_port);
-
-        if (bind(manager->listen_fd, (struct sockaddr*)&bind_addr, sizeof(struct sockaddr_in6)) < 0) {
-            close(manager->listen_fd);
-            return SESS_ERROR;
-        }
+        manager->idle_sessions[i] = i;
     }
-
-    // 开始监听
-    if (listen(manager->listen_fd, manager->config.listen_backlog) < 0) {
-        close(manager->listen_fd);
-        return SESS_ERROR;
-    }
-
-    // 设置为非阻塞
-    set_socket_nonblocking(manager->listen_fd);
-
-    // 创建epoll
-    manager->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
-    if (manager->epoll_fd < 0) {
-        close(manager->listen_fd);
-        return SESS_ERROR;
-    }
-
-    // 添加监听套接字到epoll
-    struct epoll_event ev;
-    ev.events = EPOLLIN;
-    ev.data.fd = manager->listen_fd;
-
-    if (epoll_ctl(manager->epoll_fd, EPOLL_CTL_ADD, manager->listen_fd, &ev) < 0) {
-        close(manager->epoll_fd);
-        close(manager->listen_fd);
-        return SESS_ERROR;
-    }
-
-    // 分配线程数组
-    manager->network_threads = (pthread_t*)malloc(manager->config.network_threads * sizeof(pthread_t));
-    manager->worker_threads = (pthread_t*)malloc(manager->config.worker_threads * sizeof(pthread_t));
-
-    if (!manager->network_threads || !manager->worker_threads) {
-        if (manager->network_threads) free(manager->network_threads);
-        if (manager->worker_threads) free(manager->worker_threads);
-        close(manager->epoll_fd);
-        close(manager->listen_fd);
-        return SESS_ERROR;
-    }
-
-    manager->initialized = 1;
-    manager->start_time = time(NULL);
-
+    manager->idle_count = Env.max_sessions;
+    manager->active_count = 0;
+    manager->error_count = 0;
+    pthread_mutex_unlock(&manager->pool_mutex);
     return SESS_OK;
 }
 
@@ -1151,7 +792,7 @@ int network_manager_start(network_manager_t* manager) {
     manager->running = 1;
 
     // 启动网络线程
-    for (uint32_t i = 0; i < manager->config.network_threads; i++) {
+    for (uint32_t i = 0; i < NETWORK_THREADS; i++) {
         if (pthread_create(&manager->network_threads[i], NULL, network_thread_func, manager) != 0) {
             manager->running = 0;
             return SESS_ERROR;
@@ -1159,7 +800,7 @@ int network_manager_start(network_manager_t* manager) {
     }
 
     // 启动工作线程
-    for (uint32_t i = 0; i < manager->config.worker_threads; i++) {
+    for (uint32_t i = 0; i < WORKER_THREADS; i++) {
         if (pthread_create(&manager->worker_threads[i], NULL, worker_thread_func, manager) != 0) {
             manager->running = 0;
             return SESS_ERROR;
@@ -1172,63 +813,54 @@ int network_manager_start(network_manager_t* manager) {
 void network_manager_stop(network_manager_t* manager) {
     if (!manager) return;
 
+    pthread_mutex_lock(&manager->pool_mutex);
+    manager->shutdown_requested = 1;
+    pthread_mutex_unlock(&manager->pool_mutex);
+
+    // 等待线程结束
+    pthread_join(manager->cleanup_thread, NULL);
+    pthread_join(manager->health_check_thread, NULL);
+
+    // 关闭所有活跃会话
+    pthread_mutex_lock(&manager->pool_mutex);
+    for (uint32_t i = 0; i < manager->active_count; i++) {
+        const uint32_t session_id = manager->active_sessions[i];
+        _shutdown_session_on(&manager->sesspool[session_id]);
+    }
+    pthread_mutex_unlock(&manager->pool_mutex);
+
     manager->running = 0;
 
     // 等待所有线程结束
-    for (uint32_t i = 0; i < manager->config.network_threads; i++) {
+    for (uint32_t i = 0; i < NETWORK_THREADS; i++) {
         pthread_join(manager->network_threads[i], NULL);
     }
 
-    for (uint32_t i = 0; i < manager->config.worker_threads; i++) {
+    for (uint32_t i = 0; i < WORKER_THREADS; i++) {
         pthread_join(manager->worker_threads[i], NULL);
     }
 }
-
-void network_manager_shutdown(network_manager_t* manager) {
-    if (!manager) return;
-
-    network_manager_stop(manager);
-
-    if (manager->session_pool) {
-        shutdown_pool(manager->session_pool);
-    }
-
-    if (manager->epoll_fd >= 0) {
-        close(manager->epoll_fd);
-        manager->epoll_fd = -1;
-    }
-
-    if (manager->listen_fd >= 0) {
-        close(manager->listen_fd);
-        manager->listen_fd = -1;
-    }
-
-    manager->initialized = 0;
-}
-
-// 外部全局变量声明
-extern network_manager_t* g_network_manager;
-extern session_pool_t* g_session_pool;
-extern pthread_mutex_t g_global_mutex;
 
 int session_receive_data(session_t* session) {
     if (!session || session->socket_fd < 0) return SESS_INVALID;
 
     uint8_t buffer[8192];
-    ssize_t bytes_received = recv(session->socket_fd, buffer, sizeof(buffer), MSG_DONTWAIT);
+    const ssize_t bytes_received = recv(session->socket_fd, buffer, sizeof(buffer), MSG_DONTWAIT);
 
     if (bytes_received > 0) {
         // 写入接收缓冲区
         if (buffer_write(session->recv_buffer, buffer, bytes_received) == SESS_OK) {
             session->bytes_received += bytes_received;
-            update_session_activity(session);
+            session->last_activity = time(NULL);
             return bytes_received;
         }
         return SESS_ERROR;
-    } else if (bytes_received == 0) {
+    }
+    else if (bytes_received == 0) {
         // 连接关闭
         return SESS_ERROR;
-    } else {
+    }
+    else {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             return 0; // 暂时无数据
         }
@@ -1252,7 +884,7 @@ int session_send_data(session_t* session) {
 
     if (bytes_sent > 0) {
         session->bytes_sent += bytes_sent;
-        update_session_activity(session);
+        session->last_activity = time(NULL);
 
         // 如果没有发送完全，需要将剩余数据放回缓冲区
         if (bytes_sent < bytes_read) {
@@ -1277,11 +909,11 @@ int session_process_incoming_packets(session_t* session) {
     if (!session) return SESS_INVALID;
 
     // 简化的数据包处理
-    uint32_t available = get_buffer_available_size(session->recv_buffer);
+    uint32_t available = get_buffer_available_size(&session->recv_buffer);
     if (available < sizeof(PKG)) return 0;
 
     uint8_t buffer[8192];
-    uint32_t bytes_read = buffer_peek(session->recv_buffer, buffer, sizeof(buffer));
+    uint32_t bytes_read = buffer_peek(&session->recv_buffer, buffer, sizeof(buffer));
 
     if (bytes_read >= sizeof(PKG)) {
         PKG* pkg = (PKG*)buffer;
@@ -1300,8 +932,6 @@ int session_process_incoming_packets(session_t* session) {
             if (cmd) {
                 // 将命令加入队列
                 if (session_enqueue_command(session, cmd) == SESS_OK) {
-                    session->stats.commands_queued++;
-
                     // 从缓冲区移除已处理的数据
                     buffer_read(session->recv_buffer, buffer, sizeof(PKG) + pkg->size);
 
@@ -1336,36 +966,21 @@ void session_set_state(session_t* session, session_state_t new_state) {
 
     pthread_mutex_lock(&session->session_mutex);
     session->state = new_state;
-    update_session_activity(session);
-    pthread_mutex_unlock(&session->session_mutex);
-}
-
-void session_set_priority(session_t* session, session_priority_t new_priority) {
-    if (!session) return;
-
-    pthread_mutex_lock(&session->session_mutex);
-    session->priority = new_priority;
-    pthread_mutex_unlock(&session->session_mutex);
-}
-
-void update_session_activity(session_t* session) {
-    if (!session) return;
     session->last_activity = time(NULL);
+    pthread_mutex_unlock(&session->session_mutex);
 }
 
-int session_is_healthy(session_t* session) {
-    if (!session) return 0;
-    // 检查套接字状态
-    if (session->socket_fd < 0) return 0;
-    // 检查状态
-    if (session->state == SESS_ERROR || session->state == SESS_IDLE) return 0;
+int _session_is_healthy(const session_t* session) {
+    if (session->socket_fd < 0||
+    session->state == SESS_ERROR ||
+    session->state == SESS_IDLE  )return 0;
     return 1;
 }
 
 session_t* get_session(SID session_id) {
-    if (!g_session_pool) return NULL;
+    if (!g_network_manager) return NULL;
 
-    return pool_find_session(g_session_pool, session_id);
+    return find_session(g_network_manager, session_id);
 }
 
 int send_response_to_session(SID session_id, const uint8_t* response, uint32_t response_len) {
@@ -1385,10 +1000,7 @@ int auth_session(SID session_id, UID uid) {
 
     // 根据用户权限设置会话优先级
     if (uid == 1) { // 假设uid=1是管理员
-        session->priority = PRIORITY_SUPER;
         session->state = SESS_SUPER;
-    } else {
-        session->priority = PRIORITY_NORMAL;
     }
 
     pthread_mutex_unlock(&session->session_mutex);
@@ -1404,7 +1016,6 @@ void invalidate_session_auth(const SID session_id) {
 
     session->user_id = 65536;
 
-    session->priority = PRIORITY_NORMAL;
     if (session->state == SESS_SUPER) {
         session->state = SESS_ALIVE;
     }
@@ -1423,64 +1034,210 @@ UID get_session_user_id(SID session_id) {
     return uid;
 }
 
-int session_system_init(const network_manager_config_t* config) {
-    pthread_mutex_lock(&g_global_mutex);
+int _network_manager_init(network_manager_t* manager) {
+    if (_init_sesspool(manager))
 
-    if (g_network_manager) { //如果已经存在网络管理器模块
-        pthread_mutex_unlock(&g_global_mutex);
-        return SESS_ERROR; // 已经初始化
-    }
-
-    g_network_manager = create_network_manager(config);
-    if (!g_network_manager) {
-        pthread_mutex_unlock(&g_global_mutex);
+    // 启动“死会话清理”-线程
+    if (pthread_create(&manager->cleanup_thread, NULL, cleanup_thread, manager) != 0) {
         return SESS_ERROR;
     }
 
-    if (network_manager_init(g_network_manager) != SESS_OK) {
-        destroy_network_manager(g_network_manager);
+    // 启动“健康检查”-线程
+    if (pthread_create(&manager->health_check_thread, NULL, session_pool_health_check_thread, manager) != 0) {
+        manager->shutdown_requested = 1;
+        pthread_join(manager->cleanup_thread, NULL);
+        return SESS_ERROR;
+    }
+
+    // 创建监听套接字
+    manager->listen_fd = socket(ADDRESS_FAMILY, SOCK_STREAM, 0);
+    if (manager->listen_fd < 0) {
+        return SESS_ERROR;
+    }
+
+    // 设置套接字选项
+    int opt = 1;
+    setsockopt(manager->listen_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    // 绑定地址
+    sockaddr_storage bind_addr = {};
+
+    if (ADDRESS_FAMILY == AF_INET) {
+        sockaddr_in* addr_in = (sockaddr_in*)&bind_addr;
+        addr_in->sin_family = AF_INET;
+        addr_in->sin_addr.s_addr = INADDR_ANY;
+        addr_in->sin_port = htons(PORT);
+
+        if (bind(manager->listen_fd, (sockaddr*)&bind_addr, sizeof(sockaddr_in)) < 0) {
+            close(manager->listen_fd);
+            return SESS_ERROR;
+        }
+    }
+    else {
+        /*//目前不可到达的代码
+        sockaddr_in6* addr_in6 = (sockaddr_in6*)&bind_addr;
+        addr_in6->sin6_family = AF_INET6;
+        addr_in6->sin6_addr = in6addr_any;
+        addr_in6->sin6_port = htons(PORT);
+
+        if (bind(manager->listen_fd, (sockaddr*)&bind_addr, sizeof(sockaddr_in6)) < 0) {
+            close(manager->listen_fd);
+            return SESS_ERROR;
+        }
+        */
+    }
+
+    // 开始监听
+    if (listen(manager->listen_fd, LISTEN_BACKLOG) < 0) {
+        close(manager->listen_fd);
+        return SESS_ERROR;
+    }
+
+    // 设置为非阻塞
+    _set_socket_nonblocking(manager->listen_fd);
+
+    // 创建epoll
+    manager->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    if (manager->epoll_fd < 0) {
+        close(manager->listen_fd);
+        return SESS_ERROR;
+    }
+
+    // 添加监听套接字到epoll
+    epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.fd = manager->listen_fd;
+
+    if (epoll_ctl(manager->epoll_fd, EPOLL_CTL_ADD, manager->listen_fd, &ev) < 0) {
+        close(manager->epoll_fd);
+        close(manager->listen_fd);
+        return SESS_ERROR;
+    }
+
+    // 分配线程数组
+    manager->network_threads = (pthread_t*)malloc(NETWORK_THREADS * sizeof(pthread_t));
+    manager->worker_threads = (pthread_t*)malloc(WORKER_THREADS * sizeof(pthread_t));
+
+    if (!manager->network_threads || !manager->worker_threads) {
+        if (manager->network_threads) free(manager->network_threads);
+        if (manager->worker_threads) free(manager->worker_threads);
+        close(manager->epoll_fd);
+        close(manager->listen_fd);
+        return SESS_ERROR;
+    }
+
+    manager->initialized = 1;
+
+    return SESS_OK;
+}
+
+void _destroy_network_manager(network_manager_t* manager) {
+    network_manager_stop(manager);
+
+    if (manager->epoll_fd >= 0) {
+        close(manager->epoll_fd);
+        manager->epoll_fd = -1;
+    }
+
+    if (manager->listen_fd >= 0) {
+        close(manager->listen_fd);
+        manager->listen_fd = -1;
+    }
+
+    manager->initialized = 0;
+
+    pthread_mutex_lock(&manager->pool_mutex);
+    manager->shutdown_requested = 1;
+    pthread_mutex_unlock(&manager->pool_mutex);
+
+    // 等待线程结束
+    pthread_join(manager->cleanup_thread, NULL);
+    pthread_join(manager->health_check_thread, NULL);
+
+    // 关闭所有活跃会话
+    pthread_mutex_lock(&manager->pool_mutex);
+    for (uint32_t i = 0; i < manager->active_count; i++) {
+        const uint32_t session_id = manager->active_sessions[i];
+        _shutdown_session_on(&manager->sesspool[session_id]);
+    }
+    pthread_mutex_unlock(&manager->pool_mutex);
+
+    // 销毁所有会话
+    for (uint32_t i = 0; i < Env.max_sessions; i++) {
+        _destroy_session_on(&manager->sesspool[i]);
+    }
+
+    free(manager->sesspool);
+    free(manager->idle_sessions);
+    free(manager->active_sessions);
+    free(manager->error_sessions);
+
+    network_manager_shutdown(manager);
+
+    if (manager->network_threads) {
+        free(manager->network_threads);
+    }
+
+    if (manager->worker_threads) {
+        free(manager->worker_threads);
+    }
+
+    pthread_mutex_destroy(&manager->pool_mutex);
+    free(manager);
+}
+
+int session_system_init() {
+    /////资源分配+配置信息缓存/////
+    if (g_network_manager) return SESS_ERROR;//已经存在网络管理器模块
+    network_manager_t* manager = (network_manager_t*)calloc(1,sizeof(network_manager_t));
+    if (!manager) return SESS_ERROR;
+
+    // 初始化会话池互斥锁
+    if (pthread_mutex_init(&manager->pool_mutex, NULL) != 0) {
+        free(manager);
+        return SESS_ERROR;
+    }
+
+    // 分配会话池和相关索引池数组
+    manager->sesspool = (session_t*)malloc(Env.max_sessions * sizeof(session_t));
+    manager->idle_sessions = (uint32_t*)malloc(Env.max_sessions * sizeof(uint32_t));
+    manager->active_sessions = (uint32_t*)malloc(Env.max_sessions * sizeof(uint32_t));
+    manager->error_sessions = (uint32_t*)malloc(Env.max_sessions * sizeof(uint32_t));
+
+    if (!manager->idle_sessions || !manager->active_sessions|| !manager->error_sessions  ||!manager->sesspool) {
+        free(manager->idle_sessions);
+        free(manager->active_sessions);
+        free(manager->error_sessions);
+        free(manager->sesspool);
+        free(manager);
+        return SESS_ERROR;
+    }
+
+    manager->listen_fd = -1;
+    manager->epoll_fd = -1;
+
+    g_network_manager = manager;
+
+    ///// 初始化网络管理器 /////
+    if (_network_manager_init(g_network_manager) != SESS_OK) {
+        _destroy_network_manager(g_network_manager);
         g_network_manager = NULL;
-        pthread_mutex_unlock(&g_global_mutex);
         return SESS_ERROR;
     }
-
-    g_session_pool = g_network_manager->session_pool;
 
     if (network_manager_start(g_network_manager) != SESS_OK) {
-        destroy_network_manager(g_network_manager);
+        _destroy_network_manager(g_network_manager);
         g_network_manager = NULL;
-        g_session_pool = NULL;
-        pthread_mutex_unlock(&g_global_mutex);
         return SESS_ERROR;
     }
 
-    pthread_mutex_unlock(&g_global_mutex);
     return SESS_OK;
 }
 
 void shutdown_session_system() {
-    pthread_mutex_lock(&g_global_mutex);
-
     if (g_network_manager) {
-        destroy_network_manager(g_network_manager);
+        _destroy_network_manager(g_network_manager);
         g_network_manager = NULL;
     }
-
-    g_session_pool = NULL;
-
-    pthread_mutex_unlock(&g_global_mutex);
-}
-
-network_manager_t* get_global_network_manager() {
-    pthread_mutex_lock(&g_global_mutex);
-    network_manager_t* manager = g_network_manager;
-    pthread_mutex_unlock(&g_global_mutex);
-    return manager;
-}
-
-session_pool_t* get_global_session_pool() {
-    pthread_mutex_lock(&g_global_mutex);
-    session_pool_t* pool = g_session_pool;
-    pthread_mutex_unlock(&g_global_mutex);
-    return pool;
+    g_network_manager = NULL;
 }
