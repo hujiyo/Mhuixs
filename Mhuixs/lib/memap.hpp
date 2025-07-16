@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <vector>
+#include <cstddef>
 #include "tlsf.h"
 
 #define merr -1
@@ -24,8 +25,8 @@ struct MEMAP {
     uint32_t block_num;
 
     // 记录所有池指针和大小
-    vector<void*> pools;
-    vector<uint32_t> pool_sizes;
+    std::vector<void*> pools;
+    std::vector<uint32_t> pool_sizes;
 
     MEMAP(uint32_t block_size_, uint32_t block_num_);
     MEMAP(const MEMAP& other);

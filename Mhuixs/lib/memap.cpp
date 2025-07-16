@@ -1,4 +1,5 @@
 #include "memap.hpp"
+#include <algorithm>
 
 MEMAP::MEMAP(uint32_t block_size_, uint32_t block_num_) {
     block_size = block_size_;

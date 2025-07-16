@@ -28,6 +28,8 @@
 #include "pkg.h"
 #include "funseq.h"
 #include "mtype.hpp"
+#include "comdq.h"
+
 
 #define DEFAULT_HEARTBEAT_INTERVAL 10 // 默认心跳间隔(s)
 #define TIMEOUT 300 // 默认超时时间(s)
@@ -69,28 +71,6 @@ typedef enum {
 #define SESS_INVALID     -2
 #define SESS_FULL        -3
 
-// 命令结构体
-typedef struct command {
-    UID caller;                 // 呼叫的用户
-    uint32_t command_id;        // 命令ID
-    uint32_t sequence_num;      // 序列号
-    uint32_t priority;          // 命令优先级
-    uint32_t data_len;          // 数据长度
-    uint8_t* data;              // 命令数据
-    command* next;       // 链表指针
-} command_t;
-
-// 命令队列结构体（优先级队列）
-typedef struct {
-    command_t* head;            // 队列头
-    command_t* tail;            // 队列尾
-    uint32_t count;             // 命令数量
-    uint32_t max_size;          // 最大队列长度
-    pthread_mutex_t mutex;      // 互斥锁
-    pthread_cond_t cond;        // 条件变量
-    int shutdown;               // 关闭标志
-} command_queue_t;
-
 typedef struct buffer_struct {
     uint8_t* buffer;//缓冲区
     uint32_t capacity;//缓冲区容量
@@ -98,9 +78,6 @@ typedef struct buffer_struct {
     uint32_t write_pos;//写头
     pthread_mutex_t mutex; // 互斥锁
 }buffer_struct;
-
-command_queue_t* command_queue; // 全局命令队列
-
 
 typedef struct session {
     SID session_id;               // 会话ID
@@ -137,22 +114,6 @@ struct network_manager_t{
     volatile int running;           // 运行标志
 };
 
-// 命令队列操作
-command_queue_t* create_command_queue(uint32_t max_size);//创建命令队列
-void destroy_command_queue(command_queue_t* queue);//销毁命令队列
-int command_queue_push(command_queue_t* queue, command_t* cmd);//将命令推入命令队列
-command_t* command_queue_pop(command_queue_t* queue, uint32_t timeout_ms);//从命令队列中取出命令
-command_t* command_queue_try_pop(command_queue_t* queue);//尝试从命令队列中取出命令
-void shutdown_command_queue(command_queue_t* queue);//关闭命令队列
-uint32_t command_queue_size(command_queue_t* queue);//获取命令队列大小（线程安全）
-
-// 队列命令操作
-command_t* command_create(UID caller,CommandNumber cmd_id,uint32_t seq_num,uint32_t priority,
-                         const uint8_t* data,uint32_t data_len);//创建命令
-void command_destroy(command_t* cmd);//销毁命令
-int push_command(command_t* cmd);//将命令推入会话队列
-command_t* pop_command();//从会话队列中取出命令
-
 // 网络缓冲区操作
 int buffer_write(buffer_struct buffer, const uint8_t* data, uint32_t len);//将数据写入网络缓冲区
 uint32_t buffer_read(buffer_struct* buffer, uint8_t* data, uint32_t max_len);//从网络缓冲区中读取数据
@@ -176,13 +137,11 @@ int recycle_session(network_manager_t* pool, SID session_id);//回收会话
 void cleanup_dead_sessions(network_manager_t* pool);//清理死亡会话
 
 // 网络管理器操作
-void _destroy_network_manager(network_manager_t* manager);//销毁网络管理器
 int network_manager_start(network_manager_t* manager);//启动网络管理器
 void network_manager_stop(network_manager_t* manager);//停止网络管理器
 void network_manager_shutdown(network_manager_t* manager);//关闭网络管理器
 
 // 执行模块接口 - 供执行模块调用的会话管理函数
-session_t* get_session(SID session_id);//按会话ID获取会话
 int send_response_to_session(SID session_id, const uint8_t* response, uint32_t response_len);//向会话发送响应
 
 // 认证管理接口(由用户/组权限管理模块进行统一操作)

@@ -16,9 +16,9 @@ Email:hj18914255909@outlook.com
 #include <regex>
 using namespace std;
 
-#include "./../../mlib/memap.hpp"
-#include "./../../mlib/uintdeque.hpp"
-#include "./../../mlib/str.hpp"
+#include "./../../lib/memap.hpp"
+#include "./../../lib/uintdeque.hpp"
+#include "./../../lib/str.hpp"
 
 #define merr -1
 #define bitmap_debug

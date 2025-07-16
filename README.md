@@ -40,7 +40,6 @@ Mhuixs 是一个基于内存的数据库，致力于为用户提供高效、灵�
 
 ## 4. 客户端 muixclt
 
-<!-- 客户端 muixclt 说明文档折叠开始 -->
 <details>
 <summary>客户端 muixclt 说明文档（点击展开）</summary>
 
@@ -259,7 +258,6 @@ END;
 - 网络传输的 MUIX 包格式
 
 </details>
-<!-- 客户端 muixclt 说明文档折叠结束 -->
 
 
 #### 注意 : readme由chatGPT生成，可能会有错误，欢迎指正。实际以项目代码为准。
@@ -296,6 +294,8 @@ NAQL：NAture-language Query Language
 基础语法是lexer直接解释和转化的，lexer之前还需要有个环节将不定形式的语法转化为标准语法
 
 ## 8.致谢
+
+0. [LICENSE.md中的鸣谢](LICENSES.md)
 
 1. 感谢Claude、GPT、Qwen、Deepseek、DouBao系列模型（~QvQ~）。
 
