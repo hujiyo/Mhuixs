@@ -20,14 +20,10 @@ merr.h
 extern "C" {
 #endif
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <stdarg.h>
-#include <time.h>
+
 
 //Mhuixs return codes
-enum mrc {
+typedef enum mrc {
     success = 0,//成功
     
     merr = -1,// 通用错误码！
@@ -38,11 +34,13 @@ enum mrc {
     null_hook,//hook为空！
 
     permission_denied,//权限不足！
+    malloc_failed,//内存分配失败！
+    mutex_init_failed,//互斥锁初始化失败！
 
     
     //...
     //...
-};
+}mrc;
 enum where{
     pkg_module,
     hook_module,

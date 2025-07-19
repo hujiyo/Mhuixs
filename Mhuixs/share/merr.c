@@ -1,12 +1,16 @@
 #include "merr.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 static FILE* logFile = NULL;//日志模块是否开启的标志
 
 void logger(char* message){
     #ifdef open_log
     if (logFile && message) { //自动检查log是否开启
-        time_t now = time(NULL);
-        struct tm* t = localtime(&now);
+        const time_t now = time(NULL);
+        const struct tm* t = localtime(&now);
         fprintf(logFile, "[LOG] [%04d-%02d-%02d %02d:%02d:%02d]: %s\n",
                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
                 t->tm_hour, t->tm_min, t->tm_sec, message);
@@ -61,7 +65,7 @@ int logger_init(const char *path){
         fprintf(stderr, "Invalid log path\n");
         return -1;
     }
-    int len = strlen(path);
+    const size_t len = strlen(path);
     
     char* log_path= (char*)calloc(1,len+strlen("log.inf"));
     if(!log_path)printf("[log][Error]:calloc err!\n");
@@ -71,6 +75,7 @@ int logger_init(const char *path){
     logFile = fopen(log_path,"a");//以追加模式打开日志文件
     if (!logFile) {
         printf("Failed to open log file\n");
+        free(log_path);
         return -1;
     }
     free(log_path);
@@ -80,8 +85,8 @@ int logger_init(const char *path){
 
 void logger_close(void) {
     if (logFile) { // 写入日志关闭信息
-        time_t now = time(NULL);
-        struct tm* t = localtime(&now);
+        const time_t now = time(NULL);
+        const struct tm* t = localtime(&now);
         fprintf(logFile, "[INFO] Logger closed at %04d-%02d-%02d %02d:%02d:%02d\n",
                 t->tm_year + 1900, t->tm_mon + 1, t->tm_mday,
                 t->tm_hour, t->tm_min, t->tm_sec);

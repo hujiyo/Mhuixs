@@ -4,7 +4,6 @@
 这个文件定义了HUJI协议的命令编号
 用于在客户端和服务器之间进行通信
 */
-#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
