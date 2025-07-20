@@ -1,7 +1,10 @@
 /*
 * Mhuixs 会话管理模块
 * Copyright (c) HuJi 2025
-* Email: hj18914255909@outlook.com
+#许可证协议:
+#任何人或组织在未经版权所有者同意的情况下禁止使用、修改、分发此作品
+start from 2024.11
+Email:hj18914255909@outlook.com
 */
 #ifndef MANAGER_H
 #define MANAGER_H
@@ -26,7 +29,7 @@
 // 项目内部依赖
 #include "getid.hpp"
 //#include "usergroup.hpp"
-//#include "pkg.h"
+#include "pkg.h"
 #include "funseq.h"
 //#include "mtype.hpp"
 #include "dependence/concurrentqueue.h"
@@ -109,6 +112,9 @@ typedef struct command {
 typedef struct response {
     session_t *session;                 // 回复会话对象
     uint32_t response_len;         // 响应长度:[<57]->inline_data | [>=57]->data
+    uint32_t retry_count;          // 重试次数
+    uint32_t sent_len;             // 已发送长度
+    uint32_t status;               // 响应状态
     union {
         uint8_t* data;//需要对方释放
         uint8_t inline_data[56];

@@ -1,5 +1,6 @@
 #include "manager.h"
 #include "netptd.cpp"
+#include "env.hpp"
 
 // 全局变量/统计变量
 network_manager_t* g_network_manager;//网络管理器

@@ -1,7 +1,10 @@
 #include "manager.h"
 #include "env.hpp"
 #include "fcntl.h"
-
+#include "unistd.h"
+#include "errno.h"
+#include "string.h"
+#include "stdlib.h"
 
 int set_socket_nonblocking_(const int sockfd) {
     const int flags = fcntl(sockfd, F_GETFL, 0);
@@ -47,10 +50,6 @@ SIIP alloc_with_socket_(int socket_fd, const sockaddr* client_addr) {
     pool->active_sessions[pool->active_num] = session_id;
     pool->active_num++;
 
-    // 更新统计
-    pool->active_sessions++;
-    pool->idle_sessions--;
-
     pthread_mutex_unlock(&pool->pool_mutex);
 
     if (session_id >= g_network_manager->pool_capacity) return SIZE_MAX;
@@ -65,6 +64,13 @@ SIIP alloc_with_socket_(int socket_fd, const sockaddr* client_addr) {
 
     session->socket_fd = socket_fd;
 
+    // 分配会话ID
+    session->session_id = Idalloc.get_sid();
+    if (session->session_id == merr) {
+        pthread_mutex_unlock(&session->session_mutex);
+        return SIZE_MAX;
+    }
+
     // 复制客户端地址
     if (client_addr) {
         if (client_addr->sa_family == AF_INET) {
@@ -76,6 +82,7 @@ SIIP alloc_with_socket_(int socket_fd, const sockaddr* client_addr) {
 
     // 设置套接字为非阻塞
     if (set_socket_nonblocking_(socket_fd) != 0) {
+        Idalloc.del_sid(session->session_id);
         pthread_mutex_unlock(&session->session_mutex);
         return SIZE_MAX;
     }
@@ -100,6 +107,9 @@ void init_sesspool_(network_manager_t* manager) {
         session_t* session = &manager->sesspool[i];
 
         session->state = SESS_IDLE;// 标记为空会话
+        session->session_id = 0; // 初始会话ID为0
+        session->socket_fd = -1; // 初始套接字为-1
+        
         // 初始化会话互斥锁
         if (pthread_mutex_init(&session->session_mutex, NULL) != 0) goto err;
         // 初始化接收缓冲区锁
@@ -108,6 +118,8 @@ void init_sesspool_(network_manager_t* manager) {
         // 创建默认网络缓冲区
         session->recv_buffer.buffer = (uint8_t*)calloc(1, DEFAULT_BUFFER_SIZE);
         session->recv_buffer.capacity = DEFAULT_BUFFER_SIZE;
+        session->recv_buffer.read_pos = 0;
+        session->recv_buffer.write_pos = 0;
         if (!session->recv_buffer.buffer) goto err;
 
         // 设置空闲会话索引

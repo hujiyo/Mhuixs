@@ -1,4 +1,9 @@
 #include "manager.h"
+#include "share/pkg.h"
+#include "unistd.h"
+#include "errno.h"
+#include "string.h"
+#include "stdlib.h"
 
 // 响应线程管理结构
 typedef struct response_thread_info {
@@ -15,7 +20,7 @@ void shutdown_session_on_(session_t* session);//关闭会话
 void compact_buffer_(buffer_struct* buffer);//压缩网络缓冲区
 uint32_t get_buffer_available_size(buffer_struct* buffer);//获取网络缓冲区可用空间
 // 网络缓冲区操作
-int buffer_write_(buffer_struct buffer, const uint8_t* data, uint32_t len);//将数据写入网络缓冲区
+int buffer_write_(buffer_struct* buffer, const uint8_t* data, uint32_t len);//将数据写入网络缓冲区
 uint32_t buffer_read_(buffer_struct* buffer, uint8_t* data, uint32_t max_len);//从网络缓冲区中读取数据
 uint32_t buffer_peek_(buffer_struct* buffer, uint8_t* data, uint32_t max_len);//查看网络缓冲区数据
 // 会话网络操作
@@ -23,45 +28,45 @@ int session_receive_data_(session_t* session);//接收数据
 int session_send_data_(session_t* session);//发送数据
 int session_process_incoming_packets_(session_t* session);//处理入站数据包
 
-
 //缓冲区操作函数
-int buffer_write_(buffer_struct buffer, const uint8_t* data, uint32_t len) {
-    if (!data || len == 0) return SESS_INVALID;
+int buffer_write_(buffer_struct* buffer, const uint8_t* data, uint32_t len) {
+    if (!buffer || !data || len == 0) return SESS_INVALID;
     
-    pthread_mutex_lock(&buffer.mutex);
+    pthread_mutex_lock(&buffer->mutex);
     
     // 检查是否需要扩容
-    if (buffer.write_pos + len > buffer.capacity) {
-        if (buffer.read_pos > 0) {
+    if (buffer->write_pos + len > buffer->capacity) {
+        if (buffer->read_pos > 0) {
             // 先尝试压缩
-            uint32_t data_size = buffer.write_pos - buffer.read_pos;
+            uint32_t data_size = buffer->write_pos - buffer->read_pos;
             if (data_size > 0) {
-                memmove(buffer.buffer, buffer.buffer + buffer.read_pos, data_size);
+                memmove(buffer->buffer, buffer->buffer + buffer->read_pos, data_size);
             }
-            buffer.write_pos = data_size;
-            buffer.read_pos = 0;
+            buffer->write_pos = data_size;
+            buffer->read_pos = 0;
         }
         
-        if (buffer.write_pos + len > buffer.capacity) {
+        if (buffer->write_pos + len > buffer->capacity) {
             // 仍然不够，需要扩容
-            uint32_t new_capacity = (buffer.capacity * 2 > buffer.write_pos + len) ?
-                                   buffer.capacity * 2 : buffer.write_pos + len;
-            uint8_t* new_buffer = (uint8_t*)realloc(buffer.buffer, new_capacity);
+            uint32_t new_capacity = (buffer->capacity * 2 > buffer->write_pos + len) ?
+                                   buffer->capacity * 2 : buffer->write_pos + len;
+            uint8_t* new_buffer = (uint8_t*)realloc(buffer->buffer, new_capacity);
             if (!new_buffer) {
-                pthread_mutex_unlock(&buffer.mutex);
+                pthread_mutex_unlock(&buffer->mutex);
                 return SESS_ERR;
             }
-            buffer.buffer = new_buffer;
-            buffer.capacity = new_capacity;
+            buffer->buffer = new_buffer;
+            buffer->capacity = new_capacity;
         }
     }
     
-    memcpy(buffer.buffer + buffer.write_pos, data, len);
-    buffer.write_pos += len;
+    memcpy(buffer->buffer + buffer->write_pos, data, len);
+    buffer->write_pos += len;
     
-    pthread_mutex_unlock(&buffer.mutex);
+    pthread_mutex_unlock(&buffer->mutex);
     return SESS_OK;
 }
+
 uint32_t buffer_read_(buffer_struct* buffer, uint8_t* data, uint32_t max_len) {
     if (!buffer || !data || max_len == 0) return 0;
     
@@ -78,6 +83,7 @@ uint32_t buffer_read_(buffer_struct* buffer, uint8_t* data, uint32_t max_len) {
     pthread_mutex_unlock(&buffer->mutex);
     return to_read;
 }
+
 uint32_t buffer_peek_(buffer_struct* buffer, uint8_t* data, uint32_t max_len) {
     if (!buffer || !data || max_len == 0) return 0;
     
@@ -93,6 +99,7 @@ uint32_t buffer_peek_(buffer_struct* buffer, uint8_t* data, uint32_t max_len) {
     pthread_mutex_unlock(&buffer->mutex);
     return to_peek;
 }
+
 uint32_t get_buffer_available_size(buffer_struct* buffer) {
     if (!buffer) return 0;
     
@@ -119,8 +126,8 @@ void compact_buffer_(buffer_struct* buffer) {
     
     pthread_mutex_unlock(&buffer->mutex);
 }
-//会话相关函数
 
+//会话相关函数
 void shutdown_session_on_(session_t* session) {
     pthread_mutex_lock(&session->session_mutex);
     if (session->state == SESS_IDLE) {
@@ -146,64 +153,36 @@ int session_receive_data_(session_t* session) {
 
     if (bytes_received > 0) {
         // 写入接收缓冲区
-        if (buffer_write_(session->recv_buffer, buffer, bytes_received) == SESS_OK) {
+        if (buffer_write_(&session->recv_buffer, buffer, bytes_received) == SESS_OK) {
             session->last_activity = time(NULL);
             return bytes_received;
         }
-        return SESS_ERROR;
+        return SESS_ERR;
     }
     else if (bytes_received == 0) {
         // 连接关闭
-        return SESS_ERROR;
+        return SESS_ERR;
     }
     else {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             return 0; // 暂时无数据
         }
-        return SESS_ERROR;
+        return SESS_ERR;
     }
 }
 
 int session_send_data_(session_t* session) {
     if (!session || session->socket_fd < 0) return SESS_INVALID;
 
-    uint32_t available = get_buffer_available_size(&session->send_buffer);
-    if (available == 0) return 0;
-
-    uint8_t buffer[8192];
-    uint32_t to_send = (available > sizeof(buffer)) ? sizeof(buffer) : available;
-
-    uint32_t bytes_read = buffer_read_(&session->send_buffer, buffer, to_send);
-    if (bytes_read == 0) return 0;
-
-    ssize_t bytes_sent = send(session->socket_fd, buffer, bytes_read, MSG_DONTWAIT);
-
-    if (bytes_sent > 0) {
-        session->last_activity = time(NULL);
-
-        // 如果没有发送完全，需要将剩余数据放回缓冲区
-        if (bytes_sent < bytes_read) {
-            // 简化处理：重新写入未发送的数据
-            buffer_write_(session->send_buffer, buffer + bytes_sent, bytes_read - bytes_sent);
-        }
-
-        return bytes_sent;
-    }
-    if (bytes_sent == 0) {
-        return 0;
-    }
-    if (errno == EAGAIN || errno == EWOULDBLOCK) {
-        // 重新写入数据
-        buffer_write_(session->send_buffer, buffer, bytes_read);
-        return 0;
-    }
-    return SESS_ERROR;
+    // 这个函数现在只负责处理会话的发送缓冲区
+    // 实际的响应发送由响应线程处理
+    return 0; // 暂时返回0，因为发送逻辑在响应线程中
 }
 
 int session_process_incoming_packets_(session_t* session) {
     if (!session) return SESS_INVALID;
 
-    // 使用新的pkg库处理数据包
+    // 使用pkg库处理数据包
     uint32_t available = get_buffer_available_size(&session->recv_buffer);
     if (available < PACKET_HEADER_SIZE) return 0;
 
@@ -228,29 +207,21 @@ int session_process_incoming_packets_(session_t* session) {
                 command_id = ntohl(command_id);
                 sequence = ntohl(sequence);
                 
-                // 创建命令
-                command_t* cmd = create_command(
-                    session->user_id,
-                    (CommandNumber)command_id,
-                    sequence,
-                    1, // 默认优先级
-                    unpacked_data.string + 8,
-                    unpacked_data.len - 8
-                );
-
+                // 创建命令结构体
+                command_t* cmd = (command_t*)calloc(1, sizeof(command_t));
                 if (cmd) {
+                    cmd->session = session;
+                    cmd->command_id = (CommandNumber)command_id;
                     // 将命令加入队列
-                    if (push_command(cmd) == SESS_OK) {
-                        // 从缓冲区移除已处理的数据
-                        uint8_t temp_buffer[8192];
-                        buffer_read_(&session->recv_buffer, temp_buffer, start_index + packet_size);
-                        
-                        // 释放解包后的数据
-                        free(unpacked_data.string);
-                        return 1;
-                    } else {
-                        destroy_command(cmd);
-                    }
+                    command_queue.enqueue(cmd);
+                    
+                    // 从缓冲区移除已处理的数据
+                    uint8_t temp_buffer[8192];
+                    buffer_read_(&session->recv_buffer, temp_buffer, start_index + packet_size);
+                    
+                    // 释放解包后的数据
+                    free(unpacked_data.string);
+                    return 1;
                 }
             }
             

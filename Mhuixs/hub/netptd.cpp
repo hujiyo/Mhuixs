@@ -1,6 +1,24 @@
 #include "manager.h"
+#include "unistd.h"
+#include "errno.h"
+#include "string.h"
+#include "stdlib.h"
+#include "vector"
 
-// “会话清理”-线程函数
+// 响应线程管理
+static std::vector<response_thread_info_t*> response_threads;
+static pthread_mutex_t response_threads_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// 响应状态定义
+#define RESP_PENDING 0
+#define RESP_SENDING 1
+#define RESP_COMPLETED 2
+#define RESP_FAILED 3
+
+// 大响应阈值（字节）
+#define LARGE_RESPONSE_THRESHOLD 8192
+
+// "会话清理"-线程函数
 static void* cleanup_thread_(void *arg) {
     network_manager_t* manager = (network_manager_t*)arg;
     if (!manager) return (void*)1;
@@ -65,9 +83,9 @@ static void* cleanup_thread_(void *arg) {
     return NULL;
 }
 
-// “连接响应”-线程函数
+// "连接响应"-线程函数
 //监听新连接、接收数据、发送数据、处理连接关闭和异常
-//“连接响应”-线程函数 在程序关闭阶段是第一种关闭的线程种类
+//"连接响应"-线程函数 在程序关闭阶段是第一种关闭的线程种类
 static void* network_thread_func_(void* arg) {
     network_manager_t* manager = (network_manager_t*)arg;
     if (!manager) return (void*)1;
@@ -107,9 +125,8 @@ static void* network_thread_func_(void* arg) {
                     // 分配会话
                     SIIP new_session_siip = alloc_with_socket_(client_fd,(struct sockaddr*)&client_addr);
 
-                    session_t* session = &g_network_manager->sesspool[new_session_siip];
-
-                    if (session) {
+                    if (new_session_siip != SIZE_MAX) {
+                        session_t* session = &g_network_manager->sesspool[new_session_siip];
                         // 设置为非阻塞
                         set_socket_nonblocking_(client_fd);
                         // 添加到epoll
@@ -118,7 +135,8 @@ static void* network_thread_func_(void* arg) {
                         ev.data.fd = client_fd;
 
                         if (epoll_ctl(manager->epoll_fd, EPOLL_CTL_ADD, client_fd, &ev) != 0) {
-                            recycle_session(manager, session->session_id);
+                            // 分配失败，关闭连接
+                            shutdown_session_on_(session);
                             close(client_fd);
                         }
                     } else {
@@ -148,9 +166,9 @@ static void* network_thread_func_(void* arg) {
                     if (event->events & EPOLLIN) {
                         // 接收数据
                         if (session_receive_data_(session) < 0) {
-                            // 连接关闭或错误
+                            // 连接关闭或错误，标记会话为空闲
+                            session->state = SESS_IDLE;
                             epoll_ctl(manager->epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
-                            recycle_session(manager, session->session_id);
                         }
                     }
 
@@ -160,9 +178,9 @@ static void* network_thread_func_(void* arg) {
                     }
 
                     if (event->events & (EPOLLHUP | EPOLLERR)) {
-                        // 连接关闭或错误
+                        // 连接关闭或错误，标记会话为空闲
+                        session->state = SESS_IDLE;
                         epoll_ctl(manager->epoll_fd, EPOLL_CTL_DEL, client_fd, NULL);
-                        recycle_session(manager, session->session_id);
                     }
                 }
             }
@@ -174,69 +192,137 @@ static void* network_thread_func_(void* arg) {
     return NULL;
 }
 
+// 清理已完成的专用线程
+static void cleanup_finished_response_threads() {
+    pthread_mutex_lock(&response_threads_mutex);
+    
+    auto it = response_threads.begin();
+    while (it != response_threads.end()) {
+        response_thread_info_t* thread_info = *it;
+        if (!thread_info->active) {
+            // 线程已完成，清理资源
+            pthread_join(thread_info->thread_id, NULL);
+            delete thread_info;
+            it = response_threads.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    
+    pthread_mutex_unlock(&response_threads_mutex);
+}
+
 // 主响应处理线程
 static void* response_thread_func(void* arg) {
-    //network_manager_t* manager = (network_manager_t*)arg;
-
-    while (running) {
+    while (running_flag == RUN || running_flag == KILL) {
         response_t* response = NULL;
         if (response_queue.try_dequeue(response)) {
-            // 尝试发送响应
-            int result = send_response_direct(response);
-
-            if (result == SESS_ERR) {
-                // 发送失败，需要重试
-                response->retry_count++;
-                if (response->retry_count >= 3) {
-                    // 超过重试次数，创建专用线程
-                    create_dedicated_response_thread(response);
-                } else {
-                    // 重新加入队列
+            // 检查是否为大响应或可能阻塞的响应
+            if (response->response_len > LARGE_RESPONSE_THRESHOLD || 
+                response->retry_count > 0) {
+                // 大响应或重试过的响应，立即创建专用线程并放手不管
+                create_dedicated_response_thread(response);
+            } else {
+                // 小响应，快速发送
+                int result = send_response_direct(response);
+                if (result == SESS_ERR) {
+                    // 发送失败，标记为重试并重新加入队列
+                    response->retry_count++;
                     response_queue.enqueue(response);
+                } else if (result == SESS_OK) {
+                    // 发送成功，释放内存
+                    destroy_response(response);
                 }
-            } else if (result == SESS_OK) {
-                // 发送成功，释放内存
-                destroy_response(response);
             }
         } else {
             usleep(1000); // 1ms
+        }
+        
+        // 定期清理已完成的线程
+        static int cleanup_counter = 0;
+        if (++cleanup_counter >= 1000) { // 每1000次循环清理一次
+            cleanup_finished_response_threads();
+            cleanup_counter = 0;
         }
     }
     return NULL;
 }
 
-// 专用响应线程（处理大响应）
+// 专用响应线程（完全自主，处理大响应）
 static void* dedicated_response_thread_func(void* arg) {
     response_thread_info_t* thread_info = (response_thread_info_t*)arg;
     response_t* response = thread_info->response;
+    session_t* session = response->session;
 
+    // 获取会话所有权
+    SIIP session_idx = SIZE_MAX;
+    for (uint32_t i = 0; i < g_network_manager->active_num; i++) {
+        if (g_network_manager->sesspool[g_network_manager->active_sessions[i]].session_id == session->session_id) {
+            session_idx = g_network_manager->active_sessions[i];
+            break;
+        }
+    }
+
+    if (session_idx == SIZE_MAX) {
+        // 会话不存在，直接清理并退出
+        destroy_response(response);
+        thread_info->active = 0;
+        return NULL;
+    }
+
+    // 尝试获取会话所有权
+    if (try_get_session_ownership_(session_idx) != 0) {
+        // 无法获取所有权，重新加入队列
+        response_queue.enqueue(response);
+        thread_info->active = 0;
+        return NULL;
+    }
+
+    // 开始发送数据
     while (!thread_info->shutdown && response->sent_len < response->response_len) {
         // 分块发送数据
         size_t remaining = response->response_len - response->sent_len;
         size_t chunk_size = (remaining > 8192) ? 8192 : remaining;
 
-        const uint8_t* data_ptr = (response->response_len >= 48) ?
+        const uint8_t* data_ptr = (response->response_len >= 57) ?
                                  response->data + response->sent_len :
                                  response->inline_data + response->sent_len;
 
-        ssize_t bytes_sent = send(response->socket_fd, data_ptr, chunk_size, MSG_DONTWAIT);
+        ssize_t bytes_sent = send(session->socket_fd, data_ptr, chunk_size, MSG_DONTWAIT);
 
         if (bytes_sent > 0) {
             response->sent_len += bytes_sent;
+            // 更新会话活动时间
+            session->last_activity = time(NULL);
         } else if (bytes_sent == -1) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 usleep(1000); // 等待1ms后重试
                 continue;
             } else {
-                // 发送错误
-                response->status = RESP_FAILED;
+                // 发送错误，标记会话状态
+                session->state = SESS_IDLE;
                 break;
             }
+        } else {
+            // 发送返回0，连接可能已关闭
+            session->state = SESS_IDLE;
+            break;
         }
     }
 
-    // 发送完成
-    response->status = RESP_COMPLETED;
+    // 释放会话所有权
+    release_session_ownership_(session_idx);
+
+    // 发送完成或失败，清理资源
+    if (response->sent_len >= response->response_len) {
+        // 发送成功
+        response->status = RESP_COMPLETED;
+    } else {
+        // 发送失败
+        response->status = RESP_FAILED;
+    }
+
+    // 销毁响应
     destroy_response(response);
 
     // 标记线程为非活跃
@@ -256,8 +342,10 @@ static int create_dedicated_response_thread(response_t* response) {
     }
 
     if (active_threads >= max_response_threads) {
+        // 超过线程数限制，重新加入队列
         pthread_mutex_unlock(&response_threads_mutex);
-        return SESS_ERROR;
+        response_queue.enqueue(response);
+        return SESS_ERR;
     }
 
     // 创建新线程信息
@@ -265,13 +353,17 @@ static int create_dedicated_response_thread(response_t* response) {
     thread_info->response = response;
     thread_info->active = 1;
     thread_info->shutdown = 0;
+    response->sent_len = 0;
+    response->status = RESP_SENDING;
 
     // 创建线程
     if (pthread_create(&thread_info->thread_id, NULL,
                       dedicated_response_thread_func, thread_info) != 0) {
         delete thread_info;
         pthread_mutex_unlock(&response_threads_mutex);
-        return SESS_ERROR;
+        // 创建线程失败，重新加入队列
+        response_queue.enqueue(response);
+        return SESS_ERR;
     }
 
     response_threads.push_back(thread_info);
@@ -282,12 +374,12 @@ static int create_dedicated_response_thread(response_t* response) {
 
 // 直接发送响应（用于小响应）
 static int send_response_direct(response_t* response) {
-    if (!response || response->socket_fd < 0) return SESS_INVALID;
+    if (!response || !response->session || response->session->socket_fd < 0) return SESS_INVALID;
 
-    const uint8_t* data_ptr = (response->response_len >= 48) ?
-                             response->data : response->inline_data;
+    const uint8_t* data_ptr = (response->response_len < 57) ?
+                             response->inline_data : response->data;
 
-    ssize_t bytes_sent = send(response->socket_fd, data_ptr, response->response_len, MSG_DONTWAIT);
+    ssize_t bytes_sent = send(response->session->socket_fd, data_ptr, response->response_len, MSG_DONTWAIT);
 
     if (bytes_sent == response->response_len) {
         return SESS_OK; // 发送成功
@@ -304,39 +396,63 @@ static int send_response_direct(response_t* response) {
     return SESS_ERR;
 }
 
-// “解析工作”-线程函数
+// 销毁响应
+static void destroy_response(response_t* response) {
+    if (!response) return;
+    
+    if (response->response_len >= 57 && response->data) {
+        free(response->data);
+    }
+    free(response);
+}
+
+// "解析工作"-线程函数
 static void* worker_thread_func_(void* arg) {
-    network_manager_t* manager =(network_manager_t*)arg;
+    network_manager_t* manager = (network_manager_t*)arg;
+    if (!manager) return (void*)1;
+    
+    while (running_flag == UN_START) {
+        sleep(1);
+    }
+    ++worker_thread_running_flag;
 
-    while (running_flag==RUN || running_flag == KILL ) {
-        // SIIP;
-
-        // if (count == 0) {
-        //     usleep(1000); // 1ms
-        //     continue;
-        // }network_thread_func
-
-        // 处理会话中的数据包
-        for (uint32_t i = 0; i < count; i++) {
-            SIIP siip = session_idx[i];
-            if (try_get_session_ownership_(siip) == SESS_ERR) {
-                //。。。
+    while (running_flag == RUN || running_flag == KILL) {
+        // 从命令队列获取命令
+        command_t* cmd = NULL;
+        if (command_queue.try_dequeue(cmd)) {
+            if (cmd && cmd->session) {
+                // 处理会话中的数据包
+                session_process_incoming_packets_(cmd->session);
+                
+                // 释放命令
+                free(cmd);
             }
-
-                session_process_incoming_packets_(&g_network_manager->sesspool[siip]);
-
+        } else {
+            usleep(1000); // 1ms
         }
     }
+    
     if (running_flag == CLOSE) {
-        //........ //暂时不考虑
-        int i = 0;
-        i++;
+        --worker_thread_running_flag;
     }
     return NULL;
 }
 
-// “回复”-线程函数
+// "回复"-线程函数
 static void* response_manager_thread_func_(void* arg) {
-    static vector<response_thread_info_t*> response_threads;
-    static pthread_mutex_t response_threads_mutex = PTHREAD_MUTEX_INITIALIZER;
+    network_manager_t* manager = (network_manager_t*)arg;
+    if (!manager) return (void*)1;
+    
+    while (running_flag == UN_START) {
+        sleep(1);
+    }
+    ++response_manager_thread_running_flag;
+
+    // 启动主响应处理线程
+    response_thread_func(arg);
+
+    if (running_flag == CLOSE) {
+        --response_manager_thread_running_flag;
+    }
+    return NULL;
 }
