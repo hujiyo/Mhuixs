@@ -1,56 +1,19 @@
 #include "manager.h"
 #include "netptd.cpp"
-//#include "stdatomic.h"
 
 // 全局变量/统计变量
 network_manager_t* g_network_manager;//网络管理器
 volatile int running_flag;//网络系统运行标志
 volatile int cleanup_thread_running_flag;//清理线程运行标志
 volatile int response_manager_thread_running_flag;//回复线程运行标志
-volatile atomic_int network_thread_running_flag;//网络线程运行标志
-volatile atomic_int worker_thread_running_flag;//解包工作线程线程运行标志
+volatile atomic<int> network_thread_running_flag;//网络线程运行标志
+volatile atomic<int> worker_thread_running_flag;//解包工作线程线程运行标志
 
 // 全局响应队列和线程管理
-ConcurrentQueue<response_t*> response_queue;//全局回复队列
+ReaderWriterQueue<response_t*> response_queue;//全局回复队列
 ConcurrentQueue<command_t*> command_queue;//全局执行队列
 
 
-//本地函数声明
-static void init_sesspool_(network_manager_t* manager);
-
-
-static void init_sesspool_(network_manager_t* manager) {
-    /* 初始化会话池，包括所有会话的状态、锁和缓冲区
-     * 函数需要将会话标记为空闲（1）
-     * 初始化会话锁和接收缓冲区锁（2）
-     * 初始化缓冲区内存为默认大小（3）
-     * 会话池的每一个空位都只要被执行一次 */
-    for (size_t i = 0; i < manager->pool_capacity; i++) {
-        session_t* session = &manager->sesspool[i];
-
-        session->state = SESS_IDLE;// 标记为空会话
-        // 初始化会话互斥锁
-        if (pthread_mutex_init(&session->session_mutex, NULL) != 0) goto err;
-        // 初始化接收缓冲区锁
-        if (pthread_mutex_init(&session->recv_buffer.mutex, NULL) != 0) goto err;
-
-        // 创建默认网络缓冲区
-        session->recv_buffer.buffer = (uint8_t*)calloc(1, DEFAULT_BUFFER_SIZE);
-        session->recv_buffer.capacity = DEFAULT_BUFFER_SIZE;
-        if (!session->recv_buffer.buffer) goto err;
-
-        // 设置空闲会话索引
-        manager->idle_sessions[i] = i;
-    }
-    manager->idle_num = manager->pool_capacity;
-    manager->active_num = 0;
-    return;
-
-    err:
-    printf("init_sesspool_ failed!\n");
-    system("read -p '按回车键继续...'");
-    exit(1);
-}
 void network_server_system_init() {
     //提前声明变量
     const int opt = 1;// 设置套接字选项
@@ -251,4 +214,43 @@ void network_server_system_shutdown() {
 
     //整个网络管理器的资源就不用释放了，这些临时数据也不要了，有价值的数据将会在线程关闭之前被提交给全局执行队列。
 }
+int auth_session(const SID session_id,const UID uid) {
+    //UID成员只由初始化阶段和回收阶段的epoll线程和执行线程通过本函数修改，且二者时间线上岔开，不用考虑竞争
+    session_t* sesspool = g_network_manager->sesspool;
+    pthread_mutex_lock(&g_network_manager->pool_mutex);
+    for (size_t i = 0;i<g_network_manager->active_num;i++) {
+        session_t* session = &sesspool[g_network_manager->active_sessions[i]];
+        if (session->session_id == session_id &&
+            session->state != SESS_IDLE) {
+            pthread_mutex_unlock(&g_network_manager->pool_mutex);
+            if (pthread_mutex_trylock(&session->session_mutex) == EBUSY) {
+                return SESS_ERR;
+            }
+            pthread_mutex_unlock(&session->session_mutex);
+            session->user_id = uid;//认证成功
+            return SESS_OK;
+            }
+    }
+    return SESS_INVALID;
+}
+int send_response(session_t *session, uint8_t* response_data, uint32_t response_len) {
+    // 本函数会接管response_data的所有权
+    if (!session || !response_data || response_len == 0) return SESS_INVALID;
 
+    // 创建响应结构体
+    response_t* response = (response_t*)calloc(1, sizeof(response_t));
+    if (!response) return SESS_ERR;
+
+    response->session = session;
+    response->response_len = response_len;
+    if (response_len < 57) {
+        memcpy(&response->inline_data,response_data, response_len);
+        free(response_data);
+    }
+    else {
+        response->data = response_data;
+    }
+    // 加入响应队列
+    response_queue.enqueue(response);
+    return SESS_OK;
+}

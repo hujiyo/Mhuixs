@@ -1,7 +1,5 @@
 #include "manager.h"
 
-//extern
-
 // “会话清理”-线程函数
 static void* cleanup_thread_(void *arg) {
     network_manager_t* manager = (network_manager_t*)arg;
@@ -30,9 +28,20 @@ static void* cleanup_thread_(void *arg) {
                 }
                 session_to_check->state = SESS_IDLE;
 
-                ////////////////////////////////缓冲区重置
-                /// // 回收线程得负责恢复默认缓冲区大小
-                ///
+                //缓冲区重置  回收线程得负责恢复默认缓冲区大小
+                if (session_to_check->recv_buffer.capacity!=DEFAULT_BUFFER_SIZE) {
+                    uint8_t* new_ptr = (uint8_t*)realloc(session_to_check->recv_buffer.buffer,DEFAULT_BUFFER_SIZE);
+                    if (!new_ptr) {
+                        printf("cleanup_thread_ : realloc , make sure the system is normal!");
+                    }
+                    else {
+                        session_to_check->recv_buffer.buffer = new_ptr;
+                        session_to_check->recv_buffer.capacity = DEFAULT_BUFFER_SIZE;
+                    }
+                }
+                session_to_check->recv_buffer.read_pos = 0;
+                session_to_check->recv_buffer.write_pos = 0;
+
                 //关闭套接字 客户端断开连接
                 if (session_to_check->socket_fd >= 0) {
                     close(session_to_check->socket_fd);
@@ -164,7 +173,6 @@ static void* network_thread_func_(void* arg) {
     }
     return NULL;
 }
-
 
 // 主响应处理线程
 static void* response_thread_func(void* arg) {
