@@ -5,6 +5,10 @@
 #任何人或组织在未经版权所有者同意的情况下禁止使用、修改、分发此作品
 start from 2024.11
 Email:hj18914255909@outlook.com
+#许可证协议:
+#任何人或组织在未经版权所有者同意的情况下禁止使用、修改、分发此作品
+start from 2024.11
+Email:hj18914255909@outlook.com
 */
 #ifndef MANAGER_H
 #define MANAGER_H
@@ -29,6 +33,7 @@ Email:hj18914255909@outlook.com
 // 项目内部依赖
 #include "getid.hpp"
 //#include "usergroup.hpp"
+#include "pkg.h"
 #include "pkg.h"
 #include "funseq.h"
 //#include "mtype.hpp"
@@ -112,12 +117,10 @@ typedef struct command {
 typedef struct response {
     session_t *session;                 // 回复会话对象
     uint32_t response_len;         // 响应长度:[<57]->inline_data | [>=57]->data
-    uint32_t retry_count;          // 重试次数
     uint32_t sent_len;             // 已发送长度
-    uint32_t status;               // 响应状态
     union {
         uint8_t* data;//需要对方释放
-        uint8_t inline_data[56];
+        uint8_t inline_data[48];
     }; // 响应数据
 } response_t;
 
@@ -158,7 +161,7 @@ extern volatile atomic_int network_thread_running_flag;//网络线程运行标�
 extern volatile atomic<int> worker_thread_running_flag;//解包工作线程线程运行标志
 
 // 全局响应队列和线程管理
-extern ReaderWriterQueue<response_t*> response_queue;//全局回复队列
+extern BlockingReaderWriterQueue<response_t*> response_queue;//全局回复队列
 extern ConcurrentQueue<command_t*> command_queue;//全局执行队列
 
 
@@ -172,7 +175,10 @@ int set_socket_nonblocking_(int sockfd);//设置对话为非阻塞
 SIIP alloc_with_socket_(int socket_fd, const sockaddr* client_addr);//分配会话 epoll线程使用
 int try_get_session_ownership_(SIIP siid);//按会话SIID尝试获得所有权
 int release_session_ownership_(SIIP siid);//按会话SIID释放所有权
-static void init_sesspool_(network_manager_t* manager);//线程池初始化
+void init_sesspool_(network_manager_t* manager);//线程池初始化
+void shutdown_session_on_(session_t* session);//关闭会话
+int session_receive_data_(session_t* session);//接收数据
+int send_all(response_t* resp);//发送回复
 
 #ifdef __cplusplus
 }

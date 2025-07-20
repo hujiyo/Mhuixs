@@ -11,9 +11,8 @@ volatile atomic<int> network_thread_running_flag;//网络线程运行标志
 volatile atomic<int> worker_thread_running_flag;//解包工作线程线程运行标志
 
 // 全局响应队列和线程管理
-ReaderWriterQueue<response_t*> response_queue;//全局回复队列
+BlockingReaderWriterQueue<response_t*> response_queue;//全局回复队列
 ConcurrentQueue<command_t*> command_queue;//全局执行队列
-
 
 void network_server_system_init() {
     //提前声明变量
@@ -244,7 +243,7 @@ int send_response(session_t *session, uint8_t* response_data, uint32_t response_
 
     response->session = session;
     response->response_len = response_len;
-    if (response_len < 57) {
+    if (response_len < 49) {
         memcpy(&response->inline_data,response_data, response_len);
         free(response_data);
     }

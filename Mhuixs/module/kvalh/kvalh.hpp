@@ -10,7 +10,7 @@
 #include <string>
 
 #include "Mhudef.hpp"
-#include "mshare.hpp"
+#include "memap.hpp"
 #include "merr.h"  // 引入merr库的错误处理机制
 #include "stdstr.h" // 引入str结构支持
 /*
@@ -46,6 +46,7 @@ class KVALOT{
         // 构造函数，初始化为空桶
         HASH_TONG() : numof_key(0), capacity(0), offsetof_key(NULL) {}
     };
+    static MEMAP g_memap;
 public:
     struct KEY{
         basic_handle_struct bhs;//对象
@@ -114,6 +115,8 @@ public:
     float get_load_factor() const; // 获取装载因子
     void print_statistics() const; // 打印统计信息
 };
+
+MEMAP KVALOT::g_memap(1024,10240);
 
 // C风格的便利函数声明
 #ifdef __cplusplus

@@ -295,7 +295,23 @@ NAQL：NAture-language Query Language
 
 ## 8.致谢
 
-0. [LICENSE.md中的鸣谢](LICENSES.md)
+0. 致敬开源社区
+
+```
+感谢开源社区，特别是上述第三方库的作者们。正是他们的无私奉献和优秀工作，
+让Mhuixs能够站在巨人的肩膀上发展。我在这里祝你们心想事成、事业有成、阖家幸福、幸福安康。
+
+————HuJiYo 2025
+
+Thanks to the open-source community, especially the authors of the aforementioned 
+third-party libraries. It is their selfless dedication and excellent work that have 
+enabled Mhuixs to develop by standing on the shoulders of giants. Here, I wish you 
+all the best in your endeavors, success in your careers, happiness for your families, 
+and health and well-being.
+
+————HuJiYo 2025
+```
+
 
 1. 感谢Claude、GPT、Qwen、Deepseek、DouBao系列模型（~QvQ~）。
 

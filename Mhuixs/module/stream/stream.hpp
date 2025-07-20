@@ -1,11 +1,10 @@
 #ifndef STREAM_HPP
 #define STREAM_HPP
-#include "mshare.hpp"
 #include <stdint.h>
+#include "memap.hpp"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
@@ -29,6 +28,7 @@ private:
     int state;          // 状态码
 
     int ensure_capacity(uint32_t mincap); // 自动扩容
+    static MEMAP g_memap;
 public:
     STREAM(uint32_t initcap = 64); // 构造，指定初始容量
     STREAM(const STREAM& other); // 拷贝构造函数
@@ -43,5 +43,7 @@ public:
     uint32_t len() const; // 获取流长度
     int iserr() const; // 错误检查
 };
+
+MEMAP STREAM::g_memap(1024,10240);
 
 #endif
