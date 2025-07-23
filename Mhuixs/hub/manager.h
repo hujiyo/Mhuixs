@@ -55,7 +55,6 @@ using namespace moodycamel;
 #define LISTEN_BACKLOG 1024
 
 #define NETWORK_THREADS 1  // 单网络线程 + epoll
-#define WORKER_THREADS 4   // 根据CPU核心数调整
 #define max_response_threads 10 // 最大响应线程数
 
 #define ADDRESS_FAMILY AF_INET //只支持ipv4
@@ -114,13 +113,14 @@ typedef struct command {
 } command_t;
 
 // 响应结构体
+#define INLINE_DATA_THRESHOLD 48
 typedef struct response {
     session_t *session;                 // 回复会话对象
-    uint32_t response_len;         // 响应长度:[<57]->inline_data | [>=57]->data
+    uint32_t response_len;         // 响应长度:[<INLINE_DATA_THRESHOLD]->inline_data | [>=INLINE_DATA_THRESHOLD]->data
     uint32_t sent_len;             // 已发送长度
     union {
         uint8_t* data;//需要对方释放
-        uint8_t inline_data[48];
+        uint8_t inline_data[INLINE_DATA_THRESHOLD];
     }; // 响应数据
 } response_t;
 

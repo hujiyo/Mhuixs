@@ -106,7 +106,7 @@ static void* network_thread_func_(void* arg) {
         if (nfds == -1) {
             if (errno == EINTR) continue;
             break;
-        }  //??__gthread_once()
+        }
 
         for (int i = 0; i < nfds; i++) {
             epoll_event* event = &events[i];
@@ -200,36 +200,6 @@ static void* network_thread_func_(void* arg) {
     }
     return NULL;
 }
-// "解析工作"-线程函数
-static void* worker_thread_func_(void* arg) {
-    network_manager_t* manager = (network_manager_t*)arg;
-    if (!manager) return (void*)1;
-
-    while (running_flag == UN_START) {
-        sleep(1);
-    }
-    ++worker_thread_running_flag;
-
-    while (running_flag == RUN || running_flag == KILL) {
-        // 从命令队列获取命令
-        command_t* cmd = NULL;
-        if (command_queue.try_dequeue(cmd)) {
-            if (cmd && cmd->session) {
-                // 处理会话中的数据包
-                //..暂时不写
-                // 释放命令
-                free(cmd);
-            }
-        } else {
-            usleep(1000); // 1ms
-        }
-    }
-
-    if (running_flag == CLOSE) {
-        --worker_thread_running_flag;
-    }
-    return NULL;
-}
 
 static void* child_reponse_thread_(void* arg) {
     int id = *((int*)arg);
@@ -260,7 +230,7 @@ static void* child_reponse_thread_(void* arg) {
         }
 
         // 释放资源
-        if (g_pthread_task[id]->response_len > 48) {
+        if (g_pthread_task[id]->response_len >= INLINE_DATA_THRESHOLD) {
             free(g_pthread_task[id]->data);
         }
         free(g_pthread_task[id]);// 接管指针内存并释放
@@ -271,7 +241,6 @@ static void* child_reponse_thread_(void* arg) {
 
     return NULL;
 }
-#define INLINE_DATA_THRESHOLD 48
 
 // 临时线程处理函数
 static void* temp_response_handler(void* arg) {

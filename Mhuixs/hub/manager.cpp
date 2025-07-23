@@ -8,7 +8,6 @@ volatile int running_flag;//网络系统运行标志
 volatile int cleanup_thread_running_flag;//清理线程运行标志
 volatile int response_manager_thread_running_flag;//回复线程运行标志
 volatile atomic<int> network_thread_running_flag;//网络线程运行标志
-volatile atomic<int> worker_thread_running_flag;//解包工作线程线程运行标志
 
 // 全局响应队列和线程管理
 BlockingReaderWriterQueue<response_t*> response_queue;//全局回复队列
@@ -126,8 +125,8 @@ void network_server_system_init() {
     }
 
     // 创建“回复管理”-线程
-    if (pthread_create(&manager->response_thread,NULL,response_manager_thread_func_,manager)!=0) {
-        printf("response_manager_thread_func_ pthread created error\n");
+    if (pthread_create(&manager->response_thread,NULL,response_thread_func_,manager)!=0) {
+        printf("response_thread_func_ pthread created error\n");
         goto err;
     }
 
@@ -144,14 +143,6 @@ void network_server_system_init() {
     for (uint32_t i = 0; i < NETWORK_THREADS; i++) {
         if (pthread_create(&manager->network_threads[i], NULL, network_thread_func_, manager) != 0) {
             printf("network_thread_func_ pthread created error\n");
-            goto err;
-        }
-    }
-
-    // 启动工作线程
-    for (uint32_t i = 0; i < WORKER_THREADS; i++) {
-        if (pthread_create(&manager->worker_threads[i], NULL, worker_thread_func_, manager) != 0) {
-            printf("worker_thread_func_ pthread created error\n");
             goto err;
         }
     }
@@ -243,7 +234,7 @@ int send_response(session_t *session, uint8_t* response_data, uint32_t response_
 
     response->session = session;
     response->response_len = response_len;
-    if (response_len < 49) {
+    if (response_len < INLINE_DATA_THRESHOLD) {
         memcpy(&response->inline_data,response_data, response_len);
         free(response_data);
     }

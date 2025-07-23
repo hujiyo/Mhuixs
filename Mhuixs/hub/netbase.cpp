@@ -154,7 +154,7 @@ int send_all(response_t* resp) {
     // -2:error -1:timeout 0:OK
 
     // 获取数据指针
-    uint8_t* data_ptr = resp->response_len >= 49 ? resp->data : resp->inline_data;
+    uint8_t* data_ptr = resp->response_len >= INLINE_DATA_THRESHOLD ? resp->data : resp->inline_data;
     if (!data_ptr) return -2;
 
     timespec start_time, current_time;

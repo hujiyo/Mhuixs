@@ -293,7 +293,7 @@ NAQL：NAture-language Query Language
 
 基础语法是lexer直接解释和转化的，lexer之前还需要有个环节将不定形式的语法转化为标准语法
 
-## 8.致谢
+## 8.致谢 && 依赖
 
 0. 致敬开源社区
 
