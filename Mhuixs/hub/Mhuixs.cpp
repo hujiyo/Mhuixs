@@ -23,8 +23,7 @@ table需要增添表格恢复功能
 
 #include "Mhudef.hpp"
 
-#include "session.h"
-#include "manager.h"
+#include "netplug.h"
 
 //执行队列execution queue
 //命令长度
@@ -81,11 +80,19 @@ int main()
 
     //初始化执行队列、发送队列、日志队列
     
-    //伪代码
-    /*
-    启动session模块 
-    */
-    //启动监听线程
-    //主线程:
-    //不断的在轮询每个会话，如果会话有任务，则执行任务
+    // 初始化并启动网络模块
+    if (netplug_init(18482) != 0) {
+        printf("\nNetplug module init failed!\n");
+        return 1;
+    }
+    
+    printf("Starting Mhuixs server...\n");
+    if (netplug_start() != 0) {
+        printf("\nNetplug module start failed!\n");
+        return 1;
+    }
+    
+    // 主线程:
+    // 不断地在轮询每个会话，如果会话有任务，则执行任务
+    // (实际的网络处理在netplug的异步事件循环中进行)
 }
