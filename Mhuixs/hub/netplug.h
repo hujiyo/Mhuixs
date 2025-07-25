@@ -6,7 +6,7 @@
 #include <time.h>
 #include <atomic>
 #include "getid.hpp"
-#include "pkg.h" 
+#include "pkg.h"
 #include "funseq.h"
 #include "dependence/concurrentqueue.h"
 #include "dependence/readerwriterqueue.h"
@@ -23,75 +23,72 @@ using namespace moodycamel;
 extern "C" {
 #endif
 
-typedef enum {
-    SESS_IDLE = 1,
-    SESS_ALIVE = 2,
-    SESS_USING = 3
-} session_state_t;
+    typedef enum {
+        SESS_IDLE = 1,
+        SESS_ALIVE = 2,
+        SESS_USING = 3
+    } session_state_t;
 
-typedef struct {
-    uint8_t* data;
-    uint32_t capacity;
-    uint32_t size;
-    uint32_t read_pos;
-} buffer_t;
-
-typedef struct {
-    SID session_id;
-    UID user_id;
-    uv_tcp_t tcp_handle;
-    buffer_t recv_buffer;
-    session_state_t state;
-    uint64_t last_activity;
-    uint32_t pool_index;
-} session_t;
-
-typedef struct {
-    session_t *session;
-    CommandNumber command_id;
-    void* k0;
-    void* k1; 
-    void* k2;
-    void* k3;
-} command_t;
-
-typedef struct {
-    session_t *session;
-    uint32_t response_len;
-    uint32_t sent_len;
-    union {
+    typedef struct {
         uint8_t* data;
-        uint8_t inline_data[48];
-    };
-} response_t;
+        uint32_t capacity;
+        uint32_t size;
+        uint32_t read_pos;
+    } buffer_t;
 
-typedef struct {
-    uv_loop_t* loop;
-    uv_tcp_t server;
-    uv_timer_t cleanup_timer;
-    
-    session_t* sessions;
-    uint32_t* idle_sessions;
-    uint32_t max_sessions;
-    uint32_t idle_count;
-    
-    uv_mutex_t pool_mutex;
-    uv_thread_t worker_threads[4];
-    atomic<bool> running;
-} netplug_t;
+    typedef struct {
+        SID session_id;
+        UID user_id;
+        uv_tcp_t tcp_handle;
+        buffer_t recv_buffer;
+        session_state_t state;
+        uint64_t last_activity;
+        uint32_t pool_index;
+    } session_t;
 
-// 全局变量
-extern netplug_t* g_netplug;
-extern ConcurrentQueue<command_t*> command_queue;
-extern BlockingReaderWriterQueue<response_t*> response_queue;
-extern Id_alloctor Idalloc;
+    typedef struct {
+        session_t *session;
+        CommandNumber command_id;
+        void* k0;
+        void* k1;
+        void* k2;
+        void* k3;
+    } command_t;
 
-// API函数
-int netplug_init(uint16_t port);
-int netplug_start();
-void netplug_shutdown();
-int auth_session(SID session_id, UID uid);
-int send_response(session_t *session, uint8_t* response_data, uint32_t response_len);
+    typedef struct {
+        session_t *session;
+        uint32_t response_len;
+        uint32_t sent_len;
+        union {
+            uint8_t* data;
+            uint8_t inline_data[48];
+        };
+    } response_t;
+
+    typedef struct {
+        uv_loop_t* loop;
+        uv_tcp_t server;
+        uv_timer_t cleanup_timer;
+
+        session_t* sessions;
+        uint32_t* idle_sessions;
+        uint32_t max_sessions;
+        uint32_t idle_count;
+
+        uv_mutex_t pool_mutex;
+    } netplug_t;
+
+    // 全局变量
+    extern netplug_t* g_netplug;
+    extern ConcurrentQueue<command_t*> command_queue;
+    extern BlockingReaderWriterQueue<response_t*> response_queue;
+    extern Id_alloctor Idalloc;
+
+    // API函数
+    int netplug_init(uint16_t port);
+    int netplug_start();
+    void netplug_shutdown();
+    int auth_session(SID session_id, UID uid);
 
 #ifdef __cplusplus
 }

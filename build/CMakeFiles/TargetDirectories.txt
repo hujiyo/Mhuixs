@@ -1,3 +1,0 @@
-/home/hujiyo/Mhuixs/build/CMakeFiles/Mhuixs.dir
-/home/hujiyo/Mhuixs/build/CMakeFiles/edit_cache.dir
-/home/hujiyo/Mhuixs/build/CMakeFiles/rebuild_cache.dir
