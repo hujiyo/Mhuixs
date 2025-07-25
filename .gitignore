@@ -15,4 +15,8 @@ backup/
 
 analytics.md
 
+build/
 
+build_server/
+
+.gitignore
