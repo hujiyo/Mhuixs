@@ -20,3 +20,5 @@ build/
 build_server/
 
 .gitignore
+
+logs/
