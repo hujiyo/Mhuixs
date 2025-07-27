@@ -1,3 +1,10 @@
+/*
+Repo: https://github.com/hujiyo/bitcpy
+Author: hujiyo
+License: MIT
+FROM 2025
+*/
+
 #ifndef BITCPY_H
 #define BITCPY_H
 #include <stdint.h>

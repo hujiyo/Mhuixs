@@ -283,7 +283,7 @@ NAQL：NAture-language Query Language
 
 未来我们会出一版专门提供给AI看的查询语言 " 学习资料 "。
 
-[👉 NAQL基础语法文档](Mhuixs/muixclt/NAQL.txt)
+[👉 NAQL基础语法文档](Mhuixs/share/NAQL.txt)
 
 **NAQL 语法特点**：
 - 接近自然语言的语法设计
