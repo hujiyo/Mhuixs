@@ -1,4 +1,5 @@
 #include "stream.hpp"
+#include "nlohmann/json.hpp"
 
 STREAM::STREAM(uint32_t initcap)
     : offset(NULL_OFFSET), size(0), capacity(initcap), state(0)
@@ -99,4 +100,11 @@ STREAM& STREAM::operator=(const STREAM& other) {
         memcpy(g_memap.addr(offset), g_memap.addr(other.offset), other.size);
     }
     return *this;
+}
+
+nlohmann::json STREAM::get_all_info() const {
+    nlohmann::json info;
+    info["length"] = size;
+    info["capacity"] = capacity;
+    return info;
 }

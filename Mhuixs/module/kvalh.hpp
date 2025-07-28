@@ -114,6 +114,7 @@ public:
     uint32_t get_bucket_count() const; // 获取桶数量
     float get_load_factor() const; // 获取装载因子
     void print_statistics() const; // 打印统计信息
+    nlohmann::json get_all_info() const;
 };
 
 MEMAP KVALOT::g_memap(1024,10240);

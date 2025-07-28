@@ -6,6 +6,7 @@ start from 2025.1
 Email:hj18914255909@outlook.com
 */
 #include "tblh.hpp"
+#include "nlohmann/json.hpp"
 
 #define TENTATIVE 0
 #define _max_( a , b ) ( ( a ) > ( b ) ? ( a ) : ( b ) )
@@ -198,6 +199,58 @@ TABLE::TABLE(const TABLE& other)
                     uint8_t* dst_addr = p_data + this_line_index.get_index(j) * record_length + this_field_offset.get_index(i);
                     string* src_str = nullptr;
                     memcpy(&src_str, src_addr, sizeof(string*));
+                }
+            }
+        }
+    }
+}
+
+nlohmann::json TABLE::get_all_info() const {
+    nlohmann::json info;
+    info["table_name"] = table_name;
+    info["field_num"] = field_num;
+    info["record_num"] = record_num;
+
+    nlohmann::json fields = nlohmann::json::array();
+    for (uint32_t i = 0; i < field_num; i++) {
+        nlohmann::json field_info;
+        field_info["name"] = std::string((char*)p_field[i].name, format_name_length);
+        field_info["type"] = p_field[i].type;
+        field_info["key_type"] = p_field[i].key_type;
+        fields.push_back(field_info);
+    }
+    info["fields"] = fields;
+
+    nlohmann::json records = nlohmann::json::array();
+    for (uint32_t j = 0; j < record_num; j++) {
+        nlohmann::json record_info = nlohmann::json::object();
+        for (uint32_t i = 0; i < field_num; i++) {
+            uint8_t* inf_addr = real_addr_of_lindex(j) + field_offset.get_index(i);
+            temp_mem temp;
+            memcpy(&temp, inf_addr, sizeoftype(p_field[i].type));
+            std::string field_name((char*)p_field[i].name, format_name_length);
+            switch (p_field[i].type) {
+                case I1: record_info[field_name] = temp.i1; break;
+                case I2: record_info[field_name] = temp.i2; break;
+                case I4: record_info[field_name] = temp.i4; break;
+                case I8: record_info[field_name] = temp.i8; break;
+                case UI1: record_info[field_name] = temp.ui1; break;
+                case UI2: record_info[field_name] = temp.ui2; break;
+                case UI4: record_info[field_name] = temp.ui4; break;
+                case UI8: record_info[field_name] = temp.ui8; break;
+                case F4: record_info[field_name] = temp.f4; break;
+                case F8: record_info[field_name] = temp.f8; break;
+                case STR: record_info[field_name] = (temp.str ? *temp.str : ""); break;
+                case DATE: record_info[field_name] = std::to_string(temp.i4/10000) + "." + std::to_string((temp.i4 / 100) % 100) + "." + std::to_string(temp.i4%100); break;
+                case TIME: record_info[field_name] = std::to_string(temp.i4/10000) + ":" + std::to_string((temp.i4 / 100) % 100) + ":" + std::to_string(temp.i4%100); break;
+            }
+        }
+        records.push_back(record_info);
+    }
+    info["records"] = records;
+
+    return info;
+
                     if (src_str) {
                         string* dst_str = new string(*src_str);
                         memcpy(dst_addr, &dst_str, sizeof(string*));

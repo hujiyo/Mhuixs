@@ -1,4 +1,5 @@
 #include "kvalh.hpp"
+#include "nlohmann/json.hpp"
 
 
 KVALOT::KVALOT(str* kvalot_name)//只能是规定的数量
@@ -198,6 +199,28 @@ int KVALOT::tong_ensure_capacity(HASH_TONG* tong, uint32_t needed_capacity) {
         tong->offsetof_key = (uint32_t*)malloc(sizeof(uint32_t) * 4);
         if (tong->offsetof_key == NULL) {
             report(merr, kvalot_module, "Memory allocation failed for hash bucket");
+    }
+}
+
+nlohmann::json KVALOT::get_all_info() const {
+    nlohmann::json info;
+    info["kvalot_name"] = this->kvalot_name;
+    info["key_count"] = this->keynum;
+    info["bucket_count"] = this->numof_tong;
+    info["load_factor"] = get_load_factor();
+
+    nlohmann::json keys = nlohmann::json::array();
+    for (const auto& key : keypool) {
+        nlohmann::json key_info;
+        uint32_t name_len = *(uint32_t*)g_memap.addr(key.name);
+        key_info["name"] = std::string((char*)g_memap.addr(key.name) + sizeof(uint32_t), name_len);
+        key_info["type"] = key.bhs.type;
+        keys.push_back(key_info);
+    }
+    info["keys"] = keys;
+
+    return info;
+
             return merr;
         }
         tong->capacity = 4;

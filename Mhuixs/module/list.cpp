@@ -1,4 +1,5 @@
 #include "list.hpp"
+#include "nlohmann/json.hpp"
 /*
 #版权所有 (c) HUJI 2025
 #许可证协议:
@@ -193,6 +194,20 @@ int LIST::update(str &s, int64_t idx)
     //更新索引
     this->index.set_index(adjusted_idx, node_o);
     return 0;
+}
+
+nlohmann::json LIST::get_all_info() const {
+    nlohmann::json info;
+    info["element_count"] = this->index.size();
+    nlohmann::json elements = nlohmann::json::array();
+    for (uint32_t i = 0; i < this->index.size(); i++) {
+        OFFSET node_o = this->index.get_index(i);
+        uint32_t len = *(uint32_t*)strpool.addr(node_o);
+        std::string val((char*)strpool.addr(node_o) + sizeof(uint32_t), len);
+        elements.push_back(val);
+    }
+    info["elements"] = elements;
+    return info;
 }
 
 int LIST::del(int64_t index){

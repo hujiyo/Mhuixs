@@ -1,4 +1,5 @@
 #include "bitmap.hpp"
+#include "nlohmann/json.hpp"
 /*
 #版权所有 (c) HUJI 2025
 #许可证协议:
@@ -198,6 +199,21 @@ inline int BITMAP::rexpand(uint64_t size) {
         bitmap = (uint8_t*)realloc(bitmap, new_bite_num);
         *(uint64_t*)bitmap = size;
         return 0;
+    }
+}
+
+nlohmann::json BITMAP::get_all_info() const {
+    nlohmann::json info;
+    uint64_t s = size();
+    info["size"] = s;
+    std::string bitmap_str;
+    bitmap_str.reserve(s);
+    for (uint64_t i = 0; i < s; i++) {
+        bitmap_str += ((*this)[i] ? '1' : '0');
+    }
+    info["bitmap"] = bitmap_str;
+    return info;
+
     }
     
     uint8_t* new_bitmap = (uint8_t*)realloc(bitmap, new_bite_num);

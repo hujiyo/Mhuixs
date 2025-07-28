@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include "nlohmann/json.hpp"
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
@@ -42,6 +43,7 @@ public:
     int set_char(uint32_t pos, uint32_t len, uint8_t ch); // 指定位填充
     uint32_t len() const; // 获取流长度
     int iserr() const; // 错误检查
+    nlohmann::json get_all_info() const;
 };
 
 MEMAP STREAM::g_memap(1024,10240);

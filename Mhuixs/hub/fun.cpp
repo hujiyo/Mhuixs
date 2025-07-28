@@ -1,7 +1,63 @@
 #include "fun.h"
 
+#include <nlohmann/json.hpp>
+
 response_t* handle_get_object(basic_handle_struct bhs, command_t* cmd) {
     //获得对象所有信息
+    if (!cmd || !cmd->param1) {
+        return nullptr; // Or handle error appropriately
+    }
+
+    nlohmann::json j;
+
+    switch (bhs.type) {
+        case M_KVALOT: {
+            if (bhs.handle.kvalot) {
+                j = bhs.handle.kvalot->get_all_info();
+            }
+            break;
+        }
+        case M_LIST: {
+            if (bhs.handle.list) {
+                j = bhs.handle.list->get_all_info();
+            }
+            break;
+        }
+        case M_BITMAP: {
+            if (bhs.handle.bitmap) {
+                j = bhs.handle.bitmap->get_all_info();
+            }
+            break;
+        }
+        case M_TABLE: {
+            if (bhs.handle.table) {
+                j = bhs.handle.table->get_all_info();
+            }
+            break;
+        }
+        case M_STREAM: {
+            if (bhs.handle.stream) {
+                j = bhs.handle.stream->get_all_info();
+            }
+            break;
+        }
+        default: {
+            // Handle unknown type
+            j = {{"error", "Unsupported object type"}};
+            break;
+        }
+    }
+
+    std::string json_str = j.dump();
+    response_t* res = (response_t*)malloc(sizeof(response_t) + json_str.length() + 1);
+    if (!res) {
+        return nullptr;
+    }
+
+    res->data_len = json_str.length();
+    strcpy((char*)(res + 1), json_str.c_str());
+
+    return res;
 }
 //response_t* handle_where(basic_handle_struct bhs, command_t* cmd);
 //response_t* handle_desc(basic_handle_struct bhs, command_t* cmd);

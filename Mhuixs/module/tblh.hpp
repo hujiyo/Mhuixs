@@ -18,6 +18,7 @@ Email:hj18914255909@outlook.com
 
 #include "uintdeque.hpp"
 #include "str.hpp"
+#include "nlohmann/json.hpp"
 using namespace std;
 #define merr -1
 
@@ -134,6 +135,8 @@ public:
 
 	TABLE(const TABLE& other);
 	TABLE& operator=(const TABLE& other);
+
+	nlohmann::json get_all_info() const;
 };
 
 /*

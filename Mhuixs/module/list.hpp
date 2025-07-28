@@ -14,6 +14,7 @@ Email:hj18914255909@outlook.com
 #include <stdint.h>
 
 #include <regex>
+#include "nlohmann/json.hpp"
 using namespace std;
 
 #include "./../../lib/memap.hpp"
@@ -73,6 +74,7 @@ public:
     int swap(int64_t idx1, int64_t idx2);//交换两个位置的元素
 
     int iserr();
+    nlohmann::json get_all_info() const;
 };
 
 #endif
