@@ -22,3 +22,11 @@ build_server/
 .gitignore
 
 logs/
+
+*.o
+
+*.a
+
+*.so
+
+*.lib
