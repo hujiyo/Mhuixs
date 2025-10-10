@@ -1,7 +1,5 @@
 #include "fun.h"
 
-#include <nlohmann/json.hpp>
-
 response_t* handle_get_object(basic_handle_struct bhs, command_t* cmd) {
     //获得对象所有信息
     if (!cmd || !cmd->param1) {
@@ -17,7 +15,7 @@ response_t* handle_get_object(basic_handle_struct bhs, command_t* cmd) {
             }
             break;
         }
-        case M_LIST: {
+        case M_LIST : {
             if (bhs.handle.list) {
                 j = bhs.handle.list->get_all_info();
             }

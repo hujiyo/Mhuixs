@@ -30,3 +30,6 @@ logs/
 *.so
 
 *.lib
+.clangd
+
+.git/

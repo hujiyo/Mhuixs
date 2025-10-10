@@ -81,7 +81,7 @@ int main()
     //初始化执行队列、发送队列、日志队列
     
     // 初始化并启动网络模块
-    if (netplug_init(18482) != 0) {
+    if (netplug_init(PORT) != 0) {
         printf("\nNetplug module init failed!\n");
         return 1;
     }

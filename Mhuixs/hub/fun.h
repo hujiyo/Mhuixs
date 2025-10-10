@@ -2,6 +2,14 @@
 #define FUN_H
 
 #include "fcall.hpp"
+#include "tblh.hpp"
+#include "kvalh.hpp"
+#include "list.hpp"
+#include "stream.hpp"
+#include "bitmap.hpp"
+#include "hook.hpp"
+#include "usergroup.hpp"
+#include "hook.hpp"
 
 // 基础语法命令处理函数声明
 response_t* handle_get_object(basic_handle_struct bhs, command_t* cmd);

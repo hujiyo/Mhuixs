@@ -179,6 +179,9 @@ typedef enum {
     
     // 错误命令
     CMD_ERROR = 999               // 错误命令
+
+    //新增
+    CMD_SYSTEM_SHUTDOWN = 381,    // [SYSTEM SHUTDOWN;]
 } CommandNumber;
 
 #ifdef __cplusplus

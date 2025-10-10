@@ -1,15 +1,9 @@
 #include "netplug.h"
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <errno.h>
-#include <signal.h>
-#include <unistd.h>
-#include <sys/resource.h>
+
 
 // 全局变量
 netplug_t* g_netplug = nullptr;
-ConcurrentQueue<command_t*> command_queue;
+BlockingConcurrentQueue<command_t*> command_queue;
 BlockingReaderWriterQueue<response_t*> response_queue;
 Id_alloctor Idalloc;
 
