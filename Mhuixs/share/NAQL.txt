@@ -165,6 +165,9 @@ BITMAP类语法
 [SYSTEM RESTORE path;] #系统恢复
 [SYSTEM LOG level;] #打印级别系统日志（INFO/WARN/ERROR）
 
+#新增
+[SYSTEM SHUTDOWN;] #系统关闭
+
 # 宏和变量（客户端解析器本地操作）
 [$var_name value;] #定义变量
 [GET $var_name;] #获取变量值
