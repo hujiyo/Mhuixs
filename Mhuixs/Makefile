@@ -1,4 +1,5 @@
 # Makefile for Logex
+# Logex的编译与Mhuixs独立
 
 CC = gcc
 CFLAGS = -Wall -Wextra -g -O0 -std=c99

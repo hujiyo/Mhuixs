@@ -14,12 +14,17 @@ FROM 2025
 extern "C" {
 #endif
 
-inline int bitcpy_production(uint8_t* destination, uint64_t dest_first_bit, 
-                     const uint8_t* source, uint64_t source_first_bit, 
-                     uint64_t len, uint64_t dest_buffer_size, 
-                     uint64_t source_buffer_size) {
+static inline int bitcpy(uint8_t* destination, uint64_t dest_first_bit, 
+                  const uint8_t* source, uint64_t source_first_bit, 
+                  uint64_t len, uint64_t dest_buffer_size, 
+                  uint64_t source_buffer_size) {
     // 参数有效性检查
     if (!destination || !source || !len) {
+        return -1;
+    }
+    
+    // 溢出检查
+    if (dest_first_bit > UINT64_MAX - len || source_first_bit > UINT64_MAX - len) {
         return -1;
     }
     
@@ -87,8 +92,8 @@ inline int bitcpy_production(uint8_t* destination, uint64_t dest_first_bit,
         uint8_t s_bit_offset = s_bit_pos & 7;
         uint64_t d_byte_idx = d_bit_pos >> 3;
         
-        // 边界检查
-        if (s_byte_idx + 8 >= source_buffer_size || d_byte_idx + 8 > dest_buffer_size) {
+        // 边界检查（统一使用 >）
+        if (s_byte_idx + 8 > source_buffer_size || d_byte_idx + 8 > dest_buffer_size) {
             break; // 退回到字节级处理
         }
         
@@ -106,6 +111,7 @@ inline int bitcpy_production(uint8_t* destination, uint64_t dest_first_bit,
                 part2 = source[s_byte_idx + 8];
             }
             
+            // 修复：避免位移64位的未定义行为
             data = (part1 >> s_bit_offset) | (part2 << (64 - s_bit_offset));
         }
         
@@ -159,49 +165,20 @@ inline int bitcpy_production(uint8_t* destination, uint64_t dest_first_bit,
             return -2;
         }
         
-        if (remaining <= 8) {
-            // 批量处理剩余位
-            uint16_t src_data = source[s_byte_idx];
-            if (s_bit_offset + remaining > 8 && s_byte_idx + 1 < source_buffer_size) {
-                src_data |= (uint16_t)source[s_byte_idx + 1] << 8;
-            }
-            src_data >>= s_bit_offset;
-            src_data &= bit_mask_table[remaining];
-            
-            uint8_t dest_mask = bit_mask_table[remaining] << d_bit_offset;
-            destination[d_byte_idx] = (destination[d_byte_idx] & ~dest_mask) | 
-                                      ((src_data << d_bit_offset) & dest_mask);
-        } else {
-            // 逐位处理（安全回退）
-            while (bits_copied < len) {
-                uint64_t s_bit_pos = source_first_bit + bits_copied;
-                uint64_t d_bit_pos = dest_first_bit + bits_copied;
-                
-                uint64_t s_byte_idx = s_bit_pos >> 3;
-                uint8_t s_bit_idx = s_bit_pos & 7;
-                uint64_t d_byte_idx = d_bit_pos >> 3;
-                uint8_t d_bit_idx = d_bit_pos & 7;
-                
-                if (s_byte_idx >= source_buffer_size || d_byte_idx >= dest_buffer_size) {
-                    return -2;
-                }
-                
-                uint8_t bit_val = (source[s_byte_idx] >> s_bit_idx) & 1;
-                uint8_t mask = 1 << d_bit_idx;
-                destination[d_byte_idx] = (destination[d_byte_idx] & ~mask) | 
-                                          (bit_val << d_bit_idx);
-                bits_copied++;
-            }
+        // 批量处理剩余位（remaining 应该总是 <= 8）
+        uint16_t src_data = source[s_byte_idx];
+        if (s_bit_offset + remaining > 8 && s_byte_idx + 1 < source_buffer_size) {
+            src_data |= (uint16_t)source[s_byte_idx + 1] << 8;
         }
+        src_data >>= s_bit_offset;
+        src_data &= bit_mask_table[remaining];
+        
+        uint8_t dest_mask = bit_mask_table[remaining] << d_bit_offset;
+        destination[d_byte_idx] = (destination[d_byte_idx] & ~dest_mask) | 
+                                  ((src_data << d_bit_offset) & dest_mask);
     }
     
     return 0;
-}
-
-inline void bitcpy(uint8_t* destination, uint64_t dest_first_bit, 
-    const uint8_t* source, uint64_t source_first_bit, 
-    uint64_t len){
-        bitcpy_production(destination, dest_first_bit, source, source_first_bit, len, UINT64_MAX, UINT64_MAX);
 }
 
 #ifdef __cplusplus

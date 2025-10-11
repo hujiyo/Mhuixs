@@ -13,7 +13,12 @@ Email:hj18914255909@outlook.com
 #include "registry.hpp"
 #include "merr.h"
 #include "Mhudef.hpp"
-#include "mtype.hpp"
+
+enum Mode_type {
+    HOOK_READ = 'r',
+    HOOK_ADD = 'a',
+    HOOK_CHANGE = 'c',
+};//HOOK的操作类型
 
 using namespace std;
 
@@ -26,7 +31,6 @@ hook在Mhuixs中被用来：
 /*
 可读：包括hook的可见性，如果用户没有权限，则hook不可见
 */
-
 
 
 struct permission_struct{
