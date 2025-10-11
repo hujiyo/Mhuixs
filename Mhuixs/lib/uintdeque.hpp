@@ -15,13 +15,13 @@ Email:hj18914255909@outlook.com
 #include <stdio.h>
 #include <assert.h>
 
-#define merr -1
+#include "merr.h"
 #define UINTDEQUE_BLOCK_SIZE 4096 // 每块最大元素数
 #define MIN_BLOCK_SIZE 512 // 块合并的最小阈值
 
 class UintDeque {
     struct Block {
-        uint32_t data[UINTDEQUE_BLOCK_SIZE];
+        uint64_t data[UINTDEQUE_BLOCK_SIZE];
         uint32_t size;  // 当前块内元素数
         uint32_t start; // 块内数据起始下标（data[start]为第一个元素）
         Block *prev,*next;
@@ -48,14 +48,15 @@ public:
 
     void clear();
     uint32_t size();
-    int lpush(uint32_t value);
-    int rpush(uint32_t value);
+    int lpush(uint64_t value);
+    int rpush(uint64_t value);
     int64_t lpop();
     int64_t rpop();
-    int insert(uint32_t pos, uint32_t value);
+    int insert(uint32_t pos, uint64_t value);
     int rm_index(uint32_t pos);
     int64_t get_index(uint32_t pos);
-    int set_index(uint32_t pos, uint32_t value);
+    int set_index(uint32_t pos, uint64_t value);
+    int swap(uint32_t idx1, uint32_t idx2);
 };
 
 #endif

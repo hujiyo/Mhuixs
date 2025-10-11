@@ -13,7 +13,6 @@ using namespace std;
 start from 2024.11
 Email:hj18914255909@outlook.com
 */
-#define merr -1
 /*
 ===================================
 ID分配器模块 线程安全：所有公有方法均加锁

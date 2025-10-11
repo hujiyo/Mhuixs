@@ -28,7 +28,7 @@ void UintDeque::center_block(Block* blk) {
     blk->check_valid();
     uint32_t new_start = (UINTDEQUE_BLOCK_SIZE - blk->size) / 2;
     if (blk->is_centered() || new_start + blk->size > UINTDEQUE_BLOCK_SIZE) return;
-    memmove(&blk->data[new_start], &blk->data[blk->start], blk->size * sizeof(uint32_t));
+    memmove(&blk->data[new_start], &blk->data[blk->start], blk->size * sizeof(uint64_t));
     blk->start = new_start;
 }
 
@@ -40,7 +40,7 @@ void UintDeque::split_block(Block* blk) {
     new_blk->size = blk->size - mid;
     new_blk->start = (UINTDEQUE_BLOCK_SIZE - new_blk->size) / 2;
     if (new_blk->start + new_blk->size > UINTDEQUE_BLOCK_SIZE) new_blk->start = 0;
-    memcpy(&new_blk->data[new_blk->start], &blk->data[blk->start + mid], new_blk->size * sizeof(uint32_t));
+    memcpy(&new_blk->data[new_blk->start], &blk->data[blk->start + mid], new_blk->size * sizeof(uint64_t));
     new_blk->prev = blk;
     new_blk->next = blk->next;
     if (blk->next) blk->next->prev = new_blk;
@@ -59,8 +59,8 @@ void UintDeque::merge_block(Block* blk) {
     Block* nxt = blk->next;
     nxt->check_valid();
     if (blk->size + nxt->size > UINTDEQUE_BLOCK_SIZE) return;
-    memmove(&blk->data[0], &blk->data[blk->start], blk->size * sizeof(uint32_t));
-    memcpy(&blk->data[blk->size], &nxt->data[nxt->start], nxt->size * sizeof(uint32_t));
+    memmove(&blk->data[0], &blk->data[blk->start], blk->size * sizeof(uint64_t));
+    memcpy(&blk->data[blk->size], &nxt->data[nxt->start], nxt->size * sizeof(uint64_t));
     blk->start = 0;
     blk->size += nxt->size;
     blk->next = nxt->next;
@@ -79,7 +79,7 @@ UintDeque::UintDeque(const UintDeque& other) : head_block(NULL), tail_block(NULL
         Block* blk = (Block*)calloc(1, sizeof(Block));
         blk->size = cur->size;
         blk->start = cur->start;
-        memcpy(&blk->data[0], &cur->data[0], sizeof(uint32_t) * UINTDEQUE_BLOCK_SIZE);
+        memcpy(&blk->data[0], &cur->data[0], sizeof(uint64_t) * UINTDEQUE_BLOCK_SIZE);
         blk->prev = tail_block;
         blk->next = NULL;
         if (tail_block) tail_block->next = blk;
@@ -98,7 +98,7 @@ UintDeque& UintDeque::operator=(const UintDeque& other) {
         Block* blk = (Block*)calloc(1, sizeof(Block));
         blk->size = cur->size;
         blk->start = cur->start;
-        memcpy(&blk->data[0], &cur->data[0], sizeof(uint32_t) * UINTDEQUE_BLOCK_SIZE);
+        memcpy(&blk->data[0], &cur->data[0], sizeof(uint64_t) * UINTDEQUE_BLOCK_SIZE);
         blk->prev = tail_block;
         blk->next = NULL;
         if (tail_block) tail_block->next = blk;
@@ -127,7 +127,7 @@ void UintDeque::clear() {
 
 uint32_t UintDeque::size() { return num; }
 
-int UintDeque::lpush(uint32_t value) {
+int UintDeque::lpush(uint64_t value) {
     if (!head_block || head_block->left_space() == 0) {
         Block* blk = (Block*)calloc(1, sizeof(Block));
         blk->size = 0;
@@ -158,7 +158,7 @@ int UintDeque::lpush(uint32_t value) {
     return 0;
 }
 
-int UintDeque::rpush(uint32_t value) {
+int UintDeque::rpush(uint64_t value) {
     if (!tail_block || tail_block->right_space() == 0) {
         Block* blk = (Block*)calloc(1, sizeof(Block));
         blk->size = 0;
@@ -225,7 +225,7 @@ int64_t UintDeque::rpop() {
     return ret;
 }
 
-int UintDeque::insert(uint32_t pos, uint32_t value) {
+int UintDeque::insert(uint32_t pos, uint64_t value) {
     if (pos > num) return merr;
     if (pos == 0) return lpush(value);
     if (pos == num) return rpush(value);
@@ -292,12 +292,26 @@ int64_t UintDeque::get_index(uint32_t pos) {
     return blk->data[blk->start + offset];
 }
 
-int UintDeque::set_index(uint32_t pos, uint32_t value) {
+int UintDeque::set_index(uint32_t pos, uint64_t value) {
     if (pos >= num) return merr;
     Block* blk; uint32_t offset;
     locate(pos, blk, offset);
     if (!blk) return merr;
     blk->check_valid();
     blk->data[blk->start + offset] = value;
+    return 0;
+}
+
+int UintDeque::swap(uint32_t idx1, uint32_t idx2) {
+    if (idx1 >= num || idx2 >= num) return merr;
+    if (idx1 == idx2) return 0;
+    Block* blk1; uint32_t offset1;
+    Block* blk2; uint32_t offset2;
+    locate(idx1, blk1, offset1);
+    locate(idx2, blk2, offset2);
+    if (!blk1 || !blk2) return merr;
+    uint64_t temp = blk1->data[blk1->start + offset1];
+    blk1->data[blk1->start + offset1] = blk2->data[blk2->start + offset2];
+    blk2->data[blk2->start + offset2] = temp;
     return 0;
 }

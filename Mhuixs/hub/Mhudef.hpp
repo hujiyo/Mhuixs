@@ -13,7 +13,6 @@ Email:hj18914255909@outlook.com
 #include "bitmap.hpp"
 #include "kvalh.hpp"
 #include "tblh.hpp"
-#include "stream.hpp"
 #include "hook.hpp"
 
 /*
@@ -32,16 +31,7 @@ Mhuixs数据库支持的数据结构/数据操作对象:
 
 //下面是Mhuixs数据库的基本数据结构（操作对象）
 
-union obj_struct //储存各种对象的描述符
-{
-    KVALOT *kvalot;
-    LIST *list;
-    TABLE *table;
-    BITMAP *bitmap;
-    STREAM *stream;
-    KVALOT::KEY *key; //KVALOT的KEY对象
-    HOOK *hook; //HOOK对象
-};
+typedef char* mstring;//以size_t为长度前缀+字符串内容的类型
 
 enum obj_type //数据结构对象的类型
 {
@@ -56,37 +46,35 @@ enum obj_type //数据结构对象的类型
     M_STREAM =    '6',
 };
 
-typedef struct basic_handle_struct
-{
-    obj_struct handle;//任意数据结构描述符
+typedef struct basic_handle_struct {
+    union obj_struct{ //储存各种对象的描述符
+        KVALOT *kvalot;
+        LIST *list;
+        TABLE *table;
+        BITMAP *bitmap;
+        mstring stream;
+        HOOK *hook; //HOOK对象
+    } handle;//任意数据结构描述符
     obj_type type;//描述符的类型
     int make_self(obj_type type, void *parameter1, void *parameter2, void *parameter3){
-        /*
-        本函数在成功创建数据对象之前都不会对basic_handle_struct里的原数据进行任何修改
-        */
-        //检查type是否合法
-        if(iserr_obj_type(type) || type == M_NULL){
-            return merr;
-        }
+        //函数在成功创建数据对象之前都不会对basic_handle_struct里的原数据进行任何修改            
         switch (type){
             case M_STREAM: {
-                STREAM *stream = (STREAM*)calloc(1,sizeof(STREAM)); 
-                if(parameter1!=NULL) stream = new (stream) STREAM(*(uint32_t*)parameter1);//使用第一个参数作为STREAM的初始容量
-                else stream = new (stream) STREAM();
-                if(stream->iserr()){                    
-                    printf("basic_handle_struct::make_self:Error: STREAM create error\n");
-                    stream->~STREAM();                    
-                    free(stream); //释放内存                    
-                    return merr;                
+                if(parameter1==NULL){
+                    printf("basic_handle_struct::make_self:Error:parameter err\n");
+                    return merr;
                 }
+                //parameter1 type:str*
+                size_t length = ((str*)parameter1)->len();                
+                mstring stream = (mstring)calloc(1,length+sizeof(size_t));
+                *(size_t*)stream = length;
+                memcpy(stream+sizeof(size_t),((str*)parameter1)->stream+sizeof(size_t),length);
                 handle.stream = stream;
                 break;
             }
             case M_LIST:{
                 LIST *list = (LIST*)calloc(1,sizeof(LIST));
-                if(parameter1!=NULL && parameter2!=NULL) 
-                list = new (list) LIST(*(uint32_t*)parameter1,*(uint32_t*)parameter2);//使用第一个参数作为LIST的大小，第二个参数作为LIST的元素类型
-                else list = new (list) LIST();
+                list = new (list) LIST();//使用第一个参数作为LIST的大小，第二个参数作为LIST的元素类型
                 if(list->iserr()){                    
                     printf("basic_handle_struct::make_self:Error: LIST create error\n");
                     list->~LIST();                    
@@ -145,13 +133,11 @@ typedef struct basic_handle_struct
                 handle.kvalot = kvalot;
                 break;
             }
-            /*
             case M_HOOK:{
-                
+                break;
             }
-            */
-            default://M_NULL
-                printf("basic_handle_struct::add_key:Error:type error\n");
+            default://M_NULL && other
+                printf("basic_handle_struct::make_self:Error:type error\n");
                 return merr;
         }
         this->type = type;
@@ -162,7 +148,7 @@ typedef struct basic_handle_struct
         本函数会清空basic_handle_struct里的原数据、对象
         */
         switch (type){
-           case M_KVALOT:
+        case M_KVALOT:
                 handle.kvalot->~KVALOT();//调用析构函数
                 free(handle.kvalot);
                 break;
@@ -179,7 +165,6 @@ typedef struct basic_handle_struct
                 free(handle.table);
                 break;
             case M_STREAM:
-                handle.stream->~STREAM();//调用析构函数
                 free(handle.stream);
                 break;
             //case M_HOOK:
@@ -191,7 +176,6 @@ typedef struct basic_handle_struct
         return;
     }
 } basic_handle_struct;
-
 
 struct COMMEND{
     uint32_t command; // 命令码
@@ -230,7 +214,6 @@ typedef enum Cprs{
     lv2=2,    lv3=3,
     lv4=4,    lv5=5
 }Cprs;
-
 
 
 uint8_t islittlendian(){

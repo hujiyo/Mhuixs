@@ -30,24 +30,27 @@ hook在Mhuixs中被用来：
 
 
 struct permission_struct{
-    uint16_t ifisinit:1;//是否初始化:一旦初始化权限就生效
+    char ifisinit;//是否初始化:一旦初始化权限就生效
 
-    //权限:可读:r 可添:a 可删:d
+    //权限:可读:r 可添:a 可改:c (类比Linux的rwx权限系统)
     //所有者权限
-    uint16_t owner_read:1;//所有者可读
-    uint16_t owner_add:1;//所有者可添内容
-    uint16_t owner_del:1;//所有者可删内容    
+    char owner_read;//所有者可读
+    char owner_add;//所有者可添内容
+    char owner_change;//所有者可改内容    
     //组权限
-    uint16_t group_read:1;//组可读
-    uint16_t group_add:1;//组可添内容
-    uint16_t group_del:1;//组可删内容    
+    char group_read;//组可读
+    char group_add;//组可添内容
+    char group_change;//组可改内容    
     //其他权限
-    uint16_t other_read:1;//其他可读
-    uint16_t other_add:1;//其他可添内容
-    uint16_t other_del:1;//其他可删内容
+    char other_read;//其他可读
+    char other_add;//其他可添内容
+    char other_change;//其他可改内容
 }; 
 
 class HOOK {
+public:
+
+private:
     basic_handle_struct bhs; // 操作对象
     Cprs cprs; // 压缩级别
     UID owner; // 所有者ID

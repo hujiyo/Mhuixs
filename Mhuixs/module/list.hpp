@@ -14,14 +14,13 @@ Email:hj18914255909@outlook.com
 #include <stdint.h>
 
 #include <regex>
-#include "nlohmann/json.hpp"
 using namespace std;
 
-#include "./../../lib/memap.hpp"
 #include "./../../lib/uintdeque.hpp"
 #include "./../../lib/str.hpp"
+#include "Mhudef.hpp"
+#include "merr.h"
 
-#define merr -1
 #define bitmap_debug
 
 
@@ -45,17 +44,18 @@ using namespace std;
  *   LIST是第一个使用memmap库实现的数据结构。
  *   在dirt/test-strmap-queue-list.20241213.c测试文件中，
  *   memap原名是strmap。它保证了LIST的内存是连续的，对象压缩更加容易。
+ *   uintdeque库的性能非常好，随机访问性能也非常高。LIST库使用uintdeque库
+ *   来实现元素的偏移量索引。速度非常快，关键是整体的结构非常简单，易于维护。
+ *   2025.10.10开始项目打算使用mimalloc库来实现内存分配。memap库不再使用。
  *  /                                                           \
 ***********************************************************************/
 
 class LIST{
 private:
-    MEMAP strpool;//先声明一个数组内存池    
     UintDeque index;//元素偏移量索引
     int state;//对象状态,成员函数通过改变对象状态来表示对象的异常状态。
 public:
     LIST();
-    LIST(int block_size,int block_num);
     ~LIST();
     LIST(const LIST& other); // 拷贝构造函数
     LIST& operator=(const LIST& other); // 拷贝赋值运算符
@@ -72,9 +72,7 @@ public:
     int clear();//清空列表
     int64_t find(str &s);//查找元素
     int swap(int64_t idx1, int64_t idx2);//交换两个位置的元素
-
     int iserr();
-    nlohmann::json get_all_info() const;
 };
 
 #endif

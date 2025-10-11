@@ -15,7 +15,7 @@ extern "C" {
 enum Mode_type {
     HOOK_READ = 'r',
     HOOK_ADD = 'a',
-    HOOK_DEL = 'd',
+    HOOK_CHANGE = 'c',
 };//HOOK的操作类型
 
 #ifdef __cplusplus
