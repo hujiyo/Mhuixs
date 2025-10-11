@@ -18,14 +18,12 @@ extern "C" {
 typedef struct str {
     uint8_t *string;    // 字节流数据
     uint32_t len;       // 字节流长度
-    int state;          // 状态码（0=正常，非0=错误）
 } str;
 
 static inline void str_init(str *s) {
     if (s) {
         s->string = NULL;
         s->len = 0;
-        s->state = 0;
     }
 }
 
@@ -34,7 +32,6 @@ static inline void str_free(str *s) {
         free(s->string);
         s->string = NULL;
         s->len = 0;
-        s->state = 0;
     }
 }
 
@@ -52,7 +49,6 @@ static inline int str_from_cstr(str *s, const char *cstr) {
     
     str_clear(s);
     s->len = strlen(cstr);
-    s->state = 0;
     
     if (s->len == 0) {
         s->string = NULL;
@@ -62,7 +58,6 @@ static inline int str_from_cstr(str *s, const char *cstr) {
     s->string = (uint8_t*)malloc(s->len);
     if (!s->string) {
         s->len = 0;
-        s->state = -1;
         return -1;
     }
     
@@ -75,7 +70,6 @@ static inline int str_from_bytes(str *s, const uint8_t *data, uint32_t len) {
     
     str_clear(s);
     s->len = len;
-    s->state = 0;
     
     if (len == 0) {
         s->string = NULL;
@@ -85,7 +79,6 @@ static inline int str_from_bytes(str *s, const uint8_t *data, uint32_t len) {
     s->string = (uint8_t*)malloc(len);
     if (!s->string) {
         s->len = 0;
-        s->state = -1;
         return -1;
     }
     
@@ -101,20 +94,17 @@ static inline int str_copy(str *dest, const str *src) {
     if (src->len == 0) {
         dest->string = NULL;
         dest->len = 0;
-        dest->state = src->state;
         return 0;
     }
     
     dest->string = (uint8_t*)malloc(src->len);
     if (!dest->string) {
         dest->len = 0;
-        dest->state = -1;
         return -1;
     }
     
     memcpy(dest->string, src->string, src->len);
     dest->len = src->len;
-    dest->state = src->state;
     return 0;
 }
 
@@ -126,14 +116,12 @@ static inline int swrite(str *s, uint32_t pos, const void *data, uint32_t len) {
     uint8_t *new_string = (uint8_t*)realloc(s->string, new_len);
     
     if (!new_string) {
-        s->state = -1;
         return -1;
     }
     
     s->string = new_string;
     memcpy(s->string + s->len, data, len);
     s->len = new_len;
-    s->state = 0;
     return 0;
 }
 

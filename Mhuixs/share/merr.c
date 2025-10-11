@@ -6,7 +6,7 @@
 
 static FILE* logFile = NULL;//日志模块是否开启的标志
 
-void logger(char* message){
+void logger(const char* message){
     #ifdef open_log
     if (logFile && message) { //自动检查log是否开启
         const time_t now = time(NULL);
@@ -18,23 +18,12 @@ void logger(char* message){
     #endif
 }
 
-void report(enum mrc code, enum where wh, char *special_message){
+void report(enum mrc code, const char* module_name,const char *special_message){
     //先打印问题位置
-    switch(wh){
-        case pkg_module:printf("[pkg]:");break;
-        case hook_module:printf("[hook]:");break;
-        case bitmap_module:printf("[bitmap]:");break;
-        case table_module:printf("[table]:");break;
-        case kvalot_module:printf("[kvalot]:");break;
-        case list_module:printf("[list]:");break;
-        case log_module:printf("[log]:");break;
-        case mshare_module:printf("[mshare]:");break;
-        case key_module:printf("[key]:");break;
-        case usergroup_module:printf("[usergroup]:");break;
-        case session_module:printf("[session]:");break;
-        case register_module:printf("[register]:");break;
-        case lexer_module:printf("[lexer]:");break;
-        default:printf("[unknown]:");break;
+    if(module_name){
+        printf("[%s]:", module_name);
+    } else {
+        printf("[unknown]:");
     }
     //再打印标准错误码对应的报错
     char* message =NULL;

@@ -204,7 +204,7 @@ int User_group_manager::is_entitled(HOOK &hook, UID applicant_uid, Mode_type mod
         switch (mode) {
             case HOOK_READ: return hook.pm_s.owner_read ? 1 : 0;
             case HOOK_ADD:  return hook.pm_s.owner_add ? 1 : 0;
-            case HOOK_DEL:  return hook.pm_s.owner_del ? 1 : 0;
+            case HOOK_CHANGE:  return hook.pm_s.owner_change ? 1 : 0;
             default: return merr;
         }
     }
@@ -218,7 +218,7 @@ int User_group_manager::is_entitled(HOOK &hook, UID applicant_uid, Mode_type mod
             switch (mode) {
                 case HOOK_READ: return hook.pm_s.group_read ? 1 : 0;
                 case HOOK_ADD:  return hook.pm_s.group_add ? 1 : 0;
-                case HOOK_DEL:  return hook.pm_s.group_del ? 1 : 0;
+                case HOOK_CHANGE:  return hook.pm_s.group_change ? 1 : 0;
                 default: return merr;
             }
         }
@@ -227,7 +227,7 @@ int User_group_manager::is_entitled(HOOK &hook, UID applicant_uid, Mode_type mod
     switch (mode) {
         case HOOK_READ: return hook.pm_s.other_read ? 1 : 0;
         case HOOK_ADD:  return hook.pm_s.other_add ? 1 : 0;
-        case HOOK_DEL:  return hook.pm_s.other_del ? 1 : 0;
+        case HOOK_CHANGE:  return hook.pm_s.other_change ? 1 : 0;
         default: return merr;
     }
 }

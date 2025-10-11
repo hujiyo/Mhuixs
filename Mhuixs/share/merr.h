@@ -41,23 +41,8 @@ typedef enum mrc {
     //...
     //...
 }mrc;
-enum where{
-    pkg_module,
-    hook_module,
-    bitmap_module,
-    table_module,
-    kvalot_module,
-    list_module,
-    log_module,
-    mshare_module,
-    key_module,
-    usergroup_module,
-    session_module,
-    register_module,
-    lexer_module,
-};
 
-void report(enum mrc code, enum where wh, char *special_message);//报告错误码
+void report(enum mrc code, const char* module_name, const char *special_message);//报告错误码
 
 
 //下面函数用来开启report函数的日志写入功能

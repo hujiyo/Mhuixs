@@ -10,7 +10,6 @@
 #include <string>
 
 #include "Mhudef.hpp"
-#include "memap.hpp"
 #include "merr.h"  // 引入merr库的错误处理机制
 #include "stdstr.h" // 引入str结构支持
 /*
@@ -46,39 +45,34 @@ class KVALOT{
         // 构造函数，初始化为空桶
         HASH_TONG() : numof_key(0), capacity(0), offsetof_key(NULL) {}
     };
-    static MEMAP g_memap;
 public:
     struct KEY{
         basic_handle_struct bhs;//对象
-        OFFSET name;//指向一个key名称存放的地址
+        mstring name;//指向一个key名称存放的地址
         uint32_t hash_index;//当前key在哈希表中的索引
-        int setname(str &key_name){//设置键名
-            OFFSET name_ = g_memap.smalloc(key_name.len + sizeof(uint32_t));
-            if (name_ == NULL_OFFSET) {
-                report(merr, kvalot_module, "Memory allocation failed for key name");
+        int setname(char* key_name){//设置键名
+            mstring name_ = (mstring)malloc(strlen(key_name) + sizeof(uint32_t));
+            if (name_ == 0) {
+                report(merr, "kvalot module", "Memory allocation failed for key name");
                 return merr;// 错误处理
             }
-            *(uint32_t*)g_memap.addr(name_) = key_name.len;
-            memcpy(g_memap.addr(name_) + sizeof(uint32_t), key_name.string, key_name.len);
+            *(uint32_t*)name_ = strlen(key_name);
+            memcpy(name_ + sizeof(uint32_t), key_name, strlen(key_name));
             this->name = name_;
             return success;
         }
         void clear_self(){
             bhs.clear_self();
-            //获得键名的长度
-            if (name != NULL_OFFSET) {
-                uint32_t len = *(uint32_t*)g_memap.addr(name);
-                g_memap.sfree(name, len + sizeof(uint32_t));
-                name = NULL_OFFSET;
-            }
-            hash_index = NULL_OFFSET;
+            free(name);
+            name = (mstring)0;
+            hash_index = 0;
         }
     };
 private:
     vector<HASH_TONG> hash_table;//哈希桶表--->索引
     uint32_t numof_tong;//哈希桶数量
 
-    vector<KEY> keypool;//键池    
+    vector<KEY> keypool;//键池
 
     uint32_t keynum;//键数量
 
@@ -114,12 +108,8 @@ public:
     uint32_t get_bucket_count() const; // 获取桶数量
     float get_load_factor() const; // 获取装载因子
     void print_statistics() const; // 打印统计信息
-    nlohmann::json get_all_info() const;
 };
 
-MEMAP KVALOT::g_memap(1024,10240);
-
-// C风格的便利函数声明
 #ifdef __cplusplus
 extern "C" {
 #endif

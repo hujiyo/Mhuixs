@@ -3,22 +3,7 @@
 
 int _IS_LITTLE_ENDIAN_=1;//全局变量:是否是小端 0-否 1-是
 
-bool iserr_obj_type(obj_type type)
-{
-    /*
-    判断obj_type类型是否合法
-    */
-    if(type==M_NULL || 
-        type==M_KVALOT || 
-        type==M_STREAM || 
-        type==M_LIST || 
-        type==M_BITMAP || 
-        type==M_HOOK || 
-        type==M_TABLE){
-        return false;
-    }
-    return true;
-}
+
 
 
 

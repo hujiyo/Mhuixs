@@ -1,6 +1,4 @@
 #include "kvalh.hpp"
-#include "nlohmann/json.hpp"
-
 
 KVALOT::KVALOT(str* kvalot_name)//只能是规定的数量
 :numof_tong(hash_tong_1024ge),keynum(0),
@@ -202,44 +200,6 @@ int KVALOT::tong_ensure_capacity(HASH_TONG* tong, uint32_t needed_capacity) {
     }
 }
 
-nlohmann::json KVALOT::get_all_info() const {
-    nlohmann::json info;
-    info["kvalot_name"] = this->kvalot_name;
-    info["key_count"] = this->keynum;
-    info["bucket_count"] = this->numof_tong;
-    info["load_factor"] = get_load_factor();
-
-    nlohmann::json keys = nlohmann::json::array();
-    for (const auto& key : keypool) {
-        nlohmann::json key_info;
-        uint32_t name_len = *(uint32_t*)g_memap.addr(key.name);
-        key_info["name"] = std::string((char*)g_memap.addr(key.name) + sizeof(uint32_t), name_len);
-        key_info["type"] = key.bhs.type;
-        keys.push_back(key_info);
-    }
-    info["keys"] = keys;
-
-    return info;
-
-            return merr;
-        }
-        tong->capacity = 4;
-    } else if (needed_capacity > tong->capacity) {
-        // 需要扩容
-        uint32_t new_capacity = tong->capacity;
-        while (new_capacity < needed_capacity) {
-            new_capacity *= 2;
-        }
-        uint32_t* new_offsetof_key = (uint32_t*)realloc(tong->offsetof_key, sizeof(uint32_t) * new_capacity);
-        if (new_offsetof_key == NULL) {
-            report(merr, kvalot_module, "Memory reallocation failed for hash bucket");
-            return merr;
-        }
-        tong->offsetof_key = new_offsetof_key;
-        tong->capacity = new_capacity;
-    }
-    return success;
-}
 
 basic_handle_struct KVALOT::find_key(str* key_name){
     /*

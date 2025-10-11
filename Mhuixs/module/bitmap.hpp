@@ -14,12 +14,11 @@ Email:hj18914255909@outlook.com
 #include <stdint.h>
 
 #include "bitcpy.h"
-#include "nlohmann/json.hpp"
 
-#define merr  -1
+#include "merr.h"
 #define bitmap_debug
 
-void bitcpy(uint8_t* destination, uint8_t dest_first_bit, const uint8_t* source, uint8_t source_first_bit, uint64_t len);
+void bitcpy(uint8_t* destination, uint64_t dest_first_bit, const uint8_t* source, uint64_t source_first_bit,  uint64_t len);
 
 class BITMAP  {
     private:
@@ -51,7 +50,6 @@ class BITMAP  {
         uint64_t count(uint64_t st_offset,uint64_t ed_offset);
         int64_t find(uint8_t value,uint64_t start,uint64_t end);
         void ptf();
-        nlohmann::json get_all_info() const;
 };
 
 #endif

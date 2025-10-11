@@ -223,14 +223,6 @@ All rights reserved.
 
 ## Mhuixs 其它依赖的许可证或者说明
 
-### [Two Level Segregated Fit memory allocator, version 3.1.]
-
-Copyright (c) 2006-2016, Matthew Conte 
-
-Released under the BSD license.
-
-All rights reserved.
-
 ### [bcrypt wrapper library]
 
 Written in 2011, 2013, 2014, 2015 by Ricardo Garcia <r@rg3.name>

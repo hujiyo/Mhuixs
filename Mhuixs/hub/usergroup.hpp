@@ -28,7 +28,6 @@ using namespace std;
 #define no_such_username -1 //没有这个用户名
 #define certificate_failed -2 //认证失败
 #define certificate_success 0 //认证成功
-#define merr -1
 /*
 用户/组管理模块
 封装为一个对象类
