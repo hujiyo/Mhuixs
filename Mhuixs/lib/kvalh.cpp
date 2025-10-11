@@ -369,3 +369,312 @@ void KVALOT::print_statistics() const {
            numof_tong > 0 ? (float)total_entries / (numof_tong - empty_buckets) : 0.0f);
     printf("========================\n\n");
 }
+
+#include "kvalh.hpp"
+
+int KVALOT::rise_capacity() {
+    // 1. 确定桶数量
+    uint32_t new_numof_tong = 0;
+    if (numof_tong < hash_tong_4096ge) new_numof_tong = hash_tong_4096ge;
+    else if (numof_tong < hash_tong_16384ge) new_numof_tong = hash_tong_16384ge;
+    else if (numof_tong < hash_tong_65536ge) new_numof_tong = hash_tong_65536ge;
+    else if (numof_tong < hash_tong_262144ge) new_numof_tong = hash_tong_262144ge;
+    else if (numof_tong < hash_tong_1048576ge) new_numof_tong = hash_tong_1048576ge;
+    else if (numof_tong < hash_tong_4194304ge) new_numof_tong = hash_tong_4194304ge;
+    else if (numof_tong < hash_tong_16777216ge) new_numof_tong = hash_tong_16777216ge;
+    else {
+        report(merr, kvalot_module, "Hash table already at maximum capacity");
+        state = merr;
+        return merr;// 已经到最大桶数量
+    }
+
+    // 2. 新建哈希桶表
+    std::vector<HASH_TONG> new_hash_table;
+    try {
+        new_hash_table.resize(new_numof_tong);//已经保证初始化了
+    } catch (...) {
+        report(merr, kvalot_module, "Failed to allocate new hash table");
+        state = merr;
+        return merr;
+    }
+
+    // 3. 重新分配所有 key 到新桶
+    for (uint32_t i = 0; i < keypool.size(); ++i) {
+        KEY& key = keypool[i];
+        
+        // 检查key的有效性
+        if (key.name == NULL_OFFSET) {
+            continue; // 跳过无效的key
+        }
+        
+        // 获取key名称用于重新计算hash
+        uint32_t key_len = *(uint32_t*)g_memap.addr(key.name);
+        str key_str((uint8_t*)g_memap.addr(key.name) + sizeof(uint32_t), key_len);
+        
+        // 重新计算 hash_index
+        uint32_t new_hash_index = murmurhash(key_str, bits(new_numof_tong));
+        HASH_TONG* tong = &new_hash_table[new_hash_index];
+        
+        // 使用辅助函数确保桶容量
+        if (tong_ensure_capacity(tong, tong->numof_key + 1) != success) {
+            // 释放已分配内存
+            for (uint32_t j = 0; j < new_numof_tong; ++j) {
+                if (new_hash_table[j].offsetof_key != NULL) {
+                    free(new_hash_table[j].offsetof_key);
+                }
+            }
+            report(merr, kvalot_module, "Failed to ensure bucket capacity during rehashing");
+            state = merr;
+            return merr;
+        }
+        
+        // 添加key到桶中
+        tong->offsetof_key[tong->numof_key] = i;
+        tong->numof_key++;
+        key.hash_index = new_hash_index;
+    }
+
+    // 4. 释放旧桶内存
+    for (uint32_t i = 0; i < hash_table.size(); ++i) {
+        if (hash_table[i].offsetof_key != NULL) {
+            free(hash_table[i].offsetof_key);
+        }
+    }
+
+    // 5. 替换哈希表和桶数量
+    hash_table = std::move(new_hash_table);
+    numof_tong = new_numof_tong;
+
+    return success;
+}
+
+uint32_t KVALOT::bits(uint32_t X){
+    /*
+    功能：
+    1.把哈希桶的数量转化为二进制位数
+    无效输入返回0
+    */
+    switch (X)    {
+    //哈希桶数量映射到二进制位数
+    case hash_tong_1024ge:return 10;
+    case hash_tong_4096ge:return 12;
+    case hash_tong_16384ge:return 14;
+    case hash_tong_65536ge:return 16;
+    case hash_tong_262144ge:return 18;
+    case hash_tong_1048576ge:return 20;
+    case hash_tong_4194304ge:return 22;
+    case hash_tong_16777216ge:return 24;
+    default:
+        report(merr, kvalot_module, "Invalid hash table size, using default");
+        return bits(hash_tong_65536ge);//默认返回65536的位数
+    }
+}
+
+uint32_t KVALOT::murmurhash(str& stream, uint32_t result_bits) 
+{
+    int len = stream.len;
+    const uint8_t *data = (const uint8_t*)stream.string;
+    
+    // 参数验证
+    if (data == NULL || len < 0 || result_bits > 32) {
+        report(merr, kvalot_module, "Invalid parameters for murmurhash");
+        return 0;
+    }
+    
+    /*
+    这个哈希算法叫murmurhash,这个算法我是找的网上的，并和几个大模型联合完成
+    由Austin Appleby在2008年发明的。
+    result_bits是指哈希值的位数，这个位数对应哈希表的大小。最大可以设置为32位。
+    */
+    uint32_t seed=0x9747b28c;
+    const int nblocks = len / 4;
+    for (int i = 0; i < nblocks; i++) {
+        uint32_t k1 = ((uint32_t)data[i*4]     ) |
+                     ((uint32_t)data[i*4 + 1] <<  8) |
+                     ((uint32_t)data[i*4 + 2] << 16) |
+                     ((uint32_t)data[i*4 + 3] << 24); 
+        k1 *= 0xcc9e2d51;k1 = (k1 << 15) | (k1 >> 17);k1 *= 0x1b873593; 
+        seed ^= k1;
+        seed = (seed << 13) | (seed >> 19);
+        seed = seed * 5 + 0xe6546b64;
+    } 
+    const uint8_t *tail = (const uint8_t*)(data + nblocks*4); 
+    uint32_t k1 = 0;
+    switch(len & 3) {
+        case 3: k1 ^= tail[2] << 16;
+        case 2: k1 ^= tail[1] <<  8;
+        case 1: k1 ^= tail[0];
+                k1 *= 0xcc9e2d51;k1 = (k1 << 15) | (k1 >> 17);k1 *= 0x1b873593;
+                seed ^= k1;
+    } 
+    seed ^= len;    
+    seed ^= seed >> 16;
+    seed *= 0x85ebca6b;
+    seed ^= seed >> 13;
+    seed *= 0xc2b2ae35;
+    seed ^= seed >> 16; 
+
+    return seed & ((1 << result_bits) - 1);
+}
+
+#include "kvalh.hpp"
+
+int KVALOT::add_key(str* key_name, obj_type type, void* parameter1, void* parameter2,void *parameter3)//添加一个键值对
+{
+    /*
+    以key_name的形式向键值对池中创建一个  全新的键值对   
+    key_name:键名,以str字符串形式传入
+    type:obj_type类型
+    parameter1:其它参数
+    parameter2:其它参数
+    parameter3:其它参数
+    */
+    
+    // 检查对象状态
+    if (state != success) {
+        report(merr, kvalot_module, "KVALOT object is in error state");
+        return merr;
+    }
+    
+    // 验证键名合法性
+    if (validate_key_name(key_name) != success) {
+        return merr;
+    }
+    
+    // 检查是否需要扩容
+    if(keynum+1 >= numof_tong * hash_k ){        
+        // 自动对哈希桶数量进行扩容到下一个级别
+        if(rise_capacity() == merr){
+            // 如果扩容失败，返回错误
+            report(merr, kvalot_module, "Failed to expand capacity in add_key");
+            state = merr;
+            return merr; 
+        }
+    }
+    
+    // 检查type是否合法
+    if(iserr_obj_type(type) || type == M_NULL){
+        report(merr, kvalot_module, "Invalid object type");
+        return merr;
+    }
+
+    // 对键名进行哈希，找到存储对应的哈希桶hash_index并保存
+    uint32_t hash_index = murmurhash(*key_name, bits(numof_tong));
+    HASH_TONG* current_tong = &hash_table[hash_index];
+    
+    // 检查是否存在同名键
+    uint32_t existing_key_index = find_key_in_tong(current_tong, key_name);
+    if (existing_key_index != UINT32_MAX) {
+        report(merr, kvalot_module, "Key already exists");
+        return merr;
+    }
+    
+    // 确保桶容量足够
+    if (tong_ensure_capacity(current_tong, current_tong->numof_key + 1) != success) {
+        state = merr;
+        return merr;
+    }
+    
+    // keypool增加一个元素,默认添加新键都是存放在键池keypool内的末尾
+    keypool.emplace_back();//创建一个空的KEY对象
+    
+    // 设置键名
+    if(keypool[keynum].setname(*key_name) == merr) {
+        report(merr, kvalot_module, "Failed to set key name");
+        keypool.pop_back();//回滚
+        state = merr;
+        return merr;
+    }
+
+    // 创建对象
+    int make_result = keypool[keynum].bhs.make_self(type, parameter1, parameter2, parameter3);
+    if(make_result == merr) {
+        report(merr, kvalot_module, "Failed to create object");
+        keypool[keynum].clear_self();//回滚
+        keypool.pop_back();//回滚
+        state = merr;
+        return merr;
+    }
+    keypool[keynum].hash_index = hash_index;//复制哈希表索引
+    
+    // 更新哈希桶内的数据    
+    current_tong->offsetof_key[current_tong->numof_key] = keypool.size()-1;//桶内的键偏移量,从0开始
+    current_tong->numof_key++;//桶内的键数量+1
+
+    keynum++;//键数量+1
+    return success;
+}
+
+int KVALOT::rmv_key(str* key_name)
+{
+    /*
+    如果键类型为非HOOK,则直接删除键值对
+    如果键类型为HOOK,则仅仅先断开链接,再删除KEY
+    */
+    
+    // 检查对象状态
+    if (state != success) {
+        report(merr, kvalot_module, "KVALOT object is in error state");
+        return merr;
+    }
+    
+    // 验证键名合法性
+    if (validate_key_name(key_name) != success) {
+        return merr;
+    }
+    
+    uint32_t hash_index = murmurhash(*key_name, bits(numof_tong));
+    HASH_TONG* hash_tong = &hash_table[hash_index];
+    
+    // 查找要删除的键
+    uint32_t found_index = find_key_in_tong(hash_tong, key_name);
+    if (found_index == UINT32_MAX) {
+        report(merr, kvalot_module, "Key not found for removal");
+        return merr;
+    }
+    
+    // 获取要删除的键
+    uint32_t key_pool_index = hash_tong->offsetof_key[found_index];
+    KEY* key_to_remove = &keypool[key_pool_index];
+    
+    // 清除键值对
+    key_to_remove->clear_self();
+    
+    // 如果不是最后一个键，需要移动数据
+    if (key_pool_index != keynum - 1) {
+        // 将最后一个键移动到当前位置
+        keypool[key_pool_index] = keypool[keynum - 1];
+        
+        // 更新被移动键在哈希桶中的索引
+        KEY* moved_key = &keypool[key_pool_index];
+        HASH_TONG* moved_key_tong = &hash_table[moved_key->hash_index];
+        
+        // 找到并更新移动键的索引
+        for (uint32_t i = 0; i < moved_key_tong->numof_key; i++) {
+            if (moved_key_tong->offsetof_key[i] == keynum - 1) {
+                moved_key_tong->offsetof_key[i] = key_pool_index;
+                break;
+            }
+        }
+    }
+    
+    // 从keypool中删除最后一个元素
+    keypool.pop_back();
+    keynum--;
+    
+    // 从哈希桶中删除该键的索引
+    // 将最后一个索引移动到当前位置
+    hash_tong->offsetof_key[found_index] = hash_tong->offsetof_key[hash_tong->numof_key - 1];
+    hash_tong->numof_key--;
+
+    return success;
+}
+
+
+
+
+
+
+
+
+

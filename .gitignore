@@ -3,8 +3,6 @@ output/
 
 .vscode/
 
-todo.list
-
 cmake-build-debug/
 
 CMakeLists.txt
@@ -33,3 +31,8 @@ logs/
 .clangd
 
 .git/
+
+*.sh
+
+logex
+
