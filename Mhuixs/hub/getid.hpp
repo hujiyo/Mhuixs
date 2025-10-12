@@ -1,7 +1,7 @@
 #ifndef GETID_HPP
 #define GETID_HPP
 
-#include "bitmap.hpp"
+#include "bitmap.h"
 #include "merr.h"
 
 #include <mutex>
@@ -49,8 +49,8 @@ class Id_alloctor{
     BITMAP uid_bitmap;  // 用户ID位图    
     BITMAP gid_bitmap;  // 组ID位图
 public:
-    mrc close();
-    mrc init();
+    int close();
+    int init();
 
     SID get_sid();//获得会话ID
     SID del_sid(SID sid);//释放会话ID

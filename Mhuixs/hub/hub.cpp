@@ -1,11 +1,10 @@
 #include "hub.hpp"
-#include "netplug.h"
-#include "usergroup.hpp"
-#include "defpms.h"
-#include "registry.hpp"
-#include <stdatomic.h>
 
-atomic_int hub_running = 0;
+#include <stdatomic.h>
+#include "netplug.h"
+#include "Mhudef.hpp"
+
+_Atomic int hub_running = 0;
 
 void freecmd(command_t* cmd){
     free(cmd->obj);

@@ -1,5 +1,10 @@
+#ifndef MSTRING_H
+#define MSTRING_H
+
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
+
 
 typedef char* mstring;
 
@@ -12,3 +17,12 @@ mstring mstr(char* str){
     memcpy(result+sizeof(size_t), str, strlen(str));
     return result;
 }
+
+size_t mstrlen(mstring str){
+    if(str == NULL){
+        return SIZE_MAX;
+    }
+    return *(size_t*)str;
+}
+
+#endif

@@ -4,9 +4,45 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* 内部辅助函数 */
+/* 内部辅助函数声明 */
+static int bignum_add_internal(const BigNum *a, const BigNum *b, BigNum *result);
+static int bignum_sub_internal(const BigNum *a, const BigNum *b, BigNum *result);
+static int bignum_mul_internal(const BigNum *a, const BigNum *b, BigNum *result);
+static int bignum_div_internal(const BigNum *a, const BigNum *b, BigNum *result, int precision);
+static int bignum_pow_internal(const BigNum *base, const BigNum *exponent, BigNum *result, int precision);
+static int bignum_mod_internal(const BigNum *a, const BigNum *b, BigNum *result);
 
-/* 初始化大数为0 */
+/* 创建并初始化一个新的 BigNum */
+BigNum* bignum_create(void) {
+    BigNum *num = (BigNum *)malloc(sizeof(BigNum));
+    if (num == NULL) return NULL;
+    
+    memset(num->data.small_data, 0, BIGNUM_SMALL_SIZE);
+    num->length = 1;
+    num->capacity = BIGNUM_SMALL_SIZE;
+    num->type = BIGNUM_TYPE_NUMBER;
+    num->is_large = 0;
+    num->type_data.num.decimal_pos = 0;
+    num->type_data.num.is_negative = 0;
+    
+    return num;
+}
+
+/* 销毁 BigNum 并释放所有内存 */
+void bignum_destroy(BigNum *num) {
+    if (num == NULL) return;
+    
+    /* 先释放内部数据 */
+    if (num->is_large && num->data.large_data != NULL) {
+        free(num->data.large_data);
+        num->data.large_data = NULL;
+    }
+    
+    /* 然后释放结构体本身 */
+    free(num);
+}
+
+/* 初始化大数为0（旧版本 API） */
 void bignum_init(BigNum *num) {
     memset(num->data.small_data, 0, BIGNUM_SMALL_SIZE);
     num->length = 1;
@@ -17,7 +53,7 @@ void bignum_init(BigNum *num) {
     num->type_data.num.is_negative = 0;
 }
 
-/* 清理大数（释放动态内存） */
+/* 清理大数（释放动态内存，旧版本 API） */
 void bignum_free(BigNum *num) {
     if (num == NULL) return;
     if (num->is_large && num->data.large_data != NULL) {
@@ -251,7 +287,8 @@ static int bignum_sub_abs(const BigNum *a, const BigNum *b, BigNum *result) {
 
 /* API 实现 */
 
-int bignum_from_string(const char *str, BigNum *num) {
+/* 旧版本 API - 保留用于兼容 */
+int bignum_from_string_legacy(const char *str, BigNum *num) {
     if (str == NULL || num == NULL) return BIGNUM_ERROR;
     
     bignum_init(num);
@@ -325,8 +362,23 @@ int bignum_from_string(const char *str, BigNum *num) {
     return BIGNUM_SUCCESS;
 }
 
-/* 从原始字符串创建字符串类型的 BigNum */
-int bignum_from_raw_string(const char *str, BigNum *num) {
+/* 新版本 API - 返回堆分配的 BigNum */
+BigNum* bignum_from_string(const char *str) {
+    if (str == NULL) return NULL;
+    
+    BigNum *num = bignum_create();
+    if (num == NULL) return NULL;
+    
+    if (bignum_from_string_legacy(str, num) != BIGNUM_SUCCESS) {
+        bignum_destroy(num);
+        return NULL;
+    }
+    
+    return num;
+}
+
+/* 从原始字符串创建字符串类型的 BigNum - 旧版本 */
+int bignum_from_raw_string_legacy(const char *str, BigNum *num) {
     if (str == NULL || num == NULL) return BIGNUM_ERROR;
     
     bignum_init(num);
@@ -348,6 +400,21 @@ int bignum_from_raw_string(const char *str, BigNum *num) {
     num->type = BIGNUM_TYPE_STRING;  /* 设置为字符串类型 */
     
     return BIGNUM_SUCCESS;
+}
+
+/* 新版本 API - 返回堆分配的 BigNum */
+BigNum* bignum_from_raw_string(const char *str) {
+    if (str == NULL) return NULL;
+    
+    BigNum *num = bignum_create();
+    if (num == NULL) return NULL;
+    
+    if (bignum_from_raw_string_legacy(str, num) != BIGNUM_SUCCESS) {
+        bignum_destroy(num);
+        return NULL;
+    }
+    
+    return num;
 }
 
 int bignum_to_string(const BigNum *num, char *str, size_t max_len, int precision) {
@@ -428,7 +495,7 @@ int bignum_to_string(const BigNum *num, char *str, size_t max_len, int precision
     return BIGNUM_SUCCESS;
 }
 
-int bignum_add(const BigNum *a, const BigNum *b, BigNum *result) {
+static int bignum_add_internal(const BigNum *a, const BigNum *b, BigNum *result) {
     if (a == NULL || b == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -456,7 +523,7 @@ int bignum_add(const BigNum *a, const BigNum *b, BigNum *result) {
     return BIGNUM_SUCCESS;
 }
 
-int bignum_sub(const BigNum *a, const BigNum *b, BigNum *result) {
+static int bignum_sub_internal(const BigNum *a, const BigNum *b, BigNum *result) {
     if (a == NULL || b == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -484,7 +551,7 @@ int bignum_sub(const BigNum *a, const BigNum *b, BigNum *result) {
     return BIGNUM_SUCCESS;
 }
 
-int bignum_mul(const BigNum *a, const BigNum *b, BigNum *result) {
+static int bignum_mul_internal(const BigNum *a, const BigNum *b, BigNum *result) {
     if (a == NULL || b == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -571,7 +638,7 @@ int bignum_mul(const BigNum *a, const BigNum *b, BigNum *result) {
     return BIGNUM_SUCCESS;
 }
 
-int bignum_div(const BigNum *a, const BigNum *b, BigNum *result, int precision) {
+static int bignum_div_internal(const BigNum *a, const BigNum *b, BigNum *result, int precision) {
     if (a == NULL || b == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -711,7 +778,7 @@ int bignum_div(const BigNum *a, const BigNum *b, BigNum *result, int precision) 
     return BIGNUM_SUCCESS;
 }
 
-int bignum_pow(const BigNum *base, const BigNum *exponent, BigNum *result, int precision) {
+static int bignum_pow_internal(const BigNum *base, const BigNum *exponent, BigNum *result, int precision) {
     if (base == NULL || exponent == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -765,7 +832,7 @@ int bignum_pow(const BigNum *base, const BigNum *exponent, BigNum *result, int p
     while (exp_value > 0) {
         if (exp_value & 1) {
             /* 指数为奇数，累乘到结果 */
-            if (bignum_mul(result, &current_power, &temp) != BIGNUM_SUCCESS) {
+            if (bignum_mul_internal(result, &current_power, &temp) != BIGNUM_SUCCESS) {
                 bignum_free(&current_power);
                 bignum_free(&temp);
                 return BIGNUM_ERROR;
@@ -813,7 +880,7 @@ int bignum_pow(const BigNum *base, const BigNum *exponent, BigNum *result, int p
         exp_value >>= 1;
         if (exp_value > 0) {
             /* 底数自乘 */
-            if (bignum_mul(&current_power, &current_power, &temp) != BIGNUM_SUCCESS) {
+            if (bignum_mul_internal(&current_power, &current_power, &temp) != BIGNUM_SUCCESS) {
                 bignum_free(&current_power);
                 bignum_free(&temp);
                 return BIGNUM_ERROR;
@@ -865,7 +932,7 @@ int bignum_pow(const BigNum *base, const BigNum *exponent, BigNum *result, int p
     return BIGNUM_SUCCESS;
 }
 
-int bignum_mod(const BigNum *a, const BigNum *b, BigNum *result) {
+static int bignum_mod_internal(const BigNum *a, const BigNum *b, BigNum *result) {
     if (a == NULL || b == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -1020,7 +1087,7 @@ int bignum_is_string(const BigNum *num) {
     return num->type == BIGNUM_TYPE_STRING;
 }
 
-int bignum_string_to_number(const BigNum *str_num, BigNum *num_result) {
+int bignum_string_to_number_legacy(const BigNum *str_num, BigNum *num_result) {
     if (str_num == NULL || num_result == NULL) return BIGNUM_ERROR;
     if (str_num->type != BIGNUM_TYPE_STRING) return BIGNUM_ERROR;
     
@@ -1033,12 +1100,12 @@ int bignum_string_to_number(const BigNum *str_num, BigNum *num_result) {
     temp_str[str_num->length] = '\0';
     
     /* 尝试解析为数字 */
-    int ret = bignum_from_string(temp_str, num_result);
+    int ret = bignum_from_string_legacy(temp_str, num_result);
     free(temp_str);
     return ret;
 }
 
-int bignum_number_to_string_type(const BigNum *num, BigNum *str_result, int precision) {
+int bignum_number_to_string_type_legacy(const BigNum *num, BigNum *str_result, int precision) {
     if (num == NULL || str_result == NULL) return BIGNUM_ERROR;
     if (num->type != BIGNUM_TYPE_NUMBER) return BIGNUM_ERROR;
     
@@ -1048,7 +1115,122 @@ int bignum_number_to_string_type(const BigNum *num, BigNum *str_result, int prec
     if (ret != BIGNUM_SUCCESS) return ret;
     
     /* 创建字符串类型的 BigNum */
-    return bignum_from_raw_string(temp_str, str_result);
+    return bignum_from_raw_string_legacy(temp_str, str_result);
+}
+
+/* ========== 新版本 API 实现（返回堆分配的 BigNum 指针） ========== */
+
+BigNum* bignum_add(const BigNum *a, const BigNum *b) {
+    if (a == NULL || b == NULL) return NULL;
+    
+    BigNum *result = bignum_create();
+    if (result == NULL) return NULL;
+    
+    if (bignum_add_internal(a, b, result) != BIGNUM_SUCCESS) {
+        bignum_destroy(result);
+        return NULL;
+    }
+    
+    return result;
+}
+
+BigNum* bignum_sub(const BigNum *a, const BigNum *b) {
+    if (a == NULL || b == NULL) return NULL;
+    
+    BigNum *result = bignum_create();
+    if (result == NULL) return NULL;
+    
+    if (bignum_sub_internal(a, b, result) != BIGNUM_SUCCESS) {
+        bignum_destroy(result);
+        return NULL;
+    }
+    
+    return result;
+}
+
+BigNum* bignum_mul(const BigNum *a, const BigNum *b) {
+    if (a == NULL || b == NULL) return NULL;
+    
+    BigNum *result = bignum_create();
+    if (result == NULL) return NULL;
+    
+    if (bignum_mul_internal(a, b, result) != BIGNUM_SUCCESS) {
+        bignum_destroy(result);
+        return NULL;
+    }
+    
+    return result;
+}
+
+BigNum* bignum_div(const BigNum *a, const BigNum *b, int precision) {
+    if (a == NULL || b == NULL) return NULL;
+    
+    BigNum *result = bignum_create();
+    if (result == NULL) return NULL;
+    
+    int ret = bignum_div_internal(a, b, result, precision);
+    if (ret != BIGNUM_SUCCESS) {
+        bignum_destroy(result);
+        return NULL;
+    }
+    
+    return result;
+}
+
+BigNum* bignum_pow(const BigNum *base, const BigNum *exponent, int precision) {
+    if (base == NULL || exponent == NULL) return NULL;
+    
+    BigNum *result = bignum_create();
+    if (result == NULL) return NULL;
+    
+    if (bignum_pow_internal(base, exponent, result, precision) != BIGNUM_SUCCESS) {
+        bignum_destroy(result);
+        return NULL;
+    }
+    
+    return result;
+}
+
+BigNum* bignum_mod(const BigNum *a, const BigNum *b) {
+    if (a == NULL || b == NULL) return NULL;
+    
+    BigNum *result = bignum_create();
+    if (result == NULL) return NULL;
+    
+    if (bignum_mod_internal(a, b, result) != BIGNUM_SUCCESS) {
+        bignum_destroy(result);
+        return NULL;
+    }
+    
+    return result;
+}
+
+BigNum* bignum_string_to_number(const BigNum *str_num) {
+    if (str_num == NULL) return NULL;
+    
+    BigNum *result = bignum_create();
+    if (result == NULL) return NULL;
+    
+    if (bignum_string_to_number_legacy(str_num, result) != BIGNUM_SUCCESS) {
+        bignum_destroy(result);
+        return NULL;
+    }
+    
+    return result;
+}
+
+BigNum* bignum_number_to_string_type(const BigNum *num, int precision) {
+    if (num == NULL) return NULL;
+    
+    BigNum *result = bignum_create();
+    if (result == NULL) return NULL;
+    
+    if (bignum_number_to_string_type_legacy(num, result, precision) != BIGNUM_SUCCESS) {
+        bignum_destroy(result);
+        return NULL;
+    }
+    
+    return result;
 }
 
 /*

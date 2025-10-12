@@ -6,9 +6,10 @@
 start from 2024.11
 Email:hj18914255909@outlook.com
 */
+#define merr -1
 
 // 内部辅助函数：扩展bitmap大小
-static int bitmap_rexpand(bitmap_t* bm, uint64_t size) {
+static int bitmap_rexpand(BITMAP* bm, uint64_t size) {
     if (!bm || !bm->bitmap) return merr;
     
     uint64_t old_byte_num = (*(uint64_t*)bm->bitmap + 7)/8 + sizeof(uint64_t);
@@ -24,56 +25,53 @@ static int bitmap_rexpand(bitmap_t* bm, uint64_t size) {
 }
 
 // 创建空bitmap
-bitmap_t* bitmap_create(void) {
-    bitmap_t* bm = (bitmap_t*)malloc(sizeof(bitmap_t));
+BITMAP* bitmap_create(void) {
+    BITMAP* bm = (BITMAP*)malloc(sizeof(BITMAP));
     if (!bm) return NULL;
-    
-    bm->state = 0;
     bm->bitmap = (uint8_t*)calloc(8, 1);
     if (!bm->bitmap) {
         #ifdef bitmap_debug
         perror("BITMAP memory init failed!");
         #endif
-        bm->state++;
+        free(bm);
+        return NULL;
     }
     return bm;
 }
 
 // 创建指定大小的bitmap
-bitmap_t* bitmap_create_with_size(uint64_t size) {
-    bitmap_t* bm = (bitmap_t*)malloc(sizeof(bitmap_t));
+BITMAP* bitmap_create_with_size(uint64_t size) {
+    BITMAP* bm = (BITMAP*)malloc(sizeof(BITMAP));
     if (!bm) return NULL;
     
-    bm->state = 0;
     bm->bitmap = (uint8_t*)calloc((size+7)/8 + sizeof(uint64_t), 1);
     if (!bm->bitmap) {
         bm->bitmap = (uint8_t*)calloc(8, 1);
         #ifdef bitmap_debug
         perror("BITMAP memory init failed!");
         #endif
-        bm->state++;
-        return bm;
+        free(bm);
+        return NULL;
     }
     *(uint64_t*)bm->bitmap = size;
     return bm;
 }
 
 // 从字符串创建bitmap
-bitmap_t* bitmap_create_from_string(const char* s) {
+BITMAP* bitmap_create_from_string(const char* s) {
     if (!s) return NULL;
     
-    bitmap_t* bm = (bitmap_t*)malloc(sizeof(bitmap_t));
+    BITMAP* bm = (BITMAP*)malloc(sizeof(BITMAP));
     if (!bm) return NULL;
     
-    bm->state = 0;
     uint64_t len = strlen(s);
     bm->bitmap = (uint8_t*)malloc(8 + len/8 + 1);
     if (!bm->bitmap) {
         #ifdef bitmap_debug
         perror("BITMAP memory init failed!");
         #endif
-        bm->state++;
-        return bm;
+        free(bm);
+        return NULL;
     }
     
     *(uint64_t*)bm->bitmap = len;
@@ -85,13 +83,12 @@ bitmap_t* bitmap_create_from_string(const char* s) {
 }
 
 // 拷贝构造
-bitmap_t* bitmap_create_copy(const bitmap_t* other) {
+BITMAP* bitmap_create_copy(const BITMAP* other) {
     if (!other || !other->bitmap) return NULL;
     
-    bitmap_t* bm = (bitmap_t*)malloc(sizeof(bitmap_t));
+    BITMAP* bm = (BITMAP*)malloc(sizeof(BITMAP));
     if (!bm) return NULL;
     
-    bm->state = 0;
     uint64_t size = *(uint64_t*)other->bitmap;
     bm->bitmap = (uint8_t*)calloc((size+7)/8 + sizeof(uint64_t), 1);
     if (!bm->bitmap) {
@@ -99,28 +96,27 @@ bitmap_t* bitmap_create_copy(const bitmap_t* other) {
         #ifdef bitmap_debug
         perror("BITMAP memory init failed!");
         #endif
-        bm->state++;
-        return bm;
+        free(bm);
+        return NULL;
     }
     memcpy(bm->bitmap, other->bitmap, (size+7)/8 + sizeof(uint64_t));
     return bm;
 }
 
 // 从数据流创建bitmap
-bitmap_t* bitmap_create_from_data(char* s, uint64_t len, uint8_t zerochar) {
+BITMAP* bitmap_create_from_data(char* s, uint64_t len, uint8_t zerochar) {
     if (!s) return NULL;
     
-    bitmap_t* bm = (bitmap_t*)malloc(sizeof(bitmap_t));
+    BITMAP* bm = (BITMAP*)malloc(sizeof(BITMAP));
     if (!bm) return NULL;
     
-    bm->state = 0;
     bm->bitmap = (uint8_t*)calloc((len+7)/8 + sizeof(uint64_t), 1);
     if (!bm->bitmap) {
         #ifdef bitmap_debug
         perror("BITMAP memory init failed!");
         #endif
-        bm->state++;
-        return bm;
+        free(bm);
+        return NULL;
     }
     
     *(uint64_t*)bm->bitmap = len;
@@ -134,7 +130,7 @@ bitmap_t* bitmap_create_from_data(char* s, uint64_t len, uint8_t zerochar) {
 }
 
 // 销毁bitmap
-void bitmap_destroy(bitmap_t* bm) {
+void free_bitmap(BITMAP* bm) {
     if (bm) {
         if (bm->bitmap) free(bm->bitmap);
         free(bm);
@@ -142,7 +138,7 @@ void bitmap_destroy(bitmap_t* bm) {
 }
 
 // 从字符串赋值
-int bitmap_assign_string(bitmap_t* bm, char* s) {
+int bitmap_assign_string(BITMAP* bm, char* s) {
     if (!bm || !s) return merr;
     
     uint64_t len = strlen(s);
@@ -153,8 +149,7 @@ int bitmap_assign_string(bitmap_t* bm, char* s) {
         perror("BITMAP memory init failed!");
         #endif
         bm->bitmap = temp;
-        bm->state++;
-        return merr;
+        return -1;
     }
     
     *(uint64_t*)bm->bitmap = len;
@@ -170,56 +165,45 @@ int bitmap_assign_string(bitmap_t* bm, char* s) {
 }
 
 // 从另一个bitmap赋值
-int bitmap_assign_bitmap(bitmap_t* bm, const bitmap_t* other) {
-    if (!bm || !other) return merr;
+int bitmap_assign_bitmap(BITMAP* bm, const BITMAP* other) {
+    if (!bm || !other || !other->bitmap) return merr;
     if (bm == other) return 0; // 自赋值保护
     
-    if (!other->bitmap) {
-        #ifdef bitmap_debug
-        perror("BITMAP failed! other bitmap is NULL!");
-        #endif
-        bm->state++;
-        return merr;
-    }
-    
-    uint8_t* temp = bm->bitmap;
     uint64_t size = *(uint64_t*)other->bitmap;
-    bm->bitmap = (uint8_t*)malloc((size+7)/8 + sizeof(uint64_t));
-    if (!bm->bitmap) {
+    uint64_t byte_num = (size + 7) / 8 + sizeof(uint64_t);
+    
+    uint8_t* new_bitmap = (uint8_t*)malloc(byte_num);
+    if (!new_bitmap) {
         #ifdef bitmap_debug
-        perror("BITMAP memory init failed!");
+        perror("BITMAP memory allocation failed!");
         #endif
-        bm->bitmap = temp;
-        bm->state++;
         return merr;
     }
     
-    memcpy(bm->bitmap, other->bitmap, (size+7)/8 + sizeof(uint64_t));
-    free(temp);
+    memcpy(new_bitmap, other->bitmap, byte_num);
+    if (bm->bitmap) free(bm->bitmap);
+    bm->bitmap = new_bitmap;
     return 0;
 }
 
 // 追加另一个bitmap
-int bitmap_append(bitmap_t* bm, bitmap_t* other) {
+int bitmap_append(BITMAP* bm, BITMAP* other) {
     if (!bm || !other || !other->bitmap) {
         #ifdef bitmap_debug
         perror("BITMAP failed! other bitmap is NULL!");
         #endif
-        if (bm) bm->state++;
-        return merr;
+        return -1;
     }
     
     uint64_t size = *(uint64_t*)bm->bitmap + *(uint64_t*)other->bitmap;
-    uint8_t* temp = bm->bitmap;
-    bm->bitmap = (uint8_t*)malloc((size+7)/8 + sizeof(uint64_t));
-    if (!bm->bitmap) {
+    uint8_t* temp = (uint8_t*)malloc((size+7)/8 + sizeof(uint64_t));
+    if (!temp) {
         #ifdef bitmap_debug
         perror("BITMAP memory init failed!");
         #endif
-        bm->bitmap = temp;
-        bm->state++;
-        return merr;
+        return -1;
     }
+    bm->bitmap = temp;
     
     *(uint64_t*)bm->bitmap = size;
     uint64_t temp_size = *(uint64_t*)temp;
@@ -235,7 +219,7 @@ int bitmap_append(bitmap_t* bm, bitmap_t* other) {
 }
 
 // 获取某个位的值
-int bitmap_get(const bitmap_t* bm, uint64_t offset) {
+int bitmap_get(const BITMAP* bm, uint64_t offset) {
     if (!bm || !bm->bitmap) return merr;
     if (offset >= *(uint64_t*)bm->bitmap) return merr;
     
@@ -244,7 +228,7 @@ int bitmap_get(const bitmap_t* bm, uint64_t offset) {
 }
 
 // 设置单个位
-int bitmap_set(bitmap_t* bm, uint64_t offset, uint8_t value) {
+int bitmap_set(BITMAP* bm, uint64_t offset, uint8_t value) {
     if (!bm || !bm->bitmap) return merr;
     
     if (offset >= *(uint64_t*)bm->bitmap && bitmap_rexpand(bm, offset+1) == merr) {
@@ -261,7 +245,7 @@ int bitmap_set(bitmap_t* bm, uint64_t offset, uint8_t value) {
 }
 
 // 设置一段位
-int bitmap_set_range(bitmap_t* bm, uint64_t offset, uint64_t len, uint8_t value) {
+int bitmap_set_range(BITMAP* bm, uint64_t offset, uint64_t len, uint8_t value) {
     if (!bm || !bm->bitmap) return merr;
     if (!len) return 0;
     
@@ -301,7 +285,7 @@ int bitmap_set_range(bitmap_t* bm, uint64_t offset, uint64_t len, uint8_t value)
 }
 
 // 从数据流设置位
-int bitmap_set_from_stream(bitmap_t* bm, uint64_t offset, uint64_t len, const char* data_stream, char zero_value) {
+int bitmap_set_from_stream(BITMAP* bm, uint64_t offset, uint64_t len, const char* data_stream, char zero_value) {
     if (!bm || !bm->bitmap || !data_stream || !len) return merr;
     
     if (offset + len > *(uint64_t*)bm->bitmap && bitmap_rexpand(bm, offset + len) == merr) {
@@ -320,13 +304,13 @@ int bitmap_set_from_stream(bitmap_t* bm, uint64_t offset, uint64_t len, const ch
 }
 
 // 获取bitmap大小
-uint64_t bitmap_size(const bitmap_t* bm) {
+uint64_t bitmap_size(const BITMAP* bm) {
     if (!bm || !bm->bitmap) return 0;
     return *(uint64_t*)bm->bitmap;
 }
 
 // 检查错误状态
-int bitmap_iserr(bitmap_t* bm) {
+int bitmap_iserr(BITMAP* bm) {
     if (!bm || !bm->bitmap) return merr;
     
     bm->bitmap = (uint8_t*)realloc(bm->bitmap, (*(uint64_t*)bm->bitmap + 7)/8 + sizeof(uint64_t));
@@ -336,7 +320,7 @@ int bitmap_iserr(bitmap_t* bm) {
 }
 
 // 统计指定范围内1的个数
-uint64_t bitmap_count(const bitmap_t* bm, uint64_t st_offset, uint64_t ed_offset) {
+uint64_t bitmap_count(const BITMAP* bm, uint64_t st_offset, uint64_t ed_offset) {
     if (!bm || !bm->bitmap) return merr;
     if (st_offset > ed_offset || ed_offset >= *(uint64_t*)bm->bitmap || st_offset >= *(uint64_t*)bm->bitmap) {
         return merr;
@@ -351,8 +335,8 @@ uint64_t bitmap_count(const bitmap_t* bm, uint64_t st_offset, uint64_t ed_offset
 }
 
 // 打印位图
-void bitmap_print(const bitmap_t* bm) {
-    if (!bm || bm->state != 0) {
+void bitmap_print(const BITMAP* bm) {
+    if (!bm || !bm->bitmap) {
         #ifdef bitmap_debug
         printf("BITMAP is in invalid state!\n");
         #endif
@@ -367,7 +351,7 @@ void bitmap_print(const bitmap_t* bm) {
 }
 
 // 查找指定值的位
-int64_t bitmap_find(const bitmap_t* bm, uint8_t value, uint64_t start, uint64_t end) {
+int64_t bitmap_find(const BITMAP* bm, uint8_t value, uint64_t start, uint64_t end) {
     if (!bm || !bm->bitmap) return merr;
     if (start > end || end >= *(uint64_t*)bm->bitmap) {
         return merr;

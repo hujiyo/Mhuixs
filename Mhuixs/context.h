@@ -16,7 +16,7 @@
 /* 变量结构 */
 typedef struct {
     char name[MAX_VAR_NAME_LEN];  /* 变量名 */
-    BigNum value;                  /* 变量值 */
+    BigNum *value;                 /* 变量值指针（堆分配） */
     int is_defined;                /* 是否已定义 */
 } Variable;
 

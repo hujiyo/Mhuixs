@@ -1,5 +1,5 @@
-#ifndef BITMAP_C_H
-#define BITMAP_C_H
+#ifndef BITMAP_H
+#define BITMAP_H
 /*
 #版权所有 (c) Mhuixs-team 2024
 #许可证协议:
@@ -13,14 +13,10 @@ Email:hj18914255909@outlook.com
 #include <string.h>
 #include <stdint.h>
 
-#include "../lib/bitcpy.h"
-#include "../share/merr.h"
+#include "bitcpy.h"
+#include "obj.h"
 
 #define bitmap_debug
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 /*
 BITMAP 结构
@@ -31,40 +27,35 @@ BITMAP 结构
 
 typedef struct {
     uint8_t* bitmap;
-    int state; // 对象状态，通过改变状态来表示异常状态
-} bitmap_t;
+} BITMAP;
 
 // 构造和析构函数
-bitmap_t* bitmap_create(void);
-bitmap_t* bitmap_create_with_size(uint64_t size);
-bitmap_t* bitmap_create_from_string(const char* s);
-bitmap_t* bitmap_create_copy(const bitmap_t* other);
-bitmap_t* bitmap_create_from_data(char* s, uint64_t len, uint8_t zerochar);
-void bitmap_destroy(bitmap_t* bm);
+BITMAP* bitmap_create(void);
+BITMAP* bitmap_create_with_size(uint64_t size);
+BITMAP* bitmap_create_from_string(const char* s);
+BITMAP* bitmap_create_copy(const BITMAP* other);
+BITMAP* bitmap_create_from_data(char* s, uint64_t len, uint8_t zerochar);
+void free_bitmap(BITMAP* bm);
 
 // 赋值操作
-int bitmap_assign_string(bitmap_t* bm, char* s);
-int bitmap_assign_bitmap(bitmap_t* bm, const bitmap_t* other);
-int bitmap_append(bitmap_t* bm, bitmap_t* other);
+int bitmap_assign_string(BITMAP* bm, char* s);
+int bitmap_assign_bitmap(BITMAP* bm, const BITMAP* other);
+int bitmap_append(BITMAP* bm, BITMAP* other);
 
 // 访问和修改
-int bitmap_get(const bitmap_t* bm, uint64_t offset);
-int bitmap_set(bitmap_t* bm, uint64_t offset, uint8_t value);
-int bitmap_set_range(bitmap_t* bm, uint64_t offset, uint64_t len, uint8_t value);
-int bitmap_set_from_stream(bitmap_t* bm, uint64_t offset, uint64_t len, const char* data_stream, char zero_value);
+int bitmap_get(const BITMAP* bm, uint64_t offset);
+int bitmap_set(BITMAP* bm, uint64_t offset, uint8_t value);
+int bitmap_set_range(BITMAP* bm, uint64_t offset, uint64_t len, uint8_t value);
+int bitmap_set_from_stream(BITMAP* bm, uint64_t offset, uint64_t len, const char* data_stream, char zero_value);
 
 // 查询操作
-uint64_t bitmap_size(const bitmap_t* bm);
-uint64_t bitmap_count(const bitmap_t* bm, uint64_t st_offset, uint64_t ed_offset);
-int64_t bitmap_find(const bitmap_t* bm, uint8_t value, uint64_t start, uint64_t end);
+uint64_t bitmap_size(const BITMAP* bm);
+uint64_t bitmap_count(const BITMAP* bm, uint64_t st_offset, uint64_t ed_offset);
+int64_t bitmap_find(const BITMAP* bm, uint8_t value, uint64_t start, uint64_t end);
 
 // 状态和调试
-int bitmap_iserr(bitmap_t* bm);
-void bitmap_print(const bitmap_t* bm);
-
-#ifdef __cplusplus
-}
-#endif
+int bitmap_iserr(BITMAP* bm);
+void bitmap_print(const BITMAP* bm);
 
 #endif
 

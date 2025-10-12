@@ -2,18 +2,17 @@
 #define FCALL_HPP
 
 #include "Mhudef.hpp"
-#include "stream.hpp"
+#include "mstring.h"
 #include "hook.hpp"
 #include "merr.h"
 #include "funseq.h"
 #include "registry.hpp"
 #include "usergroup.hpp"
 #include "funseq.h"
-#include "tblh.hpp"
+#include "tblh.h"
 #include "kvalh.hpp"
-#include "list.hpp"
-#include "bitmap.hpp"
-#include "stream.hpp"
+#include "list.h"
+#include "bitmap.h"
 #include "netplug.h"
 #include <stdio.h>
 #include <stdlib.h>

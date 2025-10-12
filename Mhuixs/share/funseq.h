@@ -178,7 +178,7 @@ typedef enum {
     CMD_COMPRESS = 372,           // [ZS objname rank;]
     
     // 错误命令
-    CMD_ERROR = 999               // 错误命令
+    CMD_ERROR = 999,               // 错误命令
 
     //新增
     CMD_SYSTEM_SHUTDOWN = 381,    // [SYSTEM SHUTDOWN;]

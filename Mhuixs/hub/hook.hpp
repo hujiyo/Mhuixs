@@ -9,10 +9,14 @@ Email:hj18914255909@outlook.com
 */
 #include <string>
 
-#include "usergroup.hpp"
-#include "registry.hpp"
 #include "merr.h"
+#include "getid.hpp"
 #include "Mhudef.hpp"
+
+// 前向声明，避免循环包含
+class User_group_manager;
+class Registry;
+class FunCall;
 
 enum Mode_type {
     HOOK_READ = 'r',
@@ -52,11 +56,8 @@ struct permission_struct{
 }; 
 
 class HOOK {
-public:
-
 private:
     basic_handle_struct bhs; // 操作对象
-    Cprs cprs; // 压缩级别
     UID owner; // 所有者ID
     GID group; // 组ID
 public:

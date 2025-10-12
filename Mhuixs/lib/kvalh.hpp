@@ -9,9 +9,9 @@
 #include <vector>
 #include <string>
 
+#include "mstring.h"
 #include "Mhudef.hpp"
-#include "merr.h"  // 引入merr库的错误处理机制
-#include "stdstr.h" // 引入str结构支持
+//#include "stdstr.h" // 引入str结构支持
 /*
 #版权所有 (c) HUJI 2025
 #许可证协议:
@@ -19,7 +19,7 @@
 start from 2025.2
 Email:hj18914255909@outlook.com
 */
-
+using namespace std;
 //扩容时只会在一下几个数量级之间进行，当达到最高级时，不会再进行扩容而是直接返回溢出错误
 #define hash_tong_1024ge        1024            //2^10
 #define hash_tong_4096ge        4096            //2^12
@@ -36,33 +36,24 @@ Email:hj18914255909@outlook.com
 一般来说，当 键值对数量 / 哈希桶数量 <= 0.75 时，哈希表的性能最好。
 */
 
+typedef void* Obj;
+
 class KVALOT{
-    struct HASH_TONG{
-        uint32_t numof_key;      //桶内的key数量
-        uint32_t capacity;       //桶内数组的容量（实际分配的大小）
-        uint32_t* offsetof_key;  //key偏移量数组,这里的偏移量是在keypool中的偏移量
-        
-        // 构造函数，初始化为空桶
-        HASH_TONG() : numof_key(0), capacity(0), offsetof_key(NULL) {}
-    };
+    typedef struct HASH_TONG{
+        size_t numof_key;      //桶内的key数量
+        size_t capacity;       //桶内数组的容量（实际分配的大小）
+        size_t* offsetof_key;  //key偏移量数组,这里的偏移量是在keypool中的偏移量        
+    } HASH_TONG;
 public:
     struct KEY{
-        basic_handle_struct bhs;//对象
+        Obj value;//对象
         mstring name;//指向一个key名称存放的地址
-        uint32_t hash_index;//当前key在哈希表中的索引
-        int setname(char* key_name){//设置键名
-            mstring name_ = (mstring)malloc(strlen(key_name) + sizeof(uint32_t));
-            if (name_ == 0) {
-                report(merr, "kvalot module", "Memory allocation failed for key name");
-                return merr;// 错误处理
-            }
-            *(uint32_t*)name_ = strlen(key_name);
-            memcpy(name_ + sizeof(uint32_t), key_name, strlen(key_name));
-            this->name = name_;
-            return success;
+        uint32_t hash_index;//当前key在哈希表中桶的索引
+        void setname(mstring key_name){ //设置键名
+            this->name = key_name;//所有权转移            
         }
         void clear_self(){
-            bhs.clear_self();
+            free_Obj(value);
             free(name);
             name = (mstring)0;
             hash_index = 0;
@@ -78,7 +69,7 @@ private:
 
     string kvalot_name;//键值对池名称
     
-    mrc state;//对象状态，使用merr库的错误码
+    errlevel state;//对象状态，使用merr库的错误码
 
     static uint32_t bits(uint32_t X);
     int rise_capacity();
@@ -86,21 +77,21 @@ private:
     
     // 辅助函数：C风格的内存管理
     int tong_ensure_capacity(HASH_TONG* tong, uint32_t needed_capacity);
-    int validate_key_name(str* key_name);
-    uint32_t find_key_in_tong(HASH_TONG* tong, str* key_name);
+    int validate_key_name(mstring key_name);
+    uint32_t find_key_in_tong(HASH_TONG* tong, mstring key_name);
     int copy_bhs(basic_handle_struct* dest, const basic_handle_struct* src);
 public:
-    KVALOT(str* kvalot_name);
+    KVALOT(mstring kvalot_name);
     KVALOT(const KVALOT& kvalot);
     ~KVALOT();
 
 
-    basic_handle_struct find_key(str* key_name);
-    int  rmv_key(str* key_name);
-    int  add_key(str* key_name, obj_type type,void* parameter1, void* parameter2,void* parameter3);
-    str get_name();
+    basic_handle_struct find_key(mstring key_name);
+    int  rmv_key(mstring key_name);
+    int  add_key(mstring key_name, obj_type type,void* parameter1, void* parameter2,void* parameter3);
+    mstring get_name();
 
-    mrc iserr();  // 返回merr库的错误码
+    errlevel iserr();  // 返回merr库的错误码
     const char* get_error_msg(); // 获取错误信息
     
     // 调试和统计功能

@@ -9,11 +9,15 @@ start from 2025.5
 Email:hj18914255909@outlook.com
 */
 
-#include "list.hpp"
-#include "bitmap.hpp"
+#include "list.h"
+#include "bitmap.h"
 #include "kvalh.hpp"
-#include "tblh.hpp"
+#include "tblh.h"
 #include "hook.hpp"
+#include "registry.hpp"
+#include "usergroup.hpp"
+
+#define PORT 18185
 
 /*
 Mhuixs数据库支持的数据结构/数据操作对象:
@@ -33,149 +37,21 @@ Mhuixs数据库支持的数据结构/数据操作对象:
 
 typedef char* mstring;//以size_t为长度前缀+字符串内容的类型
 
-enum obj_type //数据结构对象的类型
-{
-    M_NULL   =    '\0',
+enum obj_type:int{ //数据结构对象的类型
+    M_NULL   =    100,
+    M_STREAM =    101,//STREAM和BITMAP和Bignum是可以互转的,比如101-100=1正好是Bignum为字符串类型时的标记
+    M_BITMAP =    102,
 
-    M_KVALOT =    '1',
-    M_LIST   =    '2',
-    M_BITMAP =    '3',
-    M_TABLE  =    '4',
+    M_KVALOT =    201,//这三个都属于数据结构
+    M_LIST   =    202,    
+    M_TABLE  =    203,
 
-    M_HOOK   =    '5',
-    M_STREAM =    '6',
+    M_HOOK   =    301,//HOOK和KEY属于引用
+    M_KEY    =    302,
 };
 
-typedef struct basic_handle_struct {
-    union obj_struct{ //储存各种对象的描述符
-        KVALOT *kvalot;
-        LIST *list;
-        TABLE *table;
-        BITMAP *bitmap;
-        mstring stream;
-        HOOK *hook; //HOOK对象
-    } handle;//任意数据结构描述符
-    obj_type type;//描述符的类型
-    int make_self(obj_type type, void *parameter1, void *parameter2, void *parameter3){
-        //函数在成功创建数据对象之前都不会对basic_handle_struct里的原数据进行任何修改            
-        switch (type){
-            case M_STREAM: {
-                if(parameter1==NULL){
-                    printf("basic_handle_struct::make_self:Error:parameter err\n");
-                    return merr;
-                }
-                //parameter1 type:str*
-                size_t length = ((str*)parameter1)->len();                
-                mstring stream = (mstring)calloc(1,length+sizeof(size_t));
-                *(size_t*)stream = length;
-                memcpy(stream+sizeof(size_t),((str*)parameter1)->stream+sizeof(size_t),length);
-                handle.stream = stream;
-                break;
-            }
-            case M_LIST:{
-                LIST *list = (LIST*)calloc(1,sizeof(LIST));
-                list = new (list) LIST();//使用第一个参数作为LIST的大小，第二个参数作为LIST的元素类型
-                if(list->iserr()){                    
-                    printf("basic_handle_struct::make_self:Error: LIST create error\n");
-                    list->~LIST();                    
-                    free(list);//释放内存          
-                    return merr;
-                }
-                handle.list = list;
-                break;
-            }
-            case M_BITMAP:{//使用第一个参数作为BITMAP的大小
-                BITMAP *bitmap = (BITMAP*)calloc(1,sizeof(BITMAP));
-                if(parameter1!=NULL) bitmap = new (bitmap) BITMAP(*(uint32_t*)parameter1);//使用第一个参数作为BITMAP的大小
-                else bitmap = new (bitmap) BITMAP();
-                if(bitmap->iserr()){                    
-                    printf("basic_handle_struct::make_self:Error: BITMAP create error\n");
-                    bitmap->~BITMAP();                    
-                    free(bitmap);//释放内存 
-                    return merr;
-                }
-                handle.bitmap = bitmap;
-                break;
-            }
-            case M_TABLE:{
-                TABLE *table = (TABLE*)calloc(1,sizeof(TABLE));
-                if(parameter1!=NULL && parameter2!=NULL && parameter3!=NULL)
-                    //使用第一个参数作为TABLE的字段信息，第二个参数作为TABLE的字段数量   
-                    table = new (table) TABLE((str*)parameter1,(FIELD*)parameter2,*(uint32_t*)parameter3);
-                else{
-                    free(table);
-                    printf("basic_handle_struct::make_self:Error:parameter err\n");
-                    return merr;
-                }
-                if(table->iserr()){
-                    printf("basic_handle_struct::make_self:Error: TABLE create error\n");
-                    table->~TABLE();
-                    free(table);
-                    return merr;
-                }
-                handle.table = table;
-                break;
-            }
-            case M_KVALOT:{
-                KVALOT *kvalot = (KVALOT*)calloc(1,sizeof(KVALOT));
-                if(parameter1!=NULL) kvalot = new (kvalot) KVALOT((str*)parameter1);//使用第一个参数作为KVALOT的名称                   
-                else{
-                    free(kvalot);
-                    printf("basic_handle_struct::make_self:Error:parameter err\n");
-                    return merr;
-                }
-                if(kvalot->iserr()){
-                    printf("basic_handle_struct::make_self:Error: KVALOT create error\n");
-                    kvalot->~KVALOT();
-                    free(kvalot);
-                    return merr;
-                }
-                handle.kvalot = kvalot;
-                break;
-            }
-            case M_HOOK:{
-                break;
-            }
-            default://M_NULL && other
-                printf("basic_handle_struct::make_self:Error:type error\n");
-                return merr;
-        }
-        this->type = type;
-        return 0;
-    }
-    void clear_self(){
-        /*
-        本函数会清空basic_handle_struct里的原数据、对象
-        */
-        switch (type){
-        case M_KVALOT:
-                handle.kvalot->~KVALOT();//调用析构函数
-                free(handle.kvalot);
-                break;
-            case M_LIST:
-                handle.list->~LIST();//调用析构函数
-                free(handle.list);
-                break;
-            case M_BITMAP:
-                handle.bitmap->~BITMAP();//调用析构函数
-                free(handle.bitmap);
-                break;
-            case M_TABLE:
-                handle.table->~TABLE();//调用析构函数
-                free(handle.table);
-                break;
-            case M_STREAM:
-                free(handle.stream);
-                break;
-            //case M_HOOK:
-            default:
-                printf("basic_handle_struct::clear_self:Error:STRUCT WAS WRONG\n");
-        }
-        type = M_NULL;
-        memset(&handle,0,sizeof(handle));//清空handle
-        return;
-    }
-} basic_handle_struct;
+
+
 
 struct COMMEND{
     uint32_t command; // 命令码
@@ -197,9 +73,7 @@ bool iserr_obj_type(obj_type type);
 
 /*
 Mhuixs是基于内存的数据库，在这个寸土寸金的内存世界，内存压缩是数据库的核心
-Mhuixs对于数据的操作是以数据结构为对象的，而所有数据对象是通过HOOK
-结构体来操作的，在execute.c执行每一步标准命令前都需要使用zslish.h中的函数对HOOK对象进行一次解压操作。
-此外，接入模块还要负责对长时间不操作的数据结构对象进行提高压缩等级的操作（刚创建时默认是lv0=0）。
+对长时间不操作的数据结构对象进行提高压缩等级的操作（刚创建时默认是lv0=0）。
 
 其实简单来说，Mhuixs中压缩就是降低内存的使用，所以将数据存入硬盘这个行为本身就是一个极为有效的压缩算法
 lv0: 不压缩              # 0延迟，立即响应
@@ -208,13 +82,13 @@ lv2: ZSTD -5/-7          # ~10μs延迟
 lv3: ZSTD -19/-22        # ~100-500μs延迟（模拟磁盘）
 lv4 :直接存放于磁盘（然后返回磁盘索引）这个索引需要zslish自己定义，可能要包含文件路径、文件名、数据在文件中的偏移量等等
 lv5 :使用mzstd库进行压缩存放于磁盘（然后返回索引）
-*/
+
 typedef enum Cprs{
     lv0=0,    lv1=1,
     lv2=2,    lv3=3,
     lv4=4,    lv5=5
 }Cprs;
-
+*/
 
 uint8_t islittlendian(){
     uint16_t a=1;//大端:00000000 00000001 小端:00000001 00000000
