@@ -3,10 +3,17 @@
 
 #include <stddef.h>
 
-#include "bitmap.h"
+#ifdef LOGEX_BUILD
+/* Logex 简化模式 - 仅包含必要的头文件 */
+#include "share/obj.h"
+#include "lib/bitmap.h"
+#else
+/* Mhuixs 完整模式 - 包含所有依赖 */
+#include "lib/bitmap.h"
 #include "tblh.h"
 #include "list.h"
 #include "obj.h"
+#endif
 
 /**
  * 任意精度数值计算库
@@ -23,11 +30,6 @@
 /* 宏定义 - 精度设置 */
 #define BIGNUM_DEFAULT_PRECISION 100  /* 默认小数精度（小数点后位数） */
 #define BIGNUM_MAX_DIGITS 10000       /* 最大数字位数（仅对数字类型有效） */
-
-
-/* 类型标记 */
-#define BIGNUM_TYPE_NUMBER  0         /* 数字类型 */
-#define BIGNUM_TYPE_STRING  1         /* 字符串类型 */
 
 
 /* 获取digits指针的辅助宏 */
@@ -205,6 +207,14 @@ int bignum_is_number(const BigNum *num);
 int bignum_is_string(const BigNum *num);
 
 /**
+ * 判断 BigNum 是否为位图类型
+ * 
+ * @param num BigNum 结构
+ * @return 1 是位图, 0 不是
+ */
+int bignum_is_bitmap(const BigNum *num);
+
+/**
  * 尝试将字符串类型的 BigNum 转换为数字类型（返回新分配的 BigNum）
  * 
  * @param str_num 字符串类型的 BigNum
@@ -230,6 +240,32 @@ BigNum* bignum_string_to_number(const BigNum *str_num);
  * @return 新的字符串类型 BigNum 指针，失败返回 NULL
  */
 BigNum* bignum_number_to_string_type(const BigNum *num, int precision);
+
+/**
+ * 从二进制字符串创建位图类型的 BigNum（简单包装bitmap_create_from_string）
+ * 例如："10001000" -> 位图类型
+ * 
+ * @param str 二进制字符串（只包含 '0' 和 '1'）
+ * @return 新的位图类型 BigNum 指针，失败返回 NULL
+ */
+#define bignum_from_binary_string(str) bitmap_create_from_string(str)
+
+/**
+ * 位图运算函数 - 使用bitmap.h中的实现
+ * 注意：移位运算需要将BigNum转换为uint64_t
+ */
+#define bignum_bitand(a, b)   bitmap_bitand(a, b)
+#define bignum_bitor(a, b)    bitmap_bitor(a, b)
+#define bignum_bitxor(a, b)   bitmap_bitxor(a, b)
+#define bignum_bitnot(a)      bitmap_bitnot(a)
+
+/* 移位运算需要转换接口（在bignum.c中实现） */
+BigNum* bignum_bitshl(const BigNum *a, const BigNum *shift);
+BigNum* bignum_bitshr(const BigNum *a, const BigNum *shift);
+
+/* 类型转换函数（在type_package.c中实现，这里仅声明供内部使用） */
+BigNum* bignum_number_to_bitmap(const BigNum *num);
+BigNum* bignum_bitmap_to_number(const BigNum *bitmap);
 
 /* 
  * bignum_eval 已弃用 - 请使用 evaluator.h 中的 eval_to_string()

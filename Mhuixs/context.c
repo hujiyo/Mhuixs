@@ -125,10 +125,19 @@ void context_list(const Context *ctx, char *buffer, size_t max_len) {
     
     for (int i = 0; i < ctx->count && pos < (int)max_len - 1; i++) {
         if (ctx->vars[i].is_defined && ctx->vars[i].value != NULL) {
-            char value_str[256];
-            bignum_to_string(ctx->vars[i].value, value_str, sizeof(value_str), -1);
+            /* 动态分配缓冲区以支持大型 bitmap */
+            size_t value_str_size = 4096;
+            if (ctx->vars[i].value->type == BIGNUM_TYPE_BITMAP && 
+                ctx->vars[i].value->length + 2 > value_str_size) {
+                value_str_size = ctx->vars[i].value->length + 10;
+            }
+            char *value_str = (char*)malloc(value_str_size);
+            if (!value_str) continue;  /* 内存分配失败，跳过这个变量 */
+            
+            bignum_to_string(ctx->vars[i].value, value_str, value_str_size, -1);
             pos += snprintf(buffer + pos, max_len - pos, "  %s = %s\n", 
                           ctx->vars[i].name, value_str);
+            free(value_str);
         }
     }
 }

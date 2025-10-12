@@ -2,12 +2,12 @@
 # 包管理系统的独立构建文件
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -std=c99
+CFLAGS = -Wall -Wextra -O2 -std=c99 -DLOGEX_BUILD -I..
 LDFLAGS = -lm
 PACKAGE_CFLAGS = -shared -fPIC $(CFLAGS)
 
 # 包列表
-PACKAGES = libmath.so libexample.so
+PACKAGES = libmath.so libexample.so libstring.so
 
 # 默认目标：编译所有包
 all: $(PACKAGES)
@@ -20,6 +20,10 @@ libmath.so: math_package.c ../function.h ../bignum.h ../context.h
 libexample.so: example_package.c ../function.h ../bignum.h
 	$(CC) $(PACKAGE_CFLAGS) -o $@ $<
 
+# 编译 string 包
+libstring.so: string_package.c ../function.h ../bignum.h
+	$(CC) $(PACKAGE_CFLAGS) -o $@ $<
+
 # 清理编译生成的文件
 clean:
 	rm -f $(PACKAGES)
@@ -29,7 +33,7 @@ rebuild: clean all
 
 # 帮助信息
 help:
-	@echo "BoolEval 包管理系统构建工具"
+	@echo "Logex 包管理系统构建工具"
 	@echo ""
 	@echo "可用目标："
 	@echo "  all      - 编译所有包（默认）"
@@ -40,6 +44,7 @@ help:
 	@echo "当前包列表："
 	@echo "  - libmath.so    (数学扩展包)"
 	@echo "  - libexample.so (示例包)"
+	@echo "  - libstring.so  (字符串类型转换包)"
 
 .PHONY: all clean rebuild help
 

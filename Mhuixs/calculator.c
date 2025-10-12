@@ -10,7 +10,7 @@
 #include "package.h"
 
 #define MAX_INPUT 256
-#define MAX_RESULT 1024
+#define MAX_RESULT (128 * 1024)  /* 128KB，足够存储大型位图的字符串表示 */
 #define CLEAR_SCREEN "\033[2J\033[H"
 #define MOVE_UP "\033[A"
 #define CLEAR_LINE "\033[2K\r"
@@ -263,7 +263,11 @@ int read_expression(char *buffer, int max_len) {
 
 int main() {
     char input[MAX_INPUT];
-    char result_str[MAX_RESULT];
+    char *result_str = (char*)malloc(MAX_RESULT);  /* 动态分配大缓冲区 */
+    if (!result_str) {
+        fprintf(stderr, "内存分配失败\n");
+        return 1;
+    }
     Context ctx;
     FunctionRegistry func_registry;
     PackageManager pkg_manager;
@@ -345,6 +349,7 @@ int main() {
     
     /* 清理资源 */
     package_manager_cleanup(&pkg_manager);
+    free(result_str);
     
     return 0;
 }

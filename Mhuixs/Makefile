@@ -2,10 +2,10 @@
 # Logex的编译与Mhuixs独立
 
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O0 -std=c99
+CFLAGS = -Wall -Wextra -g -O0 -std=c99 -DLOGEX_BUILD
 LDFLAGS = -lm -ldl
 TARGET = logex
-OBJS = calculator.o evaluator.o lexer.o bignum.o context.o function.o package.o
+OBJS = calculator.o evaluator.o lexer.o bignum.o context.o function.o package.o lib/bitmap.o
 
 # 默认目标：只编译计算器
 all: $(TARGET)
@@ -41,6 +41,10 @@ function.o: function.c function.h bignum.h
 # 编译 package.c
 package.o: package.c package.h function.h
 	$(CC) $(CFLAGS) -c package.c
+
+# 编译 lib/bitmap.c
+lib/bitmap.o: lib/bitmap.c lib/bitmap.h
+	$(CC) $(CFLAGS) -c lib/bitmap.c -o lib/bitmap.o
 
 # 运行计算器
 run: $(TARGET)

@@ -30,31 +30,47 @@ static double bignum_to_double(const BigNum *num) {
     
     char *digits = BIGNUM_DIGITS(num);
     
-    double result = 0.0;
-    double multiplier = 1.0;
+    /* BigNum 存储格式：digits 从低位到高位存储
+     * decimal_pos 表示小数位数
+     * 例如：1.5707 存储为 digits=[7,0,7,5,1], decimal_pos=4
+     *      - digits[0]=7 是小数部分最低位（0.0007）
+     *      - digits[3]=5 是小数部分最高位（0.5）
+     *      - digits[4]=1 是整数部分个位（1）
+     *      整数 123 存储为 digits=[3,2,1], decimal_pos=0
+     *      - digits[0]=3 是个位
+     *      - digits[1]=2 是十位
+     *      - digits[2]=1 是百位
+     */
     
-    for (int i = 0; i < num->length; i++) {
-        if (i == num->decimal_pos) {
-            multiplier = 1.0;
-        } else if (i > num->decimal_pos) {
-            multiplier *= 10.0;
-        }
-        result += digits[i] * multiplier;
-        if (i < num->decimal_pos) {
-            multiplier /= 10.0;
+    double result = 0.0;
+    
+    /* 从高位到低位处理，这样更符合直觉 */
+    for (int i = num->length - 1; i >= 0; i--) {
+        result = result * 10.0 + digits[i];
+    }
+    
+    /* 调整小数点位置 */
+    if (num->type_data.num.decimal_pos > 0) {
+        for (int i = 0; i < num->type_data.num.decimal_pos; i++) {
+            result /= 10.0;
         }
     }
     
-    return num->is_negative ? -result : result;
+    return num->type_data.num.is_negative ? -result : result;
 }
 
-/* 辅助函数：将double转换为BigNum */
+/* 辅助函数：将double转换为BigNum（栈分配版本，用于临时计算） */
 static int double_to_bignum(double value, BigNum *num, int precision) {
     if (num == NULL) return -1;
     
     char buffer[512];
     snprintf(buffer, sizeof(buffer), "%.*f", precision, value);
-    return bignum_from_string(buffer, num);
+    BigNum *temp = bignum_from_string(buffer);
+    if (temp == NULL) return -1;
+    
+    int ret = bignum_copy(temp, num);
+    bignum_destroy(temp);
+    return ret;
 }
 
 /* =========================== 三角函数 =========================== */
@@ -194,7 +210,7 @@ static int math_trunc(const BigNum *args, int arg_count, BigNum *result, int pre
 static int math_abs(const BigNum *args, int arg_count, BigNum *result, int precision) {
     if (arg_count != 1) return -1;
     if (bignum_copy(&args[0], result) != 0) return -1;
-    result->is_negative = 0;
+    result->type_data.num.is_negative = 0;
     return 0;
 }
 
@@ -216,14 +232,15 @@ static int math_sign(const BigNum *args, int arg_count, BigNum *result, int prec
     
     if (is_zero) {
         result_digits[0] = 0;
-    } else if (args[0].is_negative) {
+    } else if (args[0].type_data.num.is_negative) {
         result_digits[0] = 1;
-        result->is_negative = 1;
+        result->type_data.num.is_negative = 1;
     } else {
         result_digits[0] = 1;
     }
     
     result->length = 1;
+    result->type_data.num.decimal_pos = 0;
     return 0;
 }
 
@@ -310,18 +327,24 @@ int package_register_constants(void *ctx) {
     BigNum value;
     
     /* π (pi) */
+    bignum_init(&value);
     double_to_bignum(3.141592653589793238462643383279502884197, &value, BIGNUM_DEFAULT_PRECISION);
     context_set(context, "π", &value);
     context_set(context, "pi", &value);
+    bignum_free(&value);  /* 清理临时数据 */
     
     /* e (自然常数) */
+    bignum_init(&value);
     double_to_bignum(2.718281828459045235360287471352662497757, &value, BIGNUM_DEFAULT_PRECISION);
     context_set(context, "e", &value);
+    bignum_free(&value);
     
     /* φ (黄金比例) */
+    bignum_init(&value);
     double_to_bignum(1.618033988749894848204586834365638117720, &value, BIGNUM_DEFAULT_PRECISION);
     context_set(context, "φ", &value);
     context_set(context, "phi", &value);
+    bignum_free(&value);
     
     return 0;
 }
