@@ -37,18 +37,7 @@ Mhuixs数据库支持的数据结构/数据操作对象:
 
 typedef char* mstring;//以size_t为长度前缀+字符串内容的类型
 
-enum obj_type:int{ //数据结构对象的类型
-    M_NULL   =    100,
-    M_STREAM =    101,//STREAM和BITMAP和Bignum是可以互转的,比如101-100=1正好是Bignum为字符串类型时的标记
-    M_BITMAP =    102,
 
-    M_KVALOT =    201,//这三个都属于数据结构
-    M_LIST   =    202,    
-    M_TABLE  =    203,
-
-    M_HOOK   =    301,//HOOK和KEY属于引用
-    M_KEY    =    302,
-};
 
 
 

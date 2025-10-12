@@ -15,6 +15,7 @@ typedef enum {
     /* 数字和布尔值 */
     TOK_NUMBER,      /* 数字（包括小数） */
     TOK_STRING,      /* 字符串字面量 */
+    TOK_BITMAP,      /* 位图字面量（B开头） */
     
     /* 标识符和关键字 */
     TOK_IDENTIFIER,  /* 标识符（变量名） */
@@ -39,12 +40,19 @@ typedef enum {
     TOK_LE,          /* <= 小于等于 */
     
     /* 布尔运算符 */
-    TOK_AND,         /* ^ 合取 */
+    TOK_AND,         /* ^ 合取 (在位图上下文中为异或) */
     TOK_OR,          /* v 析取 */
     TOK_NOT,         /* ! 否定 */
     TOK_IMPL,        /* → 蕴含 */
     TOK_IFF,         /* ↔ 等价 */
     TOK_XOR,         /* ⊽ 异或 */
+    
+    /* 位运算符 */
+    TOK_BITAND,      /* & 按位与 */
+    TOK_BITOR,       /* | 按位或 */
+    TOK_BITNOT,      /* ~ 按位非 */
+    TOK_BITSHL,      /* << 左移 */
+    TOK_BITSHR,      /* >> 右移 */
     
     /* 括号和分隔符 */
     TOK_LPAREN,      /* ( */

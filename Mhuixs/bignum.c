@@ -3,6 +3,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>  /* for SIZE_MAX */
 
 /* 内部辅助函数声明 */
 static int bignum_add_internal(const BigNum *a, const BigNum *b, BigNum *result);
@@ -32,7 +33,7 @@ BigNum* bignum_create(void) {
 void bignum_destroy(BigNum *num) {
     if (num == NULL) return;
     
-    /* 先释放内部数据 */
+    /* 先释放内部数据（适用于所有类型：数字、字符串、位图） */
     if (num->is_large && num->data.large_data != NULL) {
         free(num->data.large_data);
         num->data.large_data = NULL;
@@ -92,9 +93,13 @@ static int bignum_ensure_capacity(BigNum *num, int required_capacity) {
         char *new_data = (char *)malloc(new_capacity);
         if (new_data == NULL) return BIGNUM_ERROR;
         
-        /* 复制旧数据 */
-        memcpy(new_data, num->data.small_data, num->length);
-        memset(new_data + num->length, 0, new_capacity - num->length);
+        /* 复制旧数据 - 对于 bitmap 类型，需要转换位数到字节数 */
+        size_t copy_size = num->length;
+        if (num->type == BIGNUM_TYPE_BITMAP) {
+            copy_size = (num->length + 7) / 8;
+        }
+        memcpy(new_data, num->data.small_data, copy_size);
+        memset(new_data + copy_size, 0, new_capacity - copy_size);
         
         /* 切换到大数据模式 */
         num->data.large_data = new_data;
@@ -135,17 +140,23 @@ int bignum_copy(const BigNum *src, BigNum *dst) {
     dst->type_data = src->type_data;  /* 复制整个类型数据联合体 */
     
     /* 复制数据 */
+    size_t copy_size = src->length;
+    /* 对于 bitmap 类型，length 是位数，需要转换为字节数 */
+    if (src->type == BIGNUM_TYPE_BITMAP) {
+        copy_size = (src->length + 7) / 8;
+    }
+    
     if (src->is_large) {
         /* 源是大数据 */
         if (bignum_ensure_capacity(dst, src->capacity) != BIGNUM_SUCCESS) {
             return BIGNUM_ERROR;
         }
-        memcpy(BIGNUM_DIGITS(dst), BIGNUM_DIGITS(src), src->length);
+        memcpy(BIGNUM_DIGITS(dst), BIGNUM_DIGITS(src), copy_size);
     } else {
         /* 源是小数据 */
         dst->is_large = 0;
         dst->capacity = BIGNUM_SMALL_SIZE;
-        memcpy(dst->data.small_data, src->data.small_data, src->length);
+        memcpy(dst->data.small_data, src->data.small_data, copy_size);
     }
     
     return BIGNUM_SUCCESS;
@@ -154,9 +165,35 @@ int bignum_copy(const BigNum *src, BigNum *dst) {
 /* 移除前导零 */
 static void bignum_trim(BigNum *num) {
     char *digits = BIGNUM_DIGITS(num);
+    
+    /* 去除高位的0 */
     while (num->length > 1 && digits[num->length - 1] == 0) {
         num->length--;
     }
+    
+    /* 去除小数部分低位的0 */
+    if (num->type == BIGNUM_TYPE_NUMBER && num->type_data.num.decimal_pos > 0) {
+        int trailing_zeros = 0;
+        /* 从最低位开始数有多少个连续的0 */
+        for (int i = 0; i < num->type_data.num.decimal_pos && i < num->length; i++) {
+            if (digits[i] == 0) {
+                trailing_zeros++;
+            } else {
+                break;
+            }
+        }
+        
+        /* 如果有尾部的0，需要移除它们 */
+        if (trailing_zeros > 0) {
+            /* 将数字向左移动（去除低位的0） */
+            for (size_t i = 0; i < num->length - trailing_zeros; i++) {
+                digits[i] = digits[i + trailing_zeros];
+            }
+            num->length -= trailing_zeros;
+            num->type_data.num.decimal_pos -= trailing_zeros;
+        }
+    }
+    
     /* 如果结果是0，设置为正数（仅数字类型） */
     if (num->type == BIGNUM_TYPE_NUMBER && num->length == 1 && digits[0] == 0) {
         num->type_data.num.is_negative = 0;
@@ -432,6 +469,18 @@ int bignum_to_string(const BigNum *num, char *str, size_t max_len, int precision
         return BIGNUM_SUCCESS;
     }
     
+    /* 如果是位图类型，输出为 B 开头的二进制字符串 */
+    if (num->type == BIGNUM_TYPE_BITMAP) {
+        if (num->length + 2 > max_len) return BIGNUM_ERROR;  /* +2 for 'B' and null */
+        str[0] = 'B';
+        unsigned char *bitmap_data = (unsigned char *)digits;
+        for (size_t i = 0; i < num->length; i++) {
+            str[i + 1] = ((bitmap_data[i / 8] >> (i % 8)) & 1) ? '1' : '0';
+        }
+        str[num->length + 1] = '\0';
+        return BIGNUM_SUCCESS;
+    }
+    
     if (precision < 0) precision = BIGNUM_DEFAULT_PRECISION;
     
     int pos = 0;
@@ -672,6 +721,20 @@ static int bignum_div_internal(const BigNum *a, const BigNum *b, BigNum *result,
     /* 为了获得足够的精度，我们需要扩展被除数 */
     int extra_scale = precision + 10;
     
+    /* 记录原始的小数位数 */
+    int a_decimal = a->type_data.num.decimal_pos;
+    int b_decimal = b->type_data.num.decimal_pos;
+    
+    /* 先将小数转换为整数：
+     * 对于 2.5，digits=[5,2], decimal_pos=1，我们需要保持这个表示不变
+     * 但将 decimal_pos 设为 0，这样它就代表整数 25
+     * 
+     * 除法公式：a/b = (a的整数值 * 10^a_decimal) / (b的整数值 * 10^b_decimal)
+     *              = (a的整数值 / b的整数值) * 10^(a_decimal - b_decimal)
+     * 
+     * 为了获得小数精度，我们需要：
+     * (a的整数值 * 10^extra_scale) / b的整数值，结果的小数位是 extra_scale - (a_decimal - b_decimal)
+     */
     dividend.type_data.num.decimal_pos = 0;
     divisor.type_data.num.decimal_pos = 0;
     
@@ -765,7 +828,15 @@ static int bignum_div_internal(const BigNum *a, const BigNum *b, BigNum *result,
     }
     
     result->length = result_len;
-    result->type_data.num.decimal_pos = extra_scale;
+    /* 结果的小数位数 = extra_scale + a_decimal - b_decimal
+     * 因为我们计算的是 (a_int * 10^extra_scale) / b_int
+     * 其中 a_int 是 a 去掉小数点后的整数（相当于 a * 10^a_decimal）
+     * b_int 是 b 去掉小数点后的整数（相当于 b * 10^b_decimal）
+     * 所以结果 = (a * 10^a_decimal * 10^extra_scale) / (b * 10^b_decimal)
+     *         = (a / b) * 10^(a_decimal + extra_scale - b_decimal)
+     * 因此小数位数 = extra_scale + a_decimal - b_decimal
+     */
+    result->type_data.num.decimal_pos = extra_scale + a_decimal - b_decimal;
     result->type_data.num.is_negative = (a->type_data.num.is_negative != b->type_data.num.is_negative);
     
     bignum_trim(result);
@@ -1087,6 +1158,11 @@ int bignum_is_string(const BigNum *num) {
     return num->type == BIGNUM_TYPE_STRING;
 }
 
+int bignum_is_bitmap(const BigNum *num) {
+    if (num == NULL) return 0;
+    return num->type == BIGNUM_TYPE_BITMAP;
+}
+
 int bignum_string_to_number_legacy(const BigNum *str_num, BigNum *num_result) {
     if (str_num == NULL || num_result == NULL) return BIGNUM_ERROR;
     if (str_num->type != BIGNUM_TYPE_STRING) return BIGNUM_ERROR;
@@ -1237,3 +1313,163 @@ BigNum* bignum_number_to_string_type(const BigNum *num, int precision) {
  * 表达式求值功能已移至 evaluator.c/lexer.c
  * bignum 模块现在专注于基础的大数运算
  */
+
+/* ========== Bitmap 类型支持 ========== */
+/* 注意：大部分bitmap函数使用lib/bitmap.h中的实现 */
+
+/* 从整数转换为位图 */
+BigNum* bignum_number_to_bitmap(const BigNum *num) {
+    if (num == NULL || num->type != BIGNUM_TYPE_NUMBER) return NULL;
+    
+    /* 不支持小数和负数 */
+    if (num->type_data.num.is_negative) return NULL;
+    if (num->type_data.num.decimal_pos > 0) {
+        char *digits = BIGNUM_DIGITS(num);
+        for (int i = 0; i < num->type_data.num.decimal_pos; i++) {
+            if (digits[i] != 0) return NULL;
+        }
+    }
+    
+    /* 将整数转换为二进制字符串 */
+    char binary[BIGNUM_MAX_DIGITS * 4];  /* 每个十进制位最多4个二进制位 */
+    int binary_len = 0;
+    
+    /* 创建数字的副本进行处理 */
+    BigNum temp;
+    bignum_init(&temp);
+    if (bignum_copy(num, &temp) != BIGNUM_SUCCESS) {
+        return NULL;
+    }
+    
+    char *temp_digits = BIGNUM_DIGITS(&temp);
+    
+    /* 特殊情况：0 */
+    if (temp.length == 1 && temp_digits[0] == 0) {
+        bignum_free(&temp);
+        return bignum_from_binary_string("0");
+    }
+    
+    /* 不断除以2，取余数 */
+    while (!(temp.length == 1 && temp_digits[0] == 0)) {
+        /* 除以2，余数是最低位 */
+        int remainder = 0;
+        for (int i = temp.length - 1; i >= temp.type_data.num.decimal_pos; i--) {
+            int current = remainder * 10 + temp_digits[i];
+            temp_digits[i] = current / 2;
+            remainder = current % 2;
+        }
+        
+        binary[binary_len++] = '0' + remainder;
+        bignum_trim(&temp);
+        temp_digits = BIGNUM_DIGITS(&temp);
+    }
+    
+    bignum_free(&temp);
+    
+    /* 反转二进制字符串（因为我们是从低位到高位构建的）*/
+    for (int i = 0; i < binary_len / 2; i++) {
+        char t = binary[i];
+        binary[i] = binary[binary_len - 1 - i];
+        binary[binary_len - 1 - i] = t;
+    }
+    binary[binary_len] = '\0';
+    
+    return bignum_from_binary_string(binary);
+}
+
+/* 将位图转换为整数 */
+BigNum* bignum_bitmap_to_number(const BigNum *bitmap) {
+    if (bitmap == NULL || bitmap->type != BIGNUM_TYPE_BITMAP) return NULL;
+    
+    BigNum *result = bignum_create();
+    if (result == NULL) return NULL;
+    
+    char *result_digits = BIGNUM_DIGITS(result);
+    result_digits[0] = 0;
+    result->length = 1;
+    result->type_data.num.decimal_pos = 0;
+    result->type_data.num.is_negative = 0;
+    
+    unsigned char *bitmap_data = (unsigned char *)BIGNUM_DIGITS(bitmap);
+    
+    /* 从高位到低位处理，使用二进制转十进制算法 */
+    for (int i = (int)bitmap->length - 1; i >= 0; i--) {
+        /* result = result * 2 */
+        int carry = 0;
+        for (int j = 0; j < result->length; j++) {
+            int current = result_digits[j] * 2 + carry;
+            result_digits[j] = current % 10;
+            carry = current / 10;
+        }
+        if (carry > 0) {
+            if (bignum_ensure_capacity(result, result->length + 1) != BIGNUM_SUCCESS) {
+                bignum_destroy(result);
+                return NULL;
+            }
+            result_digits = BIGNUM_DIGITS(result);
+            result_digits[result->length++] = carry;
+        }
+        
+        /* 加上当前位 */
+        if ((bitmap_data[i / 8] >> (i % 8)) & 1) {
+            carry = 1;
+            for (int j = 0; j < result->length && carry > 0; j++) {
+                int current = result_digits[j] + carry;
+                result_digits[j] = current % 10;
+                carry = current / 10;
+            }
+            if (carry > 0) {
+                if (bignum_ensure_capacity(result, result->length + 1) != BIGNUM_SUCCESS) {
+                    bignum_destroy(result);
+                    return NULL;
+                }
+                result_digits = BIGNUM_DIGITS(result);
+                result_digits[result->length++] = carry;
+            }
+        }
+    }
+    
+    bignum_trim(result);
+    return result;
+}
+
+/* 位图左移（包装函数：将BigNum转换为uint64_t后调用bitmap_bitshl） */
+BigNum* bignum_bitshl(const BigNum *a, const BigNum *shift) {
+    if (a == NULL || shift == NULL) return NULL;
+    if (a->type != BIGNUM_TYPE_BITMAP || shift->type != BIGNUM_TYPE_NUMBER) return NULL;
+    if (shift->type_data.num.is_negative) return NULL;
+    
+    /* 将BigNum shift转换为uint64_t，检测溢出 */
+    char *shift_digits = BIGNUM_DIGITS(shift);
+    uint64_t shift_amount = 0;
+    for (int i = shift->length - 1; i >= shift->type_data.num.decimal_pos; i--) {
+        uint64_t old_amount = shift_amount;
+        shift_amount = shift_amount * 10 + shift_digits[i];
+        /* 检测溢出：如果新值小于旧值，说明溢出了 */
+        if (shift_amount < old_amount) return NULL;
+    }
+    
+    /* 检查结果长度是否会超过 SIZE_MAX - 1 */
+    if (shift_amount > SIZE_MAX - 1 - a->length) return NULL;
+    
+    return bitmap_bitshl(a, shift_amount);
+}
+
+/* 位图右移（包装函数：将BigNum转换为uint64_t后调用bitmap_bitshr） */
+BigNum* bignum_bitshr(const BigNum *a, const BigNum *shift) {
+    if (a == NULL || shift == NULL) return NULL;
+    if (a->type != BIGNUM_TYPE_BITMAP || shift->type != BIGNUM_TYPE_NUMBER) return NULL;
+    if (shift->type_data.num.is_negative) return NULL;
+    
+    /* 将BigNum shift转换为uint64_t，检测溢出 */
+    char *shift_digits = BIGNUM_DIGITS(shift);
+    uint64_t shift_amount = 0;
+    for (int i = shift->length - 1; i >= shift->type_data.num.decimal_pos; i--) {
+        uint64_t old_amount = shift_amount;
+        shift_amount = shift_amount * 10 + shift_digits[i];
+        /* 检测溢出：如果新值小于旧值，说明溢出了 */
+        if (shift_amount < old_amount) return NULL;
+    }
+    
+    return bitmap_bitshr(a, shift_amount);
+}

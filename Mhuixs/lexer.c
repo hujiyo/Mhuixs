@@ -46,6 +46,30 @@ TokenType lexer_next(Lexer *lexer) {
     
     char c = lexer->input[lexer->pos];
     
+    /* 特殊处理：B开头可能是位图字面量 */
+    if (c == 'B' && lexer->pos + 1 < lexer->length) {
+        char next_char = lexer->input[lexer->pos + 1];
+        if (next_char == '0' || next_char == '1') {
+            /* 这是一个位图字面量 */
+            lexer->pos++;  /* 跳过 B */
+            int val_pos = 0;
+            
+            while (lexer->pos < lexer->length && val_pos < BIGNUM_MAX_DIGITS - 1) {
+                c = lexer->input[lexer->pos];
+                if (c == '0' || c == '1') {
+                    lexer->current_value[val_pos++] = c;
+                    lexer->pos++;
+                } else {
+                    break;
+                }
+            }
+            
+            lexer->current_value[val_pos] = '\0';
+            lexer->current_type = TOK_BITMAP;
+            return TOK_BITMAP;
+        }
+    }
+    
     /* 标识符和关键字（字母、下划线或 UTF-8 字符开头） */
     unsigned char uc = (unsigned char)c;
     if (isalpha(c) || c == '_' || uc >= 0x80) {
@@ -187,6 +211,18 @@ TokenType lexer_next(Lexer *lexer) {
             lexer->current_type = TOK_LE;
             return TOK_LE;
         }
+        /* << 左移 */
+        if (c == '<' && next == '<') {
+            lexer->pos += 2;
+            lexer->current_type = TOK_BITSHL;
+            return TOK_BITSHL;
+        }
+        /* >> 右移 */
+        if (c == '>' && next == '>') {
+            lexer->pos += 2;
+            lexer->current_type = TOK_BITSHR;
+            return TOK_BITSHR;
+        }
     }
     
     /* 单字符运算符 */
@@ -197,7 +233,7 @@ TokenType lexer_next(Lexer *lexer) {
         case '*': lexer->current_type = TOK_MULTIPLY; return TOK_MULTIPLY;
         case '/': lexer->current_type = TOK_DIVIDE; return TOK_DIVIDE;
         case '%': lexer->current_type = TOK_MOD; return TOK_MOD;
-        case '^': lexer->current_type = TOK_AND; return TOK_AND;
+        case '^': lexer->current_type = TOK_AND; return TOK_AND;  /* 在context中会根据操作数类型区分布尔AND或位异或 */
         case '!': lexer->current_type = TOK_NOT; return TOK_NOT;
         case '>': lexer->current_type = TOK_GT; return TOK_GT;
         case '<': lexer->current_type = TOK_LT; return TOK_LT;
@@ -205,6 +241,9 @@ TokenType lexer_next(Lexer *lexer) {
         case '(': lexer->current_type = TOK_LPAREN; return TOK_LPAREN;
         case ')': lexer->current_type = TOK_RPAREN; return TOK_RPAREN;
         case ',': lexer->current_type = TOK_COMMA; return TOK_COMMA;
+        case '&': lexer->current_type = TOK_BITAND; return TOK_BITAND;
+        case '|': lexer->current_type = TOK_BITOR; return TOK_BITOR;
+        case '~': lexer->current_type = TOK_BITNOT; return TOK_BITNOT;
     }
     
     lexer->current_type = TOK_ERROR;

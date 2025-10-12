@@ -61,23 +61,7 @@ int bignum_is_true(const BigNum *num) {
     return 0;
 }
 
-/* 辅助函数：将大数转换为布尔值 */
-int bignum_to_bool(const BigNum *num, BigNum *result) {
-    if (num == NULL || result == NULL) return EVAL_ERROR;
-    
-    bignum_init(result);
-    char *digits = BIGNUM_DIGITS(result);
-    if (bignum_is_true(num)) {
-        digits[0] = 1;
-    } else {
-        digits[0] = 0;
-    }
-    result->length = 1;
-    result->type_data.num.decimal_pos = 0;
-    result->type_data.num.is_negative = 0;
-    
-    return EVAL_SUCCESS;
-}
+/* 辅助函数：将大数转换为布尔值（已弃用，不再使用） */
 
 /* 以下词法分析功能已移到 lexer.c 统一实现 */
 
@@ -88,18 +72,45 @@ static int parse_expression(Lexer *lex, BigNum *result, Context *ctx, FunctionRe
 static int parse_primary(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry *func_registry, int precision) {
     /* 数字 */
     if (lex->current_type == TOK_NUMBER) {
-        if (bignum_from_string(lex->current_value, result) != BIGNUM_SUCCESS) {
+        BigNum *temp = bignum_from_string(lex->current_value);
+        if (temp == NULL) {
             return EVAL_ERROR;
         }
+        if (bignum_copy(temp, result) != BIGNUM_SUCCESS) {
+            bignum_destroy(temp);
+            return EVAL_ERROR;
+        }
+        bignum_destroy(temp);
         lexer_next(lex);
         return EVAL_SUCCESS;
     }
     
     /* 字符串字面量 */
     if (lex->current_type == TOK_STRING) {
-        if (bignum_from_raw_string(lex->current_value, result) != BIGNUM_SUCCESS) {
+        BigNum *temp = bignum_from_raw_string(lex->current_value);
+        if (temp == NULL) {
             return EVAL_ERROR;
         }
+        if (bignum_copy(temp, result) != BIGNUM_SUCCESS) {
+            bignum_destroy(temp);
+            return EVAL_ERROR;
+        }
+        bignum_destroy(temp);
+        lexer_next(lex);
+        return EVAL_SUCCESS;
+    }
+    
+    /* 位图字面量 */
+    if (lex->current_type == TOK_BITMAP) {
+        BigNum *temp = bignum_from_binary_string(lex->current_value);
+        if (temp == NULL) {
+            return EVAL_ERROR;
+        }
+        if (bignum_copy(temp, result) != BIGNUM_SUCCESS) {
+            bignum_destroy(temp);
+            return EVAL_ERROR;
+        }
+        bignum_destroy(temp);
         lexer_next(lex);
         return EVAL_SUCCESS;
     }
@@ -126,9 +137,14 @@ static int parse_primary(Lexer *lex, BigNum *result, Context *ctx, FunctionRegis
             
             lexer_next(lex);  /* 跳过 ( */
             
-            /* 解析参数列表 */
+            /* 解析参数列表 - 使用栈分配保持与function_call接口兼容 */
             BigNum args[MAX_FUNC_ARGS];
             int arg_count = 0;
+            
+            /* 初始化参数数组 */
+            for (int i = 0; i < MAX_FUNC_ARGS; i++) {
+                bignum_init(&args[i]);
+            }
             
             /* 处理空参数列表 */
             if (lex->current_type == TOK_RPAREN) {
@@ -136,12 +152,22 @@ static int parse_primary(Lexer *lex, BigNum *result, Context *ctx, FunctionRegis
             } else {
                 while (1) {
                     if (arg_count >= MAX_FUNC_ARGS) {
+                        /* 清理已分配的参数 */
+                        for (int i = 0; i < arg_count; i++) {
+                            bignum_free(&args[i]);
+                        }
                         return EVAL_ERROR;  /* 参数太多 */
                     }
                     
                     /* 解析一个参数表达式 */
                     int ret = parse_expression(lex, &args[arg_count], ctx, func_registry, precision);
-                    if (ret != EVAL_SUCCESS) return ret;
+                    if (ret != EVAL_SUCCESS) {
+                        /* 清理已分配的参数 */
+                        for (int i = 0; i <= arg_count; i++) {
+                            bignum_free(&args[i]);
+                        }
+                        return ret;
+                    }
                     arg_count++;
                     
                     /* 检查是否还有更多参数 */
@@ -152,13 +178,24 @@ static int parse_primary(Lexer *lex, BigNum *result, Context *ctx, FunctionRegis
                         lexer_next(lex);
                         break;
                     } else {
+                        /* 清理已分配的参数 */
+                        for (int i = 0; i < arg_count; i++) {
+                            bignum_free(&args[i]);
+                        }
                         return EVAL_ERROR;  /* 语法错误 */
                     }
                 }
             }
             
             /* 调用函数 */
-            return function_call(func, args, arg_count, result, precision);
+            int call_ret = function_call(func, args, arg_count, result, precision);
+            
+            /* 清理参数 */
+            for (int i = 0; i < arg_count; i++) {
+                bignum_free(&args[i]);
+            }
+            
+            return call_ret;
         } else {
             /* 变量引用 */
             if (ctx == NULL || context_get(ctx, name, result) != 0) {
@@ -186,16 +223,56 @@ static int parse_primary(Lexer *lex, BigNum *result, Context *ctx, FunctionRegis
     /* 逻辑非 */
     if (lex->current_type == TOK_NOT) {
         lexer_next(lex);
-        int ret = parse_primary(lex, result, ctx, func_registry, precision);
-        if (ret != EVAL_SUCCESS) return ret;
+        BigNum temp;
+        bignum_init(&temp);
+        int ret = parse_primary(lex, &temp, ctx, func_registry, precision);
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&temp);
+            return ret;
+        }
         
         /* 将结果转换为布尔值，然后取反 */
-        int is_true = bignum_is_true(result);
-        bignum_free(result);
+        int is_true = bignum_is_true(&temp);
+        bignum_free(&temp);
+        
         bignum_init(result);
         char *digits = BIGNUM_DIGITS(result);
         digits[0] = is_true ? 0 : 1;
         result->length = 1;
+        result->type_data.num.decimal_pos = 0;
+        result->type_data.num.is_negative = 0;
+        return EVAL_SUCCESS;
+    }
+    
+    /* 位非 */
+    if (lex->current_type == TOK_BITNOT) {
+        lexer_next(lex);
+        BigNum temp;
+        bignum_init(&temp);
+        int ret = parse_primary(lex, &temp, ctx, func_registry, precision);
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&temp);
+            return ret;
+        }
+        
+        /* 只能对位图类型进行位非运算 */
+        if (temp.type != BIGNUM_TYPE_BITMAP) {
+            bignum_free(&temp);
+            return EVAL_ERROR;
+        }
+        
+        BigNum *bitwise_result = bignum_bitnot(&temp);
+        bignum_free(&temp);
+        
+        if (bitwise_result == NULL) {
+            return EVAL_ERROR;
+        }
+        
+        if (bignum_copy(bitwise_result, result) != BIGNUM_SUCCESS) {
+            bignum_destroy(bitwise_result);
+            return EVAL_ERROR;
+        }
+        bignum_destroy(bitwise_result);
         return EVAL_SUCCESS;
     }
     
@@ -223,20 +300,26 @@ static int parse_power(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistr
         lexer_next(lex);
         
         BigNum right;
+        bignum_init(&right);
         ret = parse_power(lex, &right, ctx, func_registry, precision);  /* 右结合 */
-        if (ret != EVAL_SUCCESS) return ret;
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
+        }
         
-        BigNum temp;
-        bignum_init(&temp);
-        ret = bignum_pow(result, &right, &temp, precision);
+        BigNum *temp = bignum_pow(result, &right, precision);
+        bignum_free(&right);
         
-        if (ret != BIGNUM_SUCCESS) {
-            bignum_free(&temp);
+        if (temp == NULL) {
             return EVAL_ERROR;
         }
         
         bignum_free(result);
-        *result = temp;
+        if (bignum_copy(temp, result) != BIGNUM_SUCCESS) {
+            bignum_destroy(temp);
+            return EVAL_ERROR;
+        }
+        bignum_destroy(temp);
     }
     
     return EVAL_SUCCESS;
@@ -252,26 +335,45 @@ static int parse_term(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry
         lexer_next(lex);
         
         BigNum right;
+        bignum_init(&right);
         ret = parse_power(lex, &right, ctx, func_registry, precision);
-        if (ret != EVAL_SUCCESS) return ret;
-        
-        BigNum temp;
-        bignum_init(&temp);
-        if (op == TOK_MULTIPLY) {
-            ret = bignum_mul(result, &right, &temp);
-        } else if (op == TOK_DIVIDE) {
-            ret = bignum_div(result, &right, &temp, precision);
-        } else {  /* TOK_MOD */
-            ret = bignum_mod(result, &right, &temp);
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
         }
         
-        if (ret != BIGNUM_SUCCESS) {
-            bignum_free(&temp);
-            return (ret == BIGNUM_DIV_ZERO) ? EVAL_DIV_ZERO : EVAL_ERROR;
+        /* 类型检查 */
+        if (result->type != right.type) {
+            bignum_free(&right);
+            return EVAL_ERROR;  /* 类型不匹配 */
+        }
+        
+        /* 位图类型不支持乘除取模运算 */
+        if (result->type == BIGNUM_TYPE_BITMAP) {
+            bignum_free(&right);
+            return EVAL_ERROR;
+        }
+        
+        BigNum *temp = NULL;
+        if (op == TOK_MULTIPLY) {
+            temp = bignum_mul(result, &right);
+        } else if (op == TOK_DIVIDE) {
+            temp = bignum_div(result, &right, precision);
+        } else {  /* TOK_MOD */
+            temp = bignum_mod(result, &right);
+        }
+        bignum_free(&right);
+        
+        if (temp == NULL) {
+            return (op == TOK_DIVIDE || op == TOK_MOD) ? EVAL_DIV_ZERO : EVAL_ERROR;
         }
         
         bignum_free(result);
-        *result = temp;
+        if (bignum_copy(temp, result) != BIGNUM_SUCCESS) {
+            bignum_destroy(temp);
+            return EVAL_ERROR;
+        }
+        bignum_destroy(temp);
     }
     
     return EVAL_SUCCESS;
@@ -287,24 +389,89 @@ static int parse_add_sub(Lexer *lex, BigNum *result, Context *ctx, FunctionRegis
         lexer_next(lex);
         
         BigNum right;
+        bignum_init(&right);
         ret = parse_term(lex, &right, ctx, func_registry, precision);
-        if (ret != EVAL_SUCCESS) return ret;
-        
-        BigNum temp;
-        bignum_init(&temp);
-        if (op == TOK_PLUS) {
-            ret = bignum_add(result, &right, &temp);
-        } else {
-            ret = bignum_sub(result, &right, &temp);
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
         }
         
-        if (ret != BIGNUM_SUCCESS) {
-            bignum_free(&temp);
+        /* 类型检查 */
+        if (result->type != right.type) {
+            bignum_free(&right);
+            return EVAL_ERROR;  /* 类型不匹配 */
+        }
+        
+        /* 位图类型不支持加减运算 */
+        if (result->type == BIGNUM_TYPE_BITMAP) {
+            bignum_free(&right);
+            return EVAL_ERROR;
+        }
+        
+        BigNum *temp = NULL;
+        if (op == TOK_PLUS) {
+            temp = bignum_add(result, &right);
+        } else {
+            temp = bignum_sub(result, &right);
+        }
+        bignum_free(&right);
+        
+        if (temp == NULL) {
             return EVAL_ERROR;
         }
         
         bignum_free(result);
-        *result = temp;
+        if (bignum_copy(temp, result) != BIGNUM_SUCCESS) {
+            bignum_destroy(temp);
+            return EVAL_ERROR;
+        }
+        bignum_destroy(temp);
+    }
+    
+    return EVAL_SUCCESS;
+}
+
+/* 解析移位运算（在加减之后，比较之前） */
+static int parse_shift(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry *func_registry, int precision) {
+    int ret = parse_add_sub(lex, result, ctx, func_registry, precision);
+    if (ret != EVAL_SUCCESS) return ret;
+    
+    while (lex->current_type == TOK_BITSHL || lex->current_type == TOK_BITSHR) {
+        TokenType op = lex->current_type;
+        lexer_next(lex);
+        
+        BigNum right;
+        bignum_init(&right);
+        ret = parse_add_sub(lex, &right, ctx, func_registry, precision);
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
+        }
+        
+        /* 左操作数必须是位图，右操作数必须是数字 */
+        if (result->type != BIGNUM_TYPE_BITMAP || right.type != BIGNUM_TYPE_NUMBER) {
+            bignum_free(&right);
+            return EVAL_ERROR;
+        }
+        
+        BigNum *temp = NULL;
+        if (op == TOK_BITSHL) {
+            temp = bignum_bitshl(result, &right);
+        } else {
+            temp = bignum_bitshr(result, &right);
+        }
+        bignum_free(&right);
+        
+        if (temp == NULL) {
+            return EVAL_ERROR;
+        }
+        
+        bignum_free(result);
+        if (bignum_copy(temp, result) != BIGNUM_SUCCESS) {
+            bignum_destroy(temp);
+            return EVAL_ERROR;
+        }
+        bignum_destroy(temp);
     }
     
     return EVAL_SUCCESS;
@@ -312,7 +479,7 @@ static int parse_add_sub(Lexer *lex, BigNum *result, Context *ctx, FunctionRegis
 
 /* 解析比较运算 (==, !=, <, <=, >, >=) */
 static int parse_comparison(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry *func_registry, int precision) {
-    int ret = parse_add_sub(lex, result, ctx, func_registry, precision);
+    int ret = parse_shift(lex, result, ctx, func_registry, precision);
     if (ret != EVAL_SUCCESS) return ret;
     
     while (lex->current_type == TOK_EQ || lex->current_type == TOK_NE ||
@@ -322,13 +489,18 @@ static int parse_comparison(Lexer *lex, BigNum *result, Context *ctx, FunctionRe
         lexer_next(lex);
         
         BigNum right;
-        ret = parse_add_sub(lex, &right, ctx, func_registry, precision);
-        if (ret != EVAL_SUCCESS) return ret;
+        bignum_init(&right);
+        ret = parse_shift(lex, &right, ctx, func_registry, precision);
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
+        }
         
         /* 比较两个数 */
         int cmp = bignum_compare(result, &right);
-        int bool_result = 0;
+        bignum_free(&right);
         
+        int bool_result = 0;
         switch (op) {
             case TOK_EQ:  /* == 等于 */
                 bool_result = (cmp == 0) ? 1 : 0;
@@ -357,32 +529,139 @@ static int parse_comparison(Lexer *lex, BigNum *result, Context *ctx, FunctionRe
         char *digits = BIGNUM_DIGITS(result);
         digits[0] = bool_result;
         result->length = 1;
+        result->type_data.num.decimal_pos = 0;
+        result->type_data.num.is_negative = 0;
     }
     
     return EVAL_SUCCESS;
 }
 
-/* 解析合取 (AND) */
-static int parse_and(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry *func_registry, int precision) {
+/* 解析位与 (&) */
+static int parse_bitand(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry *func_registry, int precision) {
     int ret = parse_comparison(lex, result, ctx, func_registry, precision);
+    if (ret != EVAL_SUCCESS) return ret;
+    
+    while (lex->current_type == TOK_BITAND) {
+        lexer_next(lex);
+        
+        BigNum right;
+        bignum_init(&right);
+        ret = parse_comparison(lex, &right, ctx, func_registry, precision);
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
+        }
+        
+        /* 两边都必须是位图类型 */
+        if (result->type != BIGNUM_TYPE_BITMAP || right.type != BIGNUM_TYPE_BITMAP) {
+            bignum_free(&right);
+            return EVAL_ERROR;
+        }
+        
+        BigNum *temp = bignum_bitand(result, &right);
+        bignum_free(&right);
+        
+        if (temp == NULL) {
+            return EVAL_ERROR;
+        }
+        
+        bignum_free(result);
+        if (bignum_copy(temp, result) != BIGNUM_SUCCESS) {
+            bignum_destroy(temp);
+            return EVAL_ERROR;
+        }
+        bignum_destroy(temp);
+    }
+    
+    return EVAL_SUCCESS;
+}
+
+/* 解析位或 (|) */
+static int parse_bitor(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry *func_registry, int precision) {
+    int ret = parse_bitand(lex, result, ctx, func_registry, precision);
+    if (ret != EVAL_SUCCESS) return ret;
+    
+    while (lex->current_type == TOK_BITOR) {
+        lexer_next(lex);
+        
+        BigNum right;
+        bignum_init(&right);
+        ret = parse_bitand(lex, &right, ctx, func_registry, precision);
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
+        }
+        
+        /* 两边都必须是位图类型 */
+        if (result->type != BIGNUM_TYPE_BITMAP || right.type != BIGNUM_TYPE_BITMAP) {
+            bignum_free(&right);
+            return EVAL_ERROR;
+        }
+        
+        BigNum *temp = bignum_bitor(result, &right);
+        bignum_free(&right);
+        
+        if (temp == NULL) {
+            return EVAL_ERROR;
+        }
+        
+        bignum_free(result);
+        if (bignum_copy(temp, result) != BIGNUM_SUCCESS) {
+            bignum_destroy(temp);
+            return EVAL_ERROR;
+        }
+        bignum_destroy(temp);
+    }
+    
+    return EVAL_SUCCESS;
+}
+
+/* 解析合取 (AND) 和位异或 (^) - 根据操作数类型动态选择 */
+static int parse_and(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry *func_registry, int precision) {
+    int ret = parse_bitor(lex, result, ctx, func_registry, precision);
     if (ret != EVAL_SUCCESS) return ret;
     
     while (lex->current_type == TOK_AND) {
         lexer_next(lex);
         
         BigNum right;
-        ret = parse_comparison(lex, &right, ctx, func_registry, precision);
-        if (ret != EVAL_SUCCESS) return ret;
+        bignum_init(&right);
+        ret = parse_bitor(lex, &right, ctx, func_registry, precision);
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
+        }
         
-        /* 布尔 AND: 两边都为真则为真 */
-        int left_true = bignum_is_true(result);
-        int right_true = bignum_is_true(&right);
-        
-        bignum_free(result);
-        bignum_init(result);
-        char *digits = BIGNUM_DIGITS(result);
-        digits[0] = (left_true && right_true) ? 1 : 0;
-        result->length = 1;
+        /* 根据操作数类型选择操作 */
+        if (result->type == BIGNUM_TYPE_BITMAP && right.type == BIGNUM_TYPE_BITMAP) {
+            /* 位图类型：^ 表示异或 */
+            BigNum *temp = bignum_bitxor(result, &right);
+            bignum_free(&right);
+            
+            if (temp == NULL) {
+                return EVAL_ERROR;
+            }
+            
+            bignum_free(result);
+            if (bignum_copy(temp, result) != BIGNUM_SUCCESS) {
+                bignum_destroy(temp);
+                return EVAL_ERROR;
+            }
+            bignum_destroy(temp);
+        } else {
+            /* 布尔 AND: 两边都为真则为真 */
+            int left_true = bignum_is_true(result);
+            int right_true = bignum_is_true(&right);
+            bignum_free(&right);
+            
+            bignum_free(result);
+            bignum_init(result);
+            char *digits = BIGNUM_DIGITS(result);
+            digits[0] = (left_true && right_true) ? 1 : 0;
+            result->length = 1;
+            result->type_data.num.decimal_pos = 0;
+            result->type_data.num.is_negative = 0;
+        }
     }
     
     return EVAL_SUCCESS;
@@ -397,18 +676,25 @@ static int parse_or(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry *
         lexer_next(lex);
         
         BigNum right;
+        bignum_init(&right);
         ret = parse_and(lex, &right, ctx, func_registry, precision);
-        if (ret != EVAL_SUCCESS) return ret;
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
+        }
         
         /* 布尔 OR: 任一为真则为真 */
         int left_true = bignum_is_true(result);
         int right_true = bignum_is_true(&right);
+        bignum_free(&right);
         
         bignum_free(result);
         bignum_init(result);
         char *digits = BIGNUM_DIGITS(result);
         digits[0] = (left_true || right_true) ? 1 : 0;
         result->length = 1;
+        result->type_data.num.decimal_pos = 0;
+        result->type_data.num.is_negative = 0;
     }
     
     return EVAL_SUCCESS;
@@ -423,18 +709,25 @@ static int parse_impl(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry
         lexer_next(lex);
         
         BigNum right;
+        bignum_init(&right);
         ret = parse_or(lex, &right, ctx, func_registry, precision);
-        if (ret != EVAL_SUCCESS) return ret;
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
+        }
         
         /* 布尔蕴含: !left || right */
         int left_true = bignum_is_true(result);
         int right_true = bignum_is_true(&right);
+        bignum_free(&right);
         
         bignum_free(result);
         bignum_init(result);
         char *digits = BIGNUM_DIGITS(result);
         digits[0] = (!left_true || right_true) ? 1 : 0;
         result->length = 1;
+        result->type_data.num.decimal_pos = 0;
+        result->type_data.num.is_negative = 0;
     }
     
     return EVAL_SUCCESS;
@@ -449,18 +742,25 @@ static int parse_iff(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry 
         lexer_next(lex);
         
         BigNum right;
+        bignum_init(&right);
         ret = parse_impl(lex, &right, ctx, func_registry, precision);
-        if (ret != EVAL_SUCCESS) return ret;
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
+        }
         
         /* 布尔等价: left == right */
         int left_true = bignum_is_true(result);
         int right_true = bignum_is_true(&right);
+        bignum_free(&right);
         
         bignum_free(result);
         bignum_init(result);
         char *digits = BIGNUM_DIGITS(result);
         digits[0] = (left_true == right_true) ? 1 : 0;
         result->length = 1;
+        result->type_data.num.decimal_pos = 0;
+        result->type_data.num.is_negative = 0;
     }
     
     return EVAL_SUCCESS;
@@ -475,18 +775,25 @@ static int parse_xor(Lexer *lex, BigNum *result, Context *ctx, FunctionRegistry 
         lexer_next(lex);
         
         BigNum right;
+        bignum_init(&right);
         ret = parse_iff(lex, &right, ctx, func_registry, precision);
-        if (ret != EVAL_SUCCESS) return ret;
+        if (ret != EVAL_SUCCESS) {
+            bignum_free(&right);
+            return ret;
+        }
         
         /* 布尔异或: left != right */
         int left_true = bignum_is_true(result);
         int right_true = bignum_is_true(&right);
+        bignum_free(&right);
         
         bignum_free(result);
         bignum_init(result);
         char *digits = BIGNUM_DIGITS(result);
         digits[0] = (left_true != right_true) ? 1 : 0;
         result->length = 1;
+        result->type_data.num.decimal_pos = 0;
+        result->type_data.num.is_negative = 0;
     }
     
     return EVAL_SUCCESS;
@@ -629,25 +936,46 @@ int eval_statement(const char *stmt, char *result_str, size_t max_len, void *ctx
             
             /* 解析表达式 */
             BigNum value;
+            bignum_init(&value);
             int ret = parse_expression(&lex, &value, (Context *)ctx, (FunctionRegistry *)func_registry, precision);
             if (ret != EVAL_SUCCESS) {
+                bignum_free(&value);
                 return ret;
             }
             
             /* 检查是否到达结尾 */
             if (lex.current_type != TOK_END) {
+                bignum_free(&value);
+                return EVAL_ERROR;
+            }
+            
+            /* 格式化输出 - 在设置变量之前先转换为字符串 */
+            /* 对于 bitmap 类型，需要 length + 2 字节（B + bits + \0） */
+            size_t value_str_size = 4096;
+            if (value.type == BIGNUM_TYPE_BITMAP && value.length + 2 > value_str_size) {
+                value_str_size = value.length + 10;  /* 额外空间用于 'B' 和 '\0' */
+            }
+            char *value_str = (char*)malloc(value_str_size);
+            if (!value_str) {
+                bignum_free(&value);
+                return EVAL_ERROR;
+            }
+            if (bignum_to_string(&value, value_str, value_str_size, precision) != BIGNUM_SUCCESS) {
+                bignum_free(&value);
+                free(value_str);
                 return EVAL_ERROR;
             }
             
             /* 设置变量 */
             if (ctx == NULL || context_set((Context *)ctx, var_name, &value) != 0) {
+                bignum_free(&value);
+                free(value_str);
                 return EVAL_ERROR;
             }
             
-            /* 格式化输出 */
-            char value_str[256];
-            bignum_to_string(&value, value_str, sizeof(value_str), precision);
+            bignum_free(&value);
             snprintf(result_str, max_len, "%s = %s", var_name, value_str);
+            free(value_str);
             
             return 1;  /* 返回1表示是赋值语句 */
         } else if (has_let) {
