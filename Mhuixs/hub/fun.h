@@ -2,11 +2,11 @@
 #define FUN_H
 
 #include "fcall.hpp"
-#include "tblh.hpp"
+#include "tblh.h"
 #include "kvalh.hpp"
-#include "list.hpp"
+#include "list.h"
 #include "stream.hpp"
-#include "bitmap.hpp"
+#include "bitmap.h"
 #include "hook.hpp"
 #include "usergroup.hpp"
 #include "hook.hpp"

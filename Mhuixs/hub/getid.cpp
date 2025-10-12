@@ -6,15 +6,15 @@
 start from 2024.11
 Email:hj18914255909@outlook.com
 */
-
+#define merr -1
 static mutex sid_mutex,uid_mutex,gid_mutex;//分别为sid/uid/gid分配器添加静态互斥锁
 
 // 会话ID分配
 SID Id_alloctor::get_sid() {
     lock_guard<mutex> lock(sid_mutex);// 锁定会话ID位图
-    int64_t idx = sid_bitmap.find(0, 0, 65535);
+    int64_t idx = bitmap_find(&sid_bitmap, 0, 0, 65535);
     if(idx == merr) return merr;
-    sid_bitmap.set((uint32_t)idx, 1);
+    bitmap_set(&sid_bitmap, (uint32_t)idx, 1);
     return (SID)idx;
 }
 
@@ -22,7 +22,7 @@ SID Id_alloctor::get_sid() {
 SID Id_alloctor::del_sid(SID sid) {
     lock_guard<mutex> lock(sid_mutex);// 锁定会话ID位图
     if(sid < 0 || sid > 65535) return merr;
-    sid_bitmap.set((SID)sid, 0);
+    bitmap_set(&sid_bitmap, (SID)sid, 0);
     return 0;
 }
 
@@ -36,9 +36,9 @@ UID Id_alloctor::get_uid(UID_t type) {
         default: return merr;
     }
     lock_guard<mutex> lock(uid_mutex);// 锁定用户ID位图
-    int64_t idx = uid_bitmap.find(0, start, end);
+    int64_t idx = bitmap_find(&uid_bitmap, 0, start, end);
     if(idx == merr) return merr;
-    uid_bitmap.set((uint32_t)idx, 1);
+    bitmap_set(&uid_bitmap, (uint32_t)idx, 1);
     return (UID)idx;
 }
 
@@ -53,7 +53,7 @@ UID Id_alloctor::del_uid(UID_t type, UID uid) {
     }
     if(uid < (int)start || uid > (int)end) return merr;
     lock_guard<mutex> lock(uid_mutex);// 锁定用户ID位图
-    uid_bitmap.set((uint32_t)uid, 0);
+    bitmap_set(&uid_bitmap, (uint32_t)uid, 0);
     return 0;
 }
 
@@ -66,9 +66,9 @@ GID Id_alloctor::get_gid(GID_t type) {
         default: return merr;
     }
     lock_guard<mutex> lock(gid_mutex);// 锁定组ID位图
-    int64_t idx = gid_bitmap.find(0, start, end);
+    int64_t idx = bitmap_find(&gid_bitmap, 0, start, end);
     if(idx == merr) return merr;
-    gid_bitmap.set(idx, 1);
+    bitmap_set(&gid_bitmap, idx, 1);
     return idx;
 }
 
@@ -83,28 +83,28 @@ GID Id_alloctor::del_gid(GID_t type, GID gid) {
     if(gid < start || gid > end) return merr;
 
     lock_guard<mutex> lock(gid_mutex);// 锁定组ID位图
-    gid_bitmap.set(gid, 0);
+    bitmap_set(&gid_bitmap, gid, 0);
     return 0;
 }
 
 static int if_init = 0;
 
 //id分配器模块初始化
-mrc Id_alloctor::close() {
+int Id_alloctor::close() {
     if_init=0;
-    sid_bitmap.~BITMAP();
-    uid_bitmap.~BITMAP();
-    gid_bitmap.~BITMAP();
-    return success;
+    free_bitmap(&sid_bitmap);
+    free_bitmap(&uid_bitmap);
+    free_bitmap(&gid_bitmap);
+    return 0;
 }
-mrc Id_alloctor::init()    {
-    sid_bitmap = BITMAP(65536);
-    uid_bitmap = BITMAP(65536);
-    gid_bitmap = BITMAP(65536);
-    if (sid_bitmap.iserr()||uid_bitmap.iserr()||gid_bitmap.iserr()) {
+int Id_alloctor::init()    {
+    sid_bitmap = *bitmap_create_with_size(65536);
+    uid_bitmap = *bitmap_create_with_size(65536);
+    gid_bitmap = *bitmap_create_with_size(65536);
+    if (bitmap_iserr(&sid_bitmap)||bitmap_iserr(&uid_bitmap)||bitmap_iserr(&gid_bitmap)) {
         close();
         return init_failed;
     }
     if_init=1;
-    return success;
+    return 0;
 }

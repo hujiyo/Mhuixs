@@ -40,7 +40,6 @@ static inline void str_clear(str *s) {
         free(s->string);
         s->string = NULL;
         s->len = 0;
-        s->state = 0;
     }
 }
 
@@ -185,7 +184,7 @@ static inline void sprint(str s, str end_marker) {
 }
 
 // 定义空字符串常量
-static const str end = {NULL, 0, 0};
+static const str end = {NULL, 0};
 
 #ifdef __cplusplus
 }

@@ -54,7 +54,7 @@ TABLE* create_table(int* types, mstring* field_names, size_t field_num, mstring 
         table->field[i].column_index = i;
         
         //分配内存
-        void* ptr = malloc(sizeof(pointer) * INCREASE_LINES_NUM);
+        void* ptr = malloc(sizeof(Obj) * INCREASE_LINES_NUM);
         if(ptr == NULL){
             //如果分配失败，释放之前已分配的内存
             for(size_t j=0; j<i; j++){
@@ -68,7 +68,7 @@ TABLE* create_table(int* types, mstring* field_names, size_t field_num, mstring 
             free(table);
             return NULL;
         }        
-        table->field[i].data = (pointer*)ptr;
+        table->field[i].data = (Obj*)ptr;
     }
     
     //初始化索引数组和反向索引数组，初始时逻辑顺序=物理顺序
@@ -80,7 +80,7 @@ TABLE* create_table(int* types, mstring* field_names, size_t field_num, mstring 
 }
 
 
-int add_record(TABLE* table, pointer* values, size_t num){
+int add_record(TABLE* table, Obj* values, size_t num){
     //参数验证 检查列数不能超过字段数
     if(table==NULL || values==NULL ||num > table->field_num){
         return -1;
@@ -113,13 +113,13 @@ int add_record(TABLE* table, pointer* values, size_t num){
         //对每个字段进行扩容
         for(size_t i=0; i<table->field_num; i++){            
             //union所有成员共享地址，realloc使用任意一个即可
-            void* temp = realloc(table->field[i].data, sizeof(pointer) * new_capacity);
+            void* temp = realloc(table->field[i].data, sizeof(Obj) * new_capacity);
             if(temp == NULL){
                 //扩容失败，但原数据仍然有效
                 return -1;
             }            
             //根据类型赋值给对应的union成员
-            table->field[i].data = (pointer*)temp;
+            table->field[i].data = (Obj*)temp;
         }
         table->capacity = new_capacity;
     }
@@ -231,12 +231,12 @@ int add_field(TABLE* table, int type, mstring field_name){
     table->field[new_index].column_index = new_index;
     
     //为新字段分配数据区内存
-    void* ptr = malloc(sizeof(pointer) * table->capacity);
+    void* ptr = malloc(sizeof(Obj) * table->capacity);
     if(ptr == NULL){
         //分配失败，恢复field_num（field数组已扩展但可以不用）
         return -1;
     }
-    table->field[new_index].data = (pointer*)ptr;
+    table->field[new_index].data = (Obj*)ptr;
     
     //初始化新字段的所有行为NULL
     for(size_t i=0; i<table->line_num; i++){
@@ -278,14 +278,14 @@ int swap_field(TABLE* table, size_t field_index1, size_t field_index2){
     return 0;
 }
 
-pointer get_value(TABLE* table, size_t idx_x, size_t idx_y){
+Obj get_value(TABLE* table, size_t idx_x, size_t idx_y){
     if(table == NULL || idx_x >= table->line_num || idx_y >= table->field_num){
         return NULL;
     }
     return table->field[idx_y].data[table->logic_index[idx_x]];
 }
 
-int set_value(TABLE* table, size_t idx_x, size_t idx_y, pointer content){
+int set_value(TABLE* table, size_t idx_x, size_t idx_y, Obj content){
     if(table == NULL || idx_x >= table->line_num || idx_y >= table->field_num){
         return -1;
     }
@@ -307,7 +307,7 @@ size_t get_field_index(TABLE* table, char* field_name, size_t len){
     return FIELD_NOT_FOUND;
 }
 
-void destroy_table(TABLE* table){
+void free_table(TABLE* table){
     if(table == NULL) return;
 
     //释放所有字段的内存
@@ -355,9 +355,9 @@ void clear_table(TABLE* table){
         }
         //缩减每个字段的数据区
         for(size_t i=0; i<table->field_num; i++){
-            void* temp = realloc(table->field[i].data, sizeof(pointer) * INCREASE_LINES_NUM);
+            void* temp = realloc(table->field[i].data, sizeof(Obj) * INCREASE_LINES_NUM);
             if(temp != NULL){
-                table->field[i].data = (pointer*)temp;
+                table->field[i].data = (Obj*)temp;
             }
         }
         table->capacity = INCREASE_LINES_NUM;
@@ -387,7 +387,7 @@ size_t get_field_count(TABLE* table){
     return table->field_num;
 }
 
-int update_record(TABLE* table, size_t logic_index, pointer* values, size_t num){
+int update_record(TABLE* table, size_t logic_index, Obj* values, size_t num){
     if(table == NULL || values == NULL || logic_index >= table->line_num || num > table->field_num){
         return -1;
     }
@@ -401,11 +401,11 @@ int update_record(TABLE* table, size_t logic_index, pointer* values, size_t num)
     return 0;//成功
 }
 
-pointer* get_record(TABLE* table, size_t logic_index){
+Obj* get_record(TABLE* table, size_t logic_index){
     if(table == NULL || logic_index >= table->line_num){
         return NULL;
     }
-    pointer* record = (pointer*)malloc(sizeof(pointer) * table->field_num);
+    Obj* record = (Obj*)malloc(sizeof(Obj) * table->field_num);
     if(record == NULL){
         return NULL;
     }

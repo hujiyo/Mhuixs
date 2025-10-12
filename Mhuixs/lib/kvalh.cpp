@@ -164,12 +164,11 @@ int KVALOT::copy_bhs(basic_handle_struct* dest, const basic_handle_struct* src) 
 }
 
 // 辅助函数：验证键名合法性
-int KVALOT::validate_key_name(str* key_name) {
-    if (key_name == NULL || key_name->string == NULL || key_name->len == 0) {
-        report(merr, kvalot_module, "Invalid key name: null or empty");
-        return merr;
+int KVALOT::validate_key_name(mstring key_name) {
+    if (key_name == NULL || mstrlen(key_name) == SIZE_MAX) {
+        return -1;
     }
-    return success;
+    return 0;
 }
 
 // 辅助函数：在哈希桶中查找键
@@ -370,7 +369,6 @@ void KVALOT::print_statistics() const {
     printf("========================\n\n");
 }
 
-#include "kvalh.hpp"
 
 int KVALOT::rise_capacity() {
     // 1. 确定桶数量
@@ -517,7 +515,6 @@ uint32_t KVALOT::murmurhash(str& stream, uint32_t result_bits)
     return seed & ((1 << result_bits) - 1);
 }
 
-#include "kvalh.hpp"
 
 int KVALOT::add_key(str* key_name, obj_type type, void* parameter1, void* parameter2,void *parameter3)//添加一个键值对
 {

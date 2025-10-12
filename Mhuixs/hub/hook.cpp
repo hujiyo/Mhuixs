@@ -1,7 +1,7 @@
 #include "hook.hpp"
 
 HOOK::HOOK(UID owner,string name)
-:cprs(lv0),owner(owner),name(name),if_register(0){
+:owner(owner),name(name),if_register(0){
     pm_s.owner_read=1;
     pm_s.owner_change=1;
     pm_s.owner_add=1;
@@ -18,7 +18,10 @@ HOOK::HOOK(UID owner,string name)
 }
 
 HOOK::~HOOK() {
-    //recover(bhs,cprs);//解压
+    // 如果已注册，先注销
+    if (if_register && Reg.is_registered(name)) {
+        Reg.unregister_hook(name);
+    }
     bhs.clear_self();
 }
 int HOOK::hook_new(UID caller,obj_type objtype,void *parameter1, void *parameter2, void *parameter3)
@@ -31,12 +34,11 @@ int HOOK::hook_new(UID caller,obj_type objtype,void *parameter1, void *parameter
         }
     }
     //删除原有对象
-    //recover(bhs,cprs);//解压
     bhs.clear_self();
     int res = bhs.make_self(objtype,parameter1, parameter2, parameter3);
-    if(res==merr){
-        report(merr,"HOOK","HOOK::hook_new::bhs.make_self() failed.\n");
-        return merr;
+    if(res==-1){
+        report(error,"HOOK","HOOK::hook_new::bhs.make_self() failed.\n");
+        return -1;
     }
 } 
 void HOOK::reset_pm(UID caller, string pm_str) {

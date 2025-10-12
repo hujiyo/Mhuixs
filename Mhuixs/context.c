@@ -11,7 +11,7 @@ void context_init(Context *ctx) {
     for (int i = 0; i < MAX_VARIABLES; i++) {
         ctx->vars[i].name[0] = '\0';
         ctx->vars[i].is_defined = 0;
-        bignum_init(&ctx->vars[i].value);
+        ctx->vars[i].value = NULL;  /* 初始化为 NULL */
     }
 }
 
@@ -60,9 +60,15 @@ int context_set(Context *ctx, const char *name, const BigNum *value) {
     
     if (idx >= 0) {
         /* 更新已存在的变量 */
-        /* 先释放旧值（避免内存泄漏），然后复制新值 */
-        bignum_free(&ctx->vars[idx].value);
-        if (bignum_copy(value, &ctx->vars[idx].value) != 0) {
+        /* 先释放旧值（避免内存泄漏），然后创建新值的副本 */
+        if (ctx->vars[idx].value != NULL) {
+            bignum_destroy(ctx->vars[idx].value);
+        }
+        ctx->vars[idx].value = bignum_create();
+        if (ctx->vars[idx].value == NULL) return -1;
+        if (bignum_copy(value, ctx->vars[idx].value) != 0) {
+            bignum_destroy(ctx->vars[idx].value);
+            ctx->vars[idx].value = NULL;
             return -1;
         }
         return 0;
@@ -74,8 +80,11 @@ int context_set(Context *ctx, const char *name, const BigNum *value) {
     idx = ctx->count;
     strncpy(ctx->vars[idx].name, name, MAX_VAR_NAME_LEN - 1);
     ctx->vars[idx].name[MAX_VAR_NAME_LEN - 1] = '\0';
-    bignum_init(&ctx->vars[idx].value);
-    if (bignum_copy(value, &ctx->vars[idx].value) != 0) {
+    ctx->vars[idx].value = bignum_create();
+    if (ctx->vars[idx].value == NULL) return -1;
+    if (bignum_copy(value, ctx->vars[idx].value) != 0) {
+        bignum_destroy(ctx->vars[idx].value);
+        ctx->vars[idx].value = NULL;
         return -1;
     }
     ctx->vars[idx].is_defined = 1;
@@ -90,9 +99,10 @@ int context_get(const Context *ctx, const char *name, BigNum *value) {
     
     int idx = find_variable(ctx, name);
     if (idx < 0) return -1;
+    if (ctx->vars[idx].value == NULL) return -1;
     
     /* 深拷贝变量值，避免共享内存 */
-    return bignum_copy(&ctx->vars[idx].value, value);
+    return bignum_copy(ctx->vars[idx].value, value);
 }
 
 /* 检查变量是否存在 */
@@ -114,9 +124,9 @@ void context_list(const Context *ctx, char *buffer, size_t max_len) {
     pos += snprintf(buffer + pos, max_len - pos, "已定义变量：\n");
     
     for (int i = 0; i < ctx->count && pos < (int)max_len - 1; i++) {
-        if (ctx->vars[i].is_defined) {
+        if (ctx->vars[i].is_defined && ctx->vars[i].value != NULL) {
             char value_str[256];
-            bignum_to_string(&ctx->vars[i].value, value_str, sizeof(value_str), -1);
+            bignum_to_string(ctx->vars[i].value, value_str, sizeof(value_str), -1);
             pos += snprintf(buffer + pos, max_len - pos, "  %s = %s\n", 
                           ctx->vars[i].name, value_str);
         }
@@ -126,6 +136,16 @@ void context_list(const Context *ctx, char *buffer, size_t max_len) {
 /* 清空所有变量 */
 void context_clear(Context *ctx) {
     if (ctx == NULL) return;
+    
+    /* 先释放所有变量的内存 */
+    for (int i = 0; i < ctx->count; i++) {
+        if (ctx->vars[i].value != NULL) {
+            bignum_destroy(ctx->vars[i].value);
+            ctx->vars[i].value = NULL;
+        }
+    }
+    
+    /* 然后重新初始化 */
     context_init(ctx);
 }
 

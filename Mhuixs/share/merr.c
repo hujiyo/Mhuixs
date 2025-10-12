@@ -1,8 +1,5 @@
 #include "merr.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
+
 
 static FILE* logFile = NULL;//日志模块是否开启的标志
 
@@ -18,7 +15,7 @@ void logger(const char* message){
     #endif
 }
 
-void report(enum mrc code, const char* module_name,const char *special_message){
+void report(enum errlevel code, const char* module_name,const char *special_message){
     //先打印问题位置
     if(module_name){
         printf("[%s]:", module_name);
@@ -30,7 +27,8 @@ void report(enum mrc code, const char* module_name,const char *special_message){
     int iflog = 0;//是否记录错误,[Error]需要写入日志,[Hint]警告无需写入日志
 
     switch (code){
-        case merr:message = "[Error]:Random error",iflog=1;break;
+        case error:message = "[Error]:Random error",iflog=1;break;
+        case hint:message = "[Hint]",iflog=0;break;
         case merr_open_file:message="[Error]:Failed to open file",iflog=1;break;
         case register_failed:message="[Error]:Failed to register hook",iflog=1;break;
         case hook_already_registered:message="[Hint]:Hook already registered";break;

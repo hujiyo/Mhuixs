@@ -1,4 +1,5 @@
 #include "list.h"
+#define merr -1
 
 // Block 内部辅助函数
 static void locate(const LIST* lst, size_t pos, Block** blk, size_t* offset);
@@ -36,7 +37,7 @@ static void locate(const LIST* lst, size_t pos, Block** blk, size_t* offset) {
 static void center_block(Block* blk) {
     size_t new_start = (UINTDEQUE_BLOCK_SIZE - blk->size) / 2;
     if (block_is_centered(blk) || new_start + blk->size > UINTDEQUE_BLOCK_SIZE) return;
-    memmove(&blk->data[new_start], &blk->data[blk->start], blk->size * sizeof(pointer));
+    memmove(&blk->data[new_start], &blk->data[blk->start], blk->size * sizeof(Obj));
     blk->start = new_start;
 }
 
@@ -48,7 +49,7 @@ static void split_block(LIST* lst, Block* blk) {
     new_blk->size = blk->size - mid;
     new_blk->start = (UINTDEQUE_BLOCK_SIZE - new_blk->size) / 2;
     if (new_blk->start + new_blk->size > UINTDEQUE_BLOCK_SIZE) new_blk->start = 0;
-    memcpy(&new_blk->data[new_blk->start], &blk->data[blk->start + mid], new_blk->size * sizeof(pointer));
+    memcpy(&new_blk->data[new_blk->start], &blk->data[blk->start + mid], new_blk->size * sizeof(Obj));
     new_blk->prev = blk;
     new_blk->next = blk->next;
     if (blk->next) blk->next->prev = new_blk;
@@ -63,8 +64,8 @@ static void merge_block(LIST* lst, Block* blk) {
     if (!blk->next) return;
     Block* nxt = blk->next;
     if (blk->size + nxt->size > UINTDEQUE_BLOCK_SIZE) return;
-    memmove(&blk->data[0], &blk->data[blk->start], blk->size * sizeof(pointer));
-    memcpy(&blk->data[blk->size], &nxt->data[nxt->start], nxt->size * sizeof(pointer));
+    memmove(&blk->data[0], &blk->data[blk->start], blk->size * sizeof(Obj));
+    memcpy(&blk->data[blk->size], &nxt->data[nxt->start], nxt->size * sizeof(Obj));
     blk->start = 0;
     blk->size += nxt->size;
     blk->next = nxt->next;
@@ -93,12 +94,12 @@ LIST* list_copy(const LIST* other) {
     while (cur) {
         Block* blk = (Block*)calloc(1, sizeof(Block));
         if (!blk) {
-            list_destroy(lst);
+            free_list(lst);
             return NULL;
         }
         blk->size = cur->size;
         blk->start = cur->start;
-        memcpy(&blk->data[0], &cur->data[0], sizeof(pointer) * UINTDEQUE_BLOCK_SIZE);
+        memcpy(&blk->data[0], &cur->data[0], sizeof(Obj) * UINTDEQUE_BLOCK_SIZE);
         blk->prev = lst->tail_block;
         blk->next = NULL;
         if (lst->tail_block) lst->tail_block->next = blk;
@@ -110,7 +111,7 @@ LIST* list_copy(const LIST* other) {
     return lst;
 }
 
-void list_destroy(LIST* lst) {
+void free_list(LIST* lst) {
     if (!lst) return;
     list_clear(lst);
     free(lst);
@@ -133,7 +134,7 @@ size_t list_size(const LIST* lst) {
     return lst ? lst->num : 0;
 }
 
-int list_lpush(LIST* lst, pointer value) {
+int list_lpush(LIST* lst, Obj value) {
     if (!lst) return merr;
     // 如果没有头块或头块左边没有空间，创建新块
     if (!lst->head_block || block_left_space(lst->head_block) == 0) {
@@ -163,7 +164,7 @@ int list_lpush(LIST* lst, pointer value) {
     return 0;
 }
 
-int list_rpush(LIST* lst, pointer value) {
+int list_rpush(LIST* lst, Obj value) {
     if (!lst) return merr;
     // 如果没有尾块或尾块右边没有空间，创建新块
     if (!lst->tail_block || block_right_space(lst->tail_block) == 0) {
@@ -192,9 +193,9 @@ int list_rpush(LIST* lst, pointer value) {
     return 0;
 }
 
-pointer list_lpop(LIST* lst) {
-    if (!lst || !lst->num) return (pointer)(intptr_t)merr;
-    pointer ret = lst->head_block->data[lst->head_block->start];
+Obj list_lpop(LIST* lst) {
+    if (!lst || !lst->num) return (Obj)(intptr_t)merr;
+    Obj ret = lst->head_block->data[lst->head_block->start];
     lst->head_block->start++;
     lst->head_block->size--;
     lst->num--;
@@ -210,9 +211,9 @@ pointer list_lpop(LIST* lst) {
     return ret;
 }
 
-pointer list_rpop(LIST* lst) {
-    if (!lst || !lst->num) return (pointer)(intptr_t)merr;
-    pointer ret = lst->tail_block->data[lst->tail_block->start + lst->tail_block->size - 1];
+Obj list_rpop(LIST* lst) {
+    if (!lst || !lst->num) return (Obj)(intptr_t)merr;
+    Obj ret = lst->tail_block->data[lst->tail_block->start + lst->tail_block->size - 1];
     lst->tail_block->size--;
     lst->num--;
     if (lst->tail_block->size == 0) {
@@ -227,7 +228,7 @@ pointer list_rpop(LIST* lst) {
     return ret;
 }
 
-int list_insert(LIST* lst, size_t pos, pointer value) {
+int list_insert(LIST* lst, size_t pos, Obj value) {
     if (!lst || pos > lst->num) return merr;
     if (pos == 0) return list_lpush(lst, value);
     if (pos == lst->num) return list_rpush(lst, value);
@@ -245,12 +246,12 @@ int list_insert(LIST* lst, size_t pos, pointer value) {
     }
     if (offset <= blk->size / 2 && block_left_space(blk) > 0) {
         // 插入位置在前半部分，且左边有空间，左移前半部分
-        memmove(&blk->data[blk->start - 1], &blk->data[blk->start], offset * sizeof(pointer));
+        memmove(&blk->data[blk->start - 1], &blk->data[blk->start], offset * sizeof(Obj));
         blk->start--;
         blk->data[blk->start + offset] = value;
     } else if (block_right_space(blk) > 0) {
         // 插入位置在后半部分，或左边没空间，右移后半部分
-        memmove(&blk->data[blk->start + offset + 1], &blk->data[blk->start + offset], (blk->size - offset) * sizeof(pointer));
+        memmove(&blk->data[blk->start + offset + 1], &blk->data[blk->start + offset], (blk->size - offset) * sizeof(Obj));
         blk->data[blk->start + offset] = value;
     } else {
         return merr;  // 没有空间
@@ -267,10 +268,10 @@ int list_rm_index(LIST* lst, size_t pos) {
     locate(lst, pos, &blk, &offset);
     if (!blk) return merr;
     if (offset < blk->size / 2) {
-        memmove(&blk->data[blk->start + 1], &blk->data[blk->start], offset * sizeof(pointer));
+        memmove(&blk->data[blk->start + 1], &blk->data[blk->start], offset * sizeof(Obj));
         blk->start++;
     } else {
-        memmove(&blk->data[blk->start + offset], &blk->data[blk->start + offset + 1], (blk->size - offset - 1) * sizeof(pointer));
+        memmove(&blk->data[blk->start + offset], &blk->data[blk->start + offset + 1], (blk->size - offset - 1) * sizeof(Obj));
     }
     blk->size--;
     lst->num--;
@@ -286,16 +287,16 @@ int list_rm_index(LIST* lst, size_t pos) {
     return 0;
 }
 
-pointer list_get_index(const LIST* lst, size_t pos) {
-    if (!lst || pos >= lst->num) return (pointer)(intptr_t)merr;
+Obj list_get_index(const LIST* lst, size_t pos) {
+    if (!lst || pos >= lst->num) return (Obj)(intptr_t)merr;
     Block* blk;
     size_t offset;
     locate(lst, pos, &blk, &offset);
-    if (!blk) return (pointer)(intptr_t)merr;
+    if (!blk) return (Obj)(intptr_t)merr;
     return blk->data[blk->start + offset];
 }
 
-int list_set_index(LIST* lst, size_t pos, pointer value) {
+int list_set_index(LIST* lst, size_t pos, Obj value) {
     if (!lst || pos >= lst->num) return merr;
     Block* blk;
     size_t offset;
@@ -315,7 +316,7 @@ int list_swap(LIST* lst, size_t idx1, size_t idx2) {
     locate(lst, idx1, &blk1, &offset1);
     locate(lst, idx2, &blk2, &offset2);
     if (!blk1 || !blk2) return merr;
-    pointer temp = blk1->data[blk1->start + offset1];
+    Obj temp = blk1->data[blk1->start + offset1];
     blk1->data[blk1->start + offset1] = blk2->data[blk2->start + offset2];
     blk2->data[blk2->start + offset2] = temp;
     return 0;

@@ -3,11 +3,10 @@
 
 #include "funseq.h"
 #include "getid.hpp"
-#include "hook.hpp"
+//#include "hook.hpp"
 #include "pkg.h"
 
 #include "concurrentqueue.h"
-#include "readerwriterqueue.h"
 #include <atomic>
 #include <errno.h>
 #include <signal.h>
@@ -87,7 +86,6 @@ typedef struct {
 // 全局变量
 extern netplug_t *g_netplug;
 extern BlockingConcurrentQueue<command_t *> command_queue;
-extern BlockingReaderWriterQueue<response_t *> response_queue;
 extern Id_alloctor Idalloc;
 
 // API函数
