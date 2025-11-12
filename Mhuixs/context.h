@@ -10,20 +10,18 @@
  * 支持数学脚本语言的变量机制
  */
 
-#define MAX_VAR_NAME_LEN 64      /* 变量名最大长度 */
-#define MAX_VARIABLES 256        /* 最大变量数量 */
-
 /* 变量结构 */
 typedef struct {
-    char name[MAX_VAR_NAME_LEN];  /* 变量名 */
+    char *name;                    /* 变量名（动态分配） */
     BigNum *value;                 /* 变量值指针（堆分配） */
     int is_defined;                /* 是否已定义 */
 } Variable;
 
 /* 变量上下文 */
 typedef struct {
-    Variable vars[MAX_VARIABLES];  /* 变量数组 */
+    Variable *vars;                /* 变量数组（动态分配） */
     int count;                     /* 当前变量数量 */
+    int capacity;                  /* 当前容量 */
 } Context;
 
 /**

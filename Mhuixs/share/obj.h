@@ -30,7 +30,7 @@ typedef struct {
         char *large_data;                     /* 大数据动态分配指针（8字节） */
         //下面是兼容Mhuixs类型的字段
         //KVALOT *kvalot;//这个库暂时有点问题，也是先注释掉
-        //LIST *list;
+        struct LIST *list;                    /* LIST类型指针 */
         //TABLE *table;
         //HOOK *hook; //HOOK对象相关库还没写好，这里也注释掉
         //KEY

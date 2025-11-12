@@ -8,6 +8,7 @@
 #include <string.h>
 #include "../function.h"
 #include "../bignum.h"
+#include "../lib/list.h"
 
 /* num() 函数：将字符串或位图转换为数字
  * 参数：1个（字符串或位图类型的 BigNum）
@@ -151,6 +152,76 @@ static int type_bmp(const BigNum *args, int arg_count, BigNum *result, int preci
     return BIGNUM_ERROR;
 }
 
+/* lst() 函数：创建空列表或将其他类型转换为列表
+ * 参数：0个或1个
+ * 返回：列表类型
+ */
+static int type_lst(const BigNum *args, int arg_count, BigNum *result, int precision) {
+    (void)precision;  /* 未使用 */
+    
+    if (arg_count == 0) {
+        /* 创建空列表 */
+        BigNum *list_num = bignum_create_list();
+        if (list_num == NULL) {
+            return BIGNUM_ERROR;
+        }
+        
+        int ret = bignum_copy(list_num, result);
+        bignum_destroy(list_num);
+        return ret;
+    } else if (arg_count == 1) {
+        const BigNum *input = &args[0];
+        
+        /* 如果已经是列表类型，直接返回 */
+        if (bignum_is_list(input)) {
+            return bignum_copy(input, result);
+        }
+        
+        /* 创建新列表并添加元素 */
+        BigNum *list_num = bignum_create_list();
+        if (list_num == NULL) {
+            return BIGNUM_ERROR;
+        }
+        
+        LIST *list = bignum_get_list(list_num);
+        if (list == NULL) {
+            bignum_destroy(list_num);
+            return BIGNUM_ERROR;
+        }
+        
+        /* 创建元素的副本 */
+        BigNum *element_copy = bignum_create();
+        if (element_copy == NULL) {
+            bignum_destroy(list_num);
+            return BIGNUM_ERROR;
+        }
+        
+        int ret = bignum_copy(input, element_copy);
+        if (ret != BIGNUM_SUCCESS) {
+            bignum_destroy(element_copy);
+            bignum_destroy(list_num);
+            return BIGNUM_ERROR;
+        }
+        
+        /* 添加到列表 */
+        if (list_rpush(list, (Obj)element_copy) != 0) {
+            bignum_destroy(element_copy);
+            bignum_destroy(list_num);
+            return BIGNUM_ERROR;
+        }
+        
+        /* 更新长度 */
+        list_num->length = list_size(list);
+        
+        ret = bignum_copy(list_num, result);
+        bignum_destroy(list_num);
+        return ret;
+    }
+    
+    /* 参数数量错误 */
+    return BIGNUM_ERROR;
+}
+
 /* 包注册函数 - 由包管理器调用 */
 int package_register(FunctionRegistry *registry) {
     if (registry == NULL) return -1;
@@ -172,6 +243,12 @@ int package_register(FunctionRegistry *registry) {
     /* 注册 bmp() 函数 */
     if (function_register(registry, "bmp", type_bmp, 1, 1, 
                          "Convert string/number to bitmap") == 0) {
+        count++;
+    }
+    
+    /* 注册 lst() 函数 */
+    if (function_register(registry, "lst", type_lst, 0, 1, 
+                         "Create list or convert to list") == 0) {
         count++;
     }
     

@@ -13,7 +13,7 @@ Email:hj18914255909@outlook.com
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include "obj.h"
+#include "../share/obj.h"
 
 
 #define UINTDEQUE_BLOCK_SIZE 4096 // 每块最大元素数

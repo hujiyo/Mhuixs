@@ -101,6 +101,47 @@ TokenType lexer_next(Lexer *lexer) {
             return TOK_IMPORT;
         }
         
+        /* 控制流关键字 */
+        if (strcmp(lexer->current_value, "if") == 0) {
+            lexer->current_type = TOK_IF;
+            return TOK_IF;
+        }
+        
+        if (strcmp(lexer->current_value, "else") == 0) {
+            lexer->current_type = TOK_ELSE;
+            return TOK_ELSE;
+        }
+        
+        if (strcmp(lexer->current_value, "for") == 0) {
+            lexer->current_type = TOK_FOR;
+            return TOK_FOR;
+        }
+        
+        if (strcmp(lexer->current_value, "while") == 0) {
+            lexer->current_type = TOK_WHILE;
+            return TOK_WHILE;
+        }
+        
+        if (strcmp(lexer->current_value, "do") == 0) {
+            lexer->current_type = TOK_DO;
+            return TOK_DO;
+        }
+        
+        if (strcmp(lexer->current_value, "end") == 0) {
+            lexer->current_type = TOK_END_STMT;
+            return TOK_END_STMT;
+        }
+        
+        if (strcmp(lexer->current_value, "in") == 0) {
+            lexer->current_type = TOK_IN;
+            return TOK_IN;
+        }
+        
+        if (strcmp(lexer->current_value, "range") == 0) {
+            lexer->current_type = TOK_RANGE;
+            return TOK_RANGE;
+        }
+        
         /* 检查单字符保留运算符 */
         if (strcmp(lexer->current_value, "v") == 0) {
             lexer->current_type = TOK_OR;
@@ -241,6 +282,7 @@ TokenType lexer_next(Lexer *lexer) {
         case '(': lexer->current_type = TOK_LPAREN; return TOK_LPAREN;
         case ')': lexer->current_type = TOK_RPAREN; return TOK_RPAREN;
         case ',': lexer->current_type = TOK_COMMA; return TOK_COMMA;
+        case ':': lexer->current_type = TOK_COLON; return TOK_COLON;
         case '&': lexer->current_type = TOK_BITAND; return TOK_BITAND;
         case '|': lexer->current_type = TOK_BITOR; return TOK_BITOR;
         case '~': lexer->current_type = TOK_BITNOT; return TOK_BITNOT;
