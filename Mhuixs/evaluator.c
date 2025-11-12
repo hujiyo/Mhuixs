@@ -4,6 +4,8 @@
 #include "context.h"
 #include "function.h"
 #include "package.h"
+#include "parser.h"
+#include "ast.h"
 #include <string.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -867,6 +869,27 @@ int eval_statement(const char *stmt, char *result_str, size_t max_len, void *ctx
         return EVAL_ERROR;
     }
     
+    /* 检查是否是控制流语句 */
+    if (lex.current_type == TOK_IF || lex.current_type == TOK_FOR || 
+        lex.current_type == TOK_WHILE || lex.current_type == TOK_DO) {
+        
+        /* 使用AST解析器处理控制流语句 */
+        Parser parser;
+        parser_init(&parser, &lex);
+        
+        ASTNode *ast = parser_parse_statement(&parser);
+        if (!ast || parser_has_error(&parser)) {
+            if (ast) ast_destroy(ast);
+            snprintf(result_str, max_len, "语法错误: %s", parser_get_error(&parser));
+            return EVAL_ERROR;
+        }
+        
+        /* 执行AST */
+        int ret = ast_execute(ast, ctx, func_registry, pkg_manager, precision, result_str, max_len);
+        ast_destroy(ast);
+        return ret;
+    }
+    
     /* 检查是否是 import 语句 */
     if (lex.current_type == TOK_IMPORT) {
         lexer_next(&lex);
@@ -916,9 +939,9 @@ int eval_statement(const char *stmt, char *result_str, size_t max_len, void *ctx
     
     /* 检查是否是标识符开头（可能是赋值语句） */
     if (lex.current_type == TOK_IDENTIFIER) {
-        char var_name[MAX_VAR_NAME_LEN];
-        strncpy(var_name, lex.current_value, MAX_VAR_NAME_LEN - 1);
-        var_name[MAX_VAR_NAME_LEN - 1] = '\0';
+        char var_name[MAX_FUNC_NAME_LEN];
+        strncpy(var_name, lex.current_value, MAX_FUNC_NAME_LEN - 1);
+        var_name[MAX_FUNC_NAME_LEN - 1] = '\0';
         
         /* 先保存当前位置，以便回退 */
         int saved_pos = lex.pos;

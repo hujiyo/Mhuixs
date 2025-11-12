@@ -5,6 +5,8 @@
 #include <stdlib.h>
 #include <stdint.h>  /* for SIZE_MAX */
 
+#include "lib/list.h"
+
 /* 内部辅助函数声明 */
 static int bignum_add_internal(const BigNum *a, const BigNum *b, BigNum *result);
 static int bignum_sub_internal(const BigNum *a, const BigNum *b, BigNum *result);
@@ -33,10 +35,19 @@ BigNum* bignum_create(void) {
 void bignum_destroy(BigNum *num) {
     if (num == NULL) return;
     
-    /* 先释放内部数据（适用于所有类型：数字、字符串、位图） */
-    if (num->is_large && num->data.large_data != NULL) {
-        free(num->data.large_data);
-        num->data.large_data = NULL;
+    /* 根据类型释放内部数据 */
+    if (num->type == BIGNUM_TYPE_LIST) {
+        /* 释放 LIST 类型的数据 */
+        if (num->data.list != NULL) {
+            free_list(num->data.list);
+            num->data.list = NULL;
+        }
+    } else {
+        /* 释放其他类型的数据（数字、字符串、位图） */
+        if (num->is_large && num->data.large_data != NULL) {
+            free(num->data.large_data);
+            num->data.large_data = NULL;
+        }
     }
     
     /* 然后释放结构体本身 */
@@ -1163,6 +1174,11 @@ int bignum_is_bitmap(const BigNum *num) {
     return num->type == BIGNUM_TYPE_BITMAP;
 }
 
+int bignum_is_list(const BigNum *num) {
+    if (num == NULL) return 0;
+    return num->type == BIGNUM_TYPE_LIST;
+}
+
 int bignum_string_to_number_legacy(const BigNum *str_num, BigNum *num_result) {
     if (str_num == NULL || num_result == NULL) return BIGNUM_ERROR;
     if (str_num->type != BIGNUM_TYPE_STRING) return BIGNUM_ERROR;
@@ -1472,4 +1488,74 @@ BigNum* bignum_bitshr(const BigNum *a, const BigNum *shift) {
     }
     
     return bitmap_bitshr(a, shift_amount);
+}
+
+/* ========== LIST 类型相关函数实现 ========== */
+
+BigNum* bignum_create_list(void) {
+    BigNum *num = bignum_create();
+    if (num == NULL) return NULL;
+    
+    LIST *list = list_create();
+    if (list == NULL) {
+        bignum_destroy(num);
+        return NULL;
+    }
+    
+    num->type = BIGNUM_TYPE_LIST;
+    num->data.list = list;
+    num->length = 0;  /* 初始长度为0 */
+    
+    return num;
+}
+
+BigNum* bignum_from_list(struct LIST *list) {
+    if (list == NULL) return NULL;
+    
+    BigNum *num = bignum_create();
+    if (num == NULL) return NULL;
+    
+    /* 复制列表 */
+    LIST *new_list = list_copy(list);
+    if (new_list == NULL) {
+        bignum_destroy(num);
+        return NULL;
+    }
+    
+    num->type = BIGNUM_TYPE_LIST;
+    num->data.list = new_list;
+    num->length = list_size(new_list);
+    
+    return num;
+}
+
+struct LIST* bignum_get_list(const BigNum *num) {
+    if (num == NULL || num->type != BIGNUM_TYPE_LIST) return NULL;
+    return num->data.list;
+}
+
+double bignum_to_double(const BigNum *num) {
+    if (num == NULL || num->type != BIGNUM_TYPE_NUMBER) return 0.0;
+    
+    char *digits = BIGNUM_DIGITS(num);
+    double result = 0.0;
+    double decimal_multiplier = 1.0;
+    
+    /* 处理整数部分 */
+    for (int i = num->length - 1; i >= num->type_data.num.decimal_pos; i--) {
+        result = result * 10.0 + digits[i];
+    }
+    
+    /* 处理小数部分 */
+    for (int i = num->type_data.num.decimal_pos - 1; i >= 0; i--) {
+        decimal_multiplier /= 10.0;
+        result += digits[i] * decimal_multiplier;
+    }
+    
+    /* 处理符号 */
+    if (num->type_data.num.is_negative) {
+        result = -result;
+    }
+    
+    return result;
 }

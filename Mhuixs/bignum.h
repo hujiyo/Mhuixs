@@ -215,6 +215,14 @@ int bignum_is_string(const BigNum *num);
 int bignum_is_bitmap(const BigNum *num);
 
 /**
+ * 判断 BigNum 是否为列表类型
+ * 
+ * @param num BigNum 结构
+ * @return 1 是列表, 0 不是
+ */
+int bignum_is_list(const BigNum *num);
+
+/**
  * 尝试将字符串类型的 BigNum 转换为数字类型（返回新分配的 BigNum）
  * 
  * @param str_num 字符串类型的 BigNum
@@ -266,6 +274,38 @@ BigNum* bignum_bitshr(const BigNum *a, const BigNum *shift);
 /* 类型转换函数（在type_package.c中实现，这里仅声明供内部使用） */
 BigNum* bignum_number_to_bitmap(const BigNum *num);
 BigNum* bignum_bitmap_to_number(const BigNum *bitmap);
+
+/* LIST 类型相关函数 */
+/**
+ * 创建空的列表类型 BigNum
+ * 
+ * @return 新的列表类型 BigNum 指针，失败返回 NULL
+ */
+BigNum* bignum_create_list(void);
+
+/**
+ * 从现有 LIST 创建列表类型 BigNum
+ * 
+ * @param list 现有的 LIST 指针
+ * @return 新的列表类型 BigNum 指针，失败返回 NULL
+ */
+BigNum* bignum_from_list(struct LIST *list);
+
+/**
+ * 获取列表类型 BigNum 的底层 LIST 指针
+ * 
+ * @param num 列表类型的 BigNum
+ * @return LIST 指针，失败返回 NULL
+ */
+struct LIST* bignum_get_list(const BigNum *num);
+
+/**
+ * 将 BigNum 转换为 double（用于数值计算）
+ * 
+ * @param num BigNum 指针
+ * @return 转换后的 double 值
+ */
+double bignum_to_double(const BigNum *num);
 
 /* 
  * bignum_eval 已弃用 - 请使用 evaluator.h 中的 eval_to_string()

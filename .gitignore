@@ -1,6 +1,8 @@
 # 忽略所有名为 output 的文件夹（包括其内容）
 output/
 
+.cache/
+
 .vscode/
 
 cmake-build-debug/

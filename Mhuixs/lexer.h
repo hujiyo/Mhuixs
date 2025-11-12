@@ -23,6 +23,17 @@ typedef enum {
     TOK_IMPORT,      /* import 关键字 */
     TOK_ASSIGN,      /* = 赋值运算符 */
     
+    /* 控制流关键字 */
+    TOK_IF,          /* if 关键字 */
+    TOK_ELSE,        /* else 关键字 */
+    TOK_FOR,         /* for 关键字 */
+    TOK_WHILE,       /* while 关键字 */
+    TOK_DO,          /* do 关键字 */
+    TOK_END_STMT,    /* end 关键字（语句结束） */
+    TOK_IN,          /* in 关键字 */
+    TOK_RANGE,       /* range 关键字 */
+    TOK_COLON,       /* : 冒号 */
+    
     /* 算术运算符 */
     TOK_PLUS,        /* + */
     TOK_MINUS,       /* - */
