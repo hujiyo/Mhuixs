@@ -343,7 +343,7 @@ interpreter.c (use_vm = 1)
     ↓
 compiler.c → bytecode.c → vm.c
     ↓
-builtin.c + bignum.c + context.c
+builtin.c + bhs.c + context.c
 ```
 
 ### 内存管理

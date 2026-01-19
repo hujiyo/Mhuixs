@@ -15,7 +15,7 @@
 #define MAX_FUNC_ARGS 10       /* 函数最大参数数量 */
 
 /* 函数指针类型定义 */
-typedef int (*NativeFunction)(const BigNum *args, int arg_count, BigNum *result, int precision);
+typedef int (*NativeFunction)(const BHS *args, int arg_count, BHS *result, int precision);
 
 /* 函数元信息 */
 typedef struct {
@@ -76,9 +76,9 @@ FunctionInfo* function_lookup(FunctionRegistry *registry, const char *name);
  * @return 0 成功, -1 失败
  */
 int function_call(FunctionInfo *info, 
-                 const BigNum *args, 
+                 const BHS *args, 
                  int arg_count, 
-                 BigNum *result, 
+                 BHS *result, 
                  int precision);
 
 /**

@@ -34,7 +34,7 @@ typedef struct {
     VMStatus status;              /* 虚拟机状态 */
     
     /* 栈 */
-    BigNum stack[VM_STACK_SIZE];  /* 操作数栈 */
+    BHS stack[VM_STACK_SIZE];  /* 操作数栈 */
     int sp;                       /* 栈指针 */
     
     /* 运行时环境 */
@@ -60,7 +60,7 @@ int vm_run(VM *vm);
 int vm_step(VM *vm);  /* 单步执行 */
 
 /* 获取结果 */
-BigNum* vm_get_result(VM *vm);
+BHS* vm_get_result(VM *vm);
 const char* vm_get_error(VM *vm);
 
 #ifdef __cplusplus

@@ -11,7 +11,7 @@
  */
 
 /* 内置函数指针类型 */
-typedef int (*BuiltinFunction)(const BigNum *args, int arg_count, BigNum *result, int precision);
+typedef int (*BuiltinFunction)(const BHS *args, int arg_count, BHS *result, int precision);
 
 /* 内置函数信息 */
 typedef struct {
@@ -38,9 +38,9 @@ const BuiltinFunctionInfo* builtin_lookup(const char *name);
  * @return 0 成功, -1 失败
  */
 int builtin_call(const BuiltinFunctionInfo *info, 
-                 const BigNum *args, 
+                 const BHS *args, 
                  int arg_count, 
-                 BigNum *result, 
+                 BHS *result, 
                  int precision);
 
 #endif /* BUILTIN_H */

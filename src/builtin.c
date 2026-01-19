@@ -15,13 +15,13 @@
 /* ========== LIST 操作函数 ========== */
 
 /* list() - 创建空列表 */
-static int builtin_list(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_list(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)args;
     (void)precision;
     
     if (arg_count != 0) return -1;
     
-    BigNum *list_num = bignum_create_list();
+    BHS *list_num = bignum_create_list();
     if (!list_num) return -1;
     
     int ret = bignum_copy(list_num, result);
@@ -30,7 +30,7 @@ static int builtin_list(const BigNum *args, int arg_count, BigNum *result, int p
 }
 
 /* lpush(list, value) - 左侧插入 */
-static int builtin_lpush(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_lpush(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)precision;
     
     if (arg_count != 2) return -1;
@@ -43,7 +43,7 @@ static int builtin_lpush(const BigNum *args, int arg_count, BigNum *result, int 
     if (!list) return -1;
     
     /* 创建元素副本 */
-    BigNum *element = bignum_create();
+    BHS *element = bignum_create();
     if (!element) return -1;
     
     if (bignum_copy(&args[1], element) != 0) {
@@ -61,7 +61,7 @@ static int builtin_lpush(const BigNum *args, int arg_count, BigNum *result, int 
 }
 
 /* rpush(list, value) - 右侧插入 */
-static int builtin_rpush(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_rpush(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)precision;
     
     if (arg_count != 2) return -1;
@@ -72,7 +72,7 @@ static int builtin_rpush(const BigNum *args, int arg_count, BigNum *result, int 
     LIST *list = bignum_get_list(result);
     if (!list) return -1;
     
-    BigNum *element = bignum_create();
+    BHS *element = bignum_create();
     if (!element) return -1;
     
     if (bignum_copy(&args[1], element) != 0) {
@@ -89,19 +89,19 @@ static int builtin_rpush(const BigNum *args, int arg_count, BigNum *result, int 
 }
 
 /* lpop(list) - 左侧弹出 */
-static int builtin_lpop(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_lpop(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)precision;
     
     if (arg_count != 1) return -1;
     if (!bignum_is_list(&args[0])) return -1;
     
-    LIST *list = bignum_get_list((BigNum*)&args[0]);
+    LIST *list = bignum_get_list((BHS*)&args[0]);
     if (!list || list_size(list) == 0) return -1;
     
     Obj obj = list_lpop(list);
     if ((intptr_t)obj == -1) return -1;
     
-    BigNum *value = (BigNum*)obj;
+    BHS *value = (BHS*)obj;
     int ret = bignum_copy(value, result);
     bignum_destroy(value);
     
@@ -109,19 +109,19 @@ static int builtin_lpop(const BigNum *args, int arg_count, BigNum *result, int p
 }
 
 /* rpop(list) - 右侧弹出 */
-static int builtin_rpop(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_rpop(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)precision;
     
     if (arg_count != 1) return -1;
     if (!bignum_is_list(&args[0])) return -1;
     
-    LIST *list = bignum_get_list((BigNum*)&args[0]);
+    LIST *list = bignum_get_list((BHS*)&args[0]);
     if (!list || list_size(list) == 0) return -1;
     
     Obj obj = list_rpop(list);
     if ((intptr_t)obj == -1) return -1;
     
-    BigNum *value = (BigNum*)obj;
+    BHS *value = (BHS*)obj;
     int ret = bignum_copy(value, result);
     bignum_destroy(value);
     
@@ -129,13 +129,13 @@ static int builtin_rpop(const BigNum *args, int arg_count, BigNum *result, int p
 }
 
 /* lget(list, index) - 获取元素 */
-static int builtin_lget(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_lget(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)precision;
     
     if (arg_count != 2) return -1;
     if (!bignum_is_list(&args[0]) || !bignum_is_number(&args[1])) return -1;
     
-    LIST *list = bignum_get_list((BigNum*)&args[0]);
+    LIST *list = bignum_get_list((BHS*)&args[0]);
     if (!list) return -1;
     
     /* 获取索引 */
@@ -146,18 +146,18 @@ static int builtin_lget(const BigNum *args, int arg_count, BigNum *result, int p
     Obj obj = list_get_index(list, idx);
     if ((intptr_t)obj == -1) return -1;
     
-    BigNum *value = (BigNum*)obj;
+    BHS *value = (BHS*)obj;
     return bignum_copy(value, result);
 }
 
 /* llen(list) - 列表长度 */
-static int builtin_llen(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_llen(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)precision;
     
     if (arg_count != 1) return -1;
     if (!bignum_is_list(&args[0])) return -1;
     
-    LIST *list = bignum_get_list((BigNum*)&args[0]);
+    LIST *list = bignum_get_list((BHS*)&args[0]);
     if (!list) return -1;
     
     size_t size = list_size(list);
@@ -170,7 +170,7 @@ static int builtin_llen(const BigNum *args, int arg_count, BigNum *result, int p
 /* ========== TYPE 转换函数 ========== */
 
 /* num(value) - 转换为数字 */
-static int builtin_num(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_num(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)precision;
     
     if (arg_count != 1) return -1;
@@ -182,7 +182,7 @@ static int builtin_num(const BigNum *args, int arg_count, BigNum *result, int pr
     
     /* 如果是位图，转换为数字 */
     if (bignum_is_bitmap(&args[0])) {
-        BigNum *temp = bignum_bitmap_to_number(&args[0]);
+        BHS *temp = bignum_bitmap_to_number(&args[0]);
         if (!temp) return -1;
         int ret = bignum_copy(temp, result);
         bignum_destroy(temp);
@@ -190,7 +190,7 @@ static int builtin_num(const BigNum *args, int arg_count, BigNum *result, int pr
     }
     
     /* 尝试将字符串转换为数字 */
-    BigNum *temp = bignum_string_to_number(&args[0]);
+    BHS *temp = bignum_string_to_number(&args[0]);
     if (!temp) return -1;
     int ret = bignum_copy(temp, result);
     bignum_destroy(temp);
@@ -198,7 +198,7 @@ static int builtin_num(const BigNum *args, int arg_count, BigNum *result, int pr
 }
 
 /* str(value) - 转换为字符串 */
-static int builtin_str(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_str(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     
     /* 如果已经是字符串，直接返回 */
@@ -208,10 +208,10 @@ static int builtin_str(const BigNum *args, int arg_count, BigNum *result, int pr
     
     /* 如果是位图，先转数字再转字符串 */
     if (bignum_is_bitmap(&args[0])) {
-        BigNum *num_temp = bignum_bitmap_to_number(&args[0]);
+        BHS *num_temp = bignum_bitmap_to_number(&args[0]);
         if (!num_temp) return -1;
         
-        BigNum *str_temp = bignum_number_to_string_type(num_temp, precision);
+        BHS *str_temp = bignum_number_to_string_type(num_temp, precision);
         bignum_destroy(num_temp);
         
         if (!str_temp) return -1;
@@ -222,7 +222,7 @@ static int builtin_str(const BigNum *args, int arg_count, BigNum *result, int pr
     
     /* 如果是数字，转换为字符串 */
     if (bignum_is_number(&args[0])) {
-        BigNum *temp = bignum_number_to_string_type(&args[0], precision);
+        BHS *temp = bignum_number_to_string_type(&args[0], precision);
         if (!temp) return -1;
         int ret = bignum_copy(temp, result);
         bignum_destroy(temp);
@@ -233,7 +233,7 @@ static int builtin_str(const BigNum *args, int arg_count, BigNum *result, int pr
 }
 
 /* bmp(value) - 转换为位图 */
-static int builtin_bmp(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_bmp(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)precision;
     
     if (arg_count != 1) return -1;
@@ -245,7 +245,7 @@ static int builtin_bmp(const BigNum *args, int arg_count, BigNum *result, int pr
     
     /* 如果是数字，转换为位图 */
     if (bignum_is_number(&args[0])) {
-        BigNum *temp = bignum_number_to_bitmap(&args[0]);
+        BHS *temp = bignum_number_to_bitmap(&args[0]);
         if (!temp) return -1;
         int ret = bignum_copy(temp, result);
         bignum_destroy(temp);
@@ -253,10 +253,10 @@ static int builtin_bmp(const BigNum *args, int arg_count, BigNum *result, int pr
     }
     
     /* 如果是字符串，先转数字再转位图 */
-    BigNum *num_temp = bignum_string_to_number(&args[0]);
+    BHS *num_temp = bignum_string_to_number(&args[0]);
     if (!num_temp) return -1;
     
-    BigNum *bmp_temp = bignum_number_to_bitmap(num_temp);
+    BHS *bmp_temp = bignum_number_to_bitmap(num_temp);
     bignum_destroy(num_temp);
     
     if (!bmp_temp) return -1;
@@ -268,11 +268,11 @@ static int builtin_bmp(const BigNum *args, int arg_count, BigNum *result, int pr
 /* ========== BITMAP 操作函数 ========== */
 
 /* bset(bitmap, offset, value) - 设置位 */
-static int builtin_bset(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_bset(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)precision;
     
     if (arg_count != 3) return -1;
-    if (!check_if_bitmap((BigNum*)&args[0])) return -1;
+    if (!check_if_bitmap((BHS*)&args[0])) return -1;
     
     char offset_str[64], value_str[64];
     if (bignum_to_string(&args[1], offset_str, sizeof(offset_str), 0) != 0) return -1;
@@ -290,17 +290,17 @@ static int builtin_bset(const BigNum *args, int arg_count, BigNum *result, int p
 }
 
 /* bget(bitmap, offset) - 获取位 */
-static int builtin_bget(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_bget(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)precision;
     
     if (arg_count != 2) return -1;
-    if (!check_if_bitmap((BigNum*)&args[0])) return -1;
+    if (!check_if_bitmap((BHS*)&args[0])) return -1;
     
     char offset_str[64];
     if (bignum_to_string(&args[1], offset_str, sizeof(offset_str), 0) != 0) return -1;
     uint64_t offset = (uint64_t)atoi(offset_str);
     
-    int bit = bitmap_get((BigNum*)&args[0], offset);
+    int bit = bitmap_get((BHS*)&args[0], offset);
     if (bit < 0) return -1;
     
     char bit_str[8];
@@ -309,11 +309,11 @@ static int builtin_bget(const BigNum *args, int arg_count, BigNum *result, int p
 }
 
 /* bcount(bitmap, start, end) - 统计位数 */
-static int builtin_bcount(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int builtin_bcount(const BHS *args, int arg_count, BHS *result, int precision) {
     (void)precision;
     
     if (arg_count != 3) return -1;
-    if (!check_if_bitmap((BigNum*)&args[0])) return -1;
+    if (!check_if_bitmap((BHS*)&args[0])) return -1;
     
     char st_str[64], ed_str[64];
     if (bignum_to_string(&args[1], st_str, sizeof(st_str), 0) != 0) return -1;
@@ -322,7 +322,7 @@ static int builtin_bcount(const BigNum *args, int arg_count, BigNum *result, int
     uint64_t st = (uint64_t)atoi(st_str);
     uint64_t ed = (uint64_t)atoi(ed_str);
     
-    uint64_t count = bitmap_count((BigNum*)&args[0], st, ed);
+    uint64_t count = bitmap_count((BHS*)&args[0], st, ed);
     
     char count_str[64];
     snprintf(count_str, sizeof(count_str), "%llu", (unsigned long long)count);
@@ -369,9 +369,9 @@ const BuiltinFunctionInfo* builtin_lookup(const char *name) {
 
 /* 调用内置函数 */
 int builtin_call(const BuiltinFunctionInfo *info, 
-                 const BigNum *args, 
+                 const BHS *args, 
                  int arg_count, 
-                 BigNum *result, 
+                 BHS *result, 
                  int precision) {
     if (!info || !result) return -1;
     

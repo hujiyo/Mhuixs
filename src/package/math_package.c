@@ -25,12 +25,12 @@
 #include <stdio.h>
 
 /* 辅助函数：将BigNum转换为double */
-static double bignum_to_double(const BigNum *num) {
+static double bignum_to_double(const BHS *num) {
     if (num == NULL) return 0.0;
     
     char *digits = BIGNUM_DIGITS(num);
     
-    /* BigNum 存储格式：digits 从低位到高位存储
+    /* BHS 存储格式：digits 从低位到高位存储
      * decimal_pos 表示小数位数
      * 例如：1.5707 存储为 digits=[7,0,7,5,1], decimal_pos=4
      *      - digits[0]=7 是小数部分最低位（0.0007）
@@ -60,12 +60,12 @@ static double bignum_to_double(const BigNum *num) {
 }
 
 /* 辅助函数：将double转换为BigNum（栈分配版本，用于临时计算） */
-static int double_to_bignum(double value, BigNum *num, int precision) {
+static int double_to_bignum(double value, BHS *num, int precision) {
     if (num == NULL) return -1;
     
     char buffer[512];
     snprintf(buffer, sizeof(buffer), "%.*f", precision, value);
-    BigNum *temp = bignum_from_string(buffer);
+    BHS *temp = bignum_from_string(buffer);
     if (temp == NULL) return -1;
     
     int ret = bignum_copy(temp, num);
@@ -75,45 +75,45 @@ static int double_to_bignum(double value, BigNum *num, int precision) {
 
 /* =========================== 三角函数 =========================== */
 
-static int math_sin(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_sin(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     return double_to_bignum(sin(x), result, precision);
 }
 
-static int math_cos(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_cos(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     return double_to_bignum(cos(x), result, precision);
 }
 
-static int math_tan(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_tan(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     return double_to_bignum(tan(x), result, precision);
 }
 
-static int math_asin(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_asin(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     if (x < -1.0 || x > 1.0) return -1;
     return double_to_bignum(asin(x), result, precision);
 }
 
-static int math_acos(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_acos(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     if (x < -1.0 || x > 1.0) return -1;
     return double_to_bignum(acos(x), result, precision);
 }
 
-static int math_atan(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_atan(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     return double_to_bignum(atan(x), result, precision);
 }
 
-static int math_atan2(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_atan2(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 2) return -1;
     double y = bignum_to_double(&args[0]);
     double x = bignum_to_double(&args[1]);
@@ -122,20 +122,20 @@ static int math_atan2(const BigNum *args, int arg_count, BigNum *result, int pre
 
 /* =========================== 指数对数函数 =========================== */
 
-static int math_exp(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_exp(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     return double_to_bignum(exp(x), result, precision);
 }
 
-static int math_ln(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_ln(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     if (x <= 0.0) return -1;
     return double_to_bignum(log(x), result, precision);
 }
 
-static int math_log(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_log(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count < 1 || arg_count > 2) return -1;
     
     double x = bignum_to_double(&args[0]);
@@ -150,14 +150,14 @@ static int math_log(const BigNum *args, int arg_count, BigNum *result, int preci
     }
 }
 
-static int math_log10(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_log10(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     if (x <= 0.0) return -1;
     return double_to_bignum(log10(x), result, precision);
 }
 
-static int math_log2(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_log2(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     if (x <= 0.0) return -1;
@@ -166,14 +166,14 @@ static int math_log2(const BigNum *args, int arg_count, BigNum *result, int prec
 
 /* =========================== 幂和根函数 =========================== */
 
-static int math_sqrt(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_sqrt(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     if (x < 0.0) return -1;
     return double_to_bignum(sqrt(x), result, precision);
 }
 
-static int math_cbrt(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_cbrt(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     return double_to_bignum(cbrt(x), result, precision);
@@ -181,25 +181,25 @@ static int math_cbrt(const BigNum *args, int arg_count, BigNum *result, int prec
 
 /* =========================== 取整函数 =========================== */
 
-static int math_floor(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_floor(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     return double_to_bignum(floor(x), result, precision);
 }
 
-static int math_ceil(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_ceil(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     return double_to_bignum(ceil(x), result, precision);
 }
 
-static int math_round(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_round(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     return double_to_bignum(round(x), result, precision);
 }
 
-static int math_trunc(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_trunc(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     double x = bignum_to_double(&args[0]);
     return double_to_bignum(trunc(x), result, precision);
@@ -207,14 +207,14 @@ static int math_trunc(const BigNum *args, int arg_count, BigNum *result, int pre
 
 /* =========================== 其他函数 =========================== */
 
-static int math_abs(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_abs(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     if (bignum_copy(&args[0], result) != 0) return -1;
     result->type_data.num.is_negative = 0;
     return 0;
 }
 
-static int math_sign(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_sign(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     
     bignum_init(result);
@@ -244,7 +244,7 @@ static int math_sign(const BigNum *args, int arg_count, BigNum *result, int prec
     return 0;
 }
 
-static int math_max(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_max(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count < 1) return -1;
     
     if (bignum_copy(&args[0], result) != 0) return -1;
@@ -261,7 +261,7 @@ static int math_max(const BigNum *args, int arg_count, BigNum *result, int preci
     return 0;
 }
 
-static int math_min(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int math_min(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count < 1) return -1;
     
     if (bignum_copy(&args[0], result) != 0) return -1;
@@ -324,7 +324,7 @@ int package_register_constants(void *ctx) {
     if (ctx == NULL) return -1;
     
     Context *context = (Context *)ctx;
-    BigNum value;
+    BHS value;
     
     /* π (pi) */
     bignum_init(&value);

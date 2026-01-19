@@ -6,8 +6,8 @@ Logex 现在支持 List 类型，基于 `lib/list.h` 库实现。List 类型提�
 
 ## 类型标识
 
-- **类型常量**: `BIGNUM_TYPE_LIST` (值为 3)
-- **类型检查**: 使用 `bignum_is_list(num)` 函数
+- **类型常量**: `BHS_TYPE_LIST` (值为 3)
+- **类型检查**: 使用 `bhs_is_list(num)` 函数
 
 ## 基础操作函数
 
@@ -88,15 +88,15 @@ List 类型基于 `lib/list.h` 中的 `LIST` 结构实现：
 如果需要在 C 代码中直接操作 List 类型：
 
 ```c
-#include "bignum.h"
+#include "bhs.h"
 
 // 创建空列表
-BigNum *list = bignum_create_list();
+BHS *list = bhs_create_list();
 
 // 类型检查
-if (bignum_is_list(list)) {
+if (bhs_is_list(list)) {
     // 获取底层 LIST 指针
-    struct LIST *list_ptr = bignum_get_list(list);
+    struct LIST *list_ptr = bhs_get_list(list);
     
     // 使用 lib/list.h 中的函数操作
     // list_lpush(list_ptr, element);
@@ -105,12 +105,12 @@ if (bignum_is_list(list)) {
 }
 
 // 释放内存
-bignum_destroy(list);
+bhs_destroy(list);
 ```
 
 ## 注意事项
 
-1. **内存管理**: List 中的元素是 BigNum 指针，会自动管理内存
+1. **内存管理**: List 中的元素是 BHS 指针，会自动管理内存
 2. **类型安全**: 所有函数都会检查参数类型
 3. **索引范围**: `lget()` 函数会检查索引边界
 4. **空列表操作**: 对空列表执行 `lpop()` 或 `rpop()` 会返回错误
@@ -125,7 +125,7 @@ cd package
 make libtype.so liblist.so
 
 # 在项目中使用
-gcc -DLOGEX_BUILD -I. -Ishare -Ilib your_code.c bignum.c lib/list.c -o your_program
+gcc -DLOGEX_BUILD -I. -Ishare -Ilib your_code.c bhs.c lib/list.c -o your_program
 ```
 
 ## 示例程序

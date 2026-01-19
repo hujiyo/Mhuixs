@@ -2,6 +2,8 @@
 
 Logex 是 Mhuixs 的原生操作语言。以下函数是内置的，**无需 import**，可直接使用。
 
+> **底层类型**：所有数据使用 BHS (Basic Handle Struct) 统一封装，支持 NUMBER、STRING、BITMAP、LIST 等类型。
+
 ---
 
 ## 📋 LIST 操作函数

@@ -80,9 +80,9 @@ FunctionInfo* function_lookup(FunctionRegistry *registry, const char *name) {
 
 /* 调用函数 */
 int function_call(FunctionInfo *info, 
-                 const BigNum *args, 
+                 const BHS *args, 
                  int arg_count, 
-                 BigNum *result, 
+                 BHS *result, 
                  int precision) {
     if (info == NULL || args == NULL || result == NULL) {
         return -1;

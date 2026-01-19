@@ -13,11 +13,11 @@ Email:hj18914255909@outlook.com
 // ============================================================================
 
 /**
- * 检查 BigNum 是否为 BITMAP 类型
- * @param bm BigNum 指针
+ * 检查 BHS 是否为 BITMAP 类型
+ * @param bm BHS 指针
  * @return 1 表示是 BITMAP 类型, 0 表示不是
  */
-int check_if_bitmap(const BigNum* bm) {
+int check_if_bitmap(const BHS* bm) {
     if (!bm) return 0;
     return (bm->type == BIGNUM_TYPE_BITMAP);
 }
@@ -30,7 +30,7 @@ int check_if_bitmap(const BigNum* bm) {
  * 获取 bitmap 数据指针
  * 直接返回数据区指针，不需要跳过 size_t
  */
-static inline uint8_t* get_bitmap_data(const BigNum* bm) {
+static inline uint8_t* get_bitmap_data(const BHS* bm) {
     if (!bm) return NULL;
     return (uint8_t*)(bm->is_large ? bm->data.large_data : bm->data.small_data);
 }
@@ -41,7 +41,7 @@ static inline uint8_t* get_bitmap_data(const BigNum* bm) {
  * @param new_bit_num 新的位数
  * @return 0 成功, -1 失败
  */
-static int bitmap_rexpand(BigNum* bm, uint64_t new_bit_num) {
+static int bitmap_rexpand(BHS* bm, uint64_t new_bit_num) {
     if (!check_if_bitmap(bm)) return merr;
     
     uint64_t old_bit_num = bm->length;
@@ -126,11 +126,11 @@ static int bitmap_rexpand(BigNum* bm, uint64_t new_bit_num) {
 /**
  * 创建空 bitmap
  */
-BigNum* bitmap_create(void) {
-    BigNum* bm = (BigNum*)malloc(sizeof(BigNum));
+BHS* bitmap_create(void) {
+    BHS* bm = (BHS*)malloc(sizeof(BHS));
     if (!bm) return NULL;
     
-    memset(bm, 0, sizeof(BigNum));
+    memset(bm, 0, sizeof(BHS));
     bm->type = BIGNUM_TYPE_BITMAP;
     bm->length = 0;         // 0位
     bm->capacity = BIGNUM_SMALL_SIZE;  // 使用 small_data
@@ -142,14 +142,14 @@ BigNum* bitmap_create(void) {
 /**
  * 创建指定大小的 bitmap
  */
-BigNum* bitmap_create_with_size(uint64_t bit_num) {
+BHS* bitmap_create_with_size(uint64_t bit_num) {
     /* 检查 bit_num 是否超过 SIZE_MAX - 1 */
     if (bit_num > SIZE_MAX - 1) return NULL;
     
-    BigNum* bm = (BigNum*)malloc(sizeof(BigNum));
+    BHS* bm = (BHS*)malloc(sizeof(BHS));
     if (!bm) return NULL;
     
-    memset(bm, 0, sizeof(BigNum));
+    memset(bm, 0, sizeof(BHS));
     bm->type = BIGNUM_TYPE_BITMAP;
     bm->length = (size_t)bit_num;   // 位数
     
@@ -182,11 +182,11 @@ BigNum* bitmap_create_with_size(uint64_t bit_num) {
 /**
  * 从字符串创建 bitmap（字符串格式："010101"）
  */
-BigNum* bitmap_create_from_string(const char* s) {
+BHS* bitmap_create_from_string(const char* s) {
     if (!s) return NULL;
     
     uint64_t len = strlen(s);
-    BigNum* bm = bitmap_create_with_size(len);
+    BHS* bm = bitmap_create_with_size(len);
     if (!bm) return NULL;
     
     // 设置位
@@ -202,14 +202,14 @@ BigNum* bitmap_create_from_string(const char* s) {
 /**
  * 拷贝构造
  */
-BigNum* bitmap_create_copy(const BigNum* other) {
+BHS* bitmap_create_copy(const BHS* other) {
     if (!check_if_bitmap(other)) return NULL;
     
-    BigNum* bm = (BigNum*)malloc(sizeof(BigNum));
+    BHS* bm = (BHS*)malloc(sizeof(BHS));
     if (!bm) return NULL;
     
     // 复制基本信息
-    memcpy(bm, other, sizeof(BigNum));
+    memcpy(bm, other, sizeof(BHS));
     
     // 处理数据复制
     if (other->is_large) {
@@ -232,10 +232,10 @@ BigNum* bitmap_create_copy(const BigNum* other) {
 /**
  * 从数据流创建 bitmap
  */
-BigNum* bitmap_create_from_data(char* s, uint64_t len, uint8_t zerochar) {
+BHS* bitmap_create_from_data(char* s, uint64_t len, uint8_t zerochar) {
     if (!s) return NULL;
     
-    BigNum* bm = bitmap_create_with_size(len);
+    BHS* bm = bitmap_create_with_size(len);
     if (!bm) return NULL;
     
     uint8_t* data = get_bitmap_data(bm);
@@ -251,7 +251,7 @@ BigNum* bitmap_create_from_data(char* s, uint64_t len, uint8_t zerochar) {
 /**
  * 销毁 bitmap
  */
-void free_bitmap(BigNum* bm) {
+void free_bitmap(BHS* bm) {
     if (!bm) return;
     
     if (check_if_bitmap(bm) && bm->is_large && bm->data.large_data) {
@@ -267,7 +267,7 @@ void free_bitmap(BigNum* bm) {
 /**
  * 从字符串赋值
  */
-int bitmap_assign_string(BigNum* bm, char* s) {
+int bitmap_assign_string(BHS* bm, char* s) {
     if (!check_if_bitmap(bm) || !s) return merr;
     
     uint64_t len = strlen(s);
@@ -312,7 +312,7 @@ int bitmap_assign_string(BigNum* bm, char* s) {
 /**
  * 从另一个 bitmap 赋值
  */
-int bitmap_assign_bitmap(BigNum* bm, const BigNum* other) {
+int bitmap_assign_bitmap(BHS* bm, const BHS* other) {
     if (!check_if_bitmap(bm) || !check_if_bitmap(other)) return merr;
     if (bm == other) return 0; // 自赋值保护
     
@@ -352,7 +352,7 @@ int bitmap_assign_bitmap(BigNum* bm, const BigNum* other) {
 /**
  * 追加另一个 bitmap
  */
-int bitmap_append(BigNum* bm, BigNum* other) {
+int bitmap_append(BHS* bm, BHS* other) {
     if (!check_if_bitmap(bm) || !check_if_bitmap(other)) {
         #ifdef bitmap_debug
         perror("BITMAP failed! other bitmap is NULL or invalid type!");
@@ -431,7 +431,7 @@ int bitmap_append(BigNum* bm, BigNum* other) {
 /**
  * 获取某个位的值
  */
-int bitmap_get(const BigNum* bm, uint64_t offset) {
+int bitmap_get(const BHS* bm, uint64_t offset) {
     if (!check_if_bitmap(bm)) return merr;
     if (offset >= bm->length) return merr;
     
@@ -442,7 +442,7 @@ int bitmap_get(const BigNum* bm, uint64_t offset) {
 /**
  * 设置单个位
  */
-int bitmap_set(BigNum* bm, uint64_t offset, uint8_t value) {
+int bitmap_set(BHS* bm, uint64_t offset, uint8_t value) {
     if (!check_if_bitmap(bm)) return merr;
     
     if (offset >= bm->length && bitmap_rexpand(bm, offset + 1) == merr) {
@@ -461,7 +461,7 @@ int bitmap_set(BigNum* bm, uint64_t offset, uint8_t value) {
 /**
  * 设置一段位
  */
-int bitmap_set_range(BigNum* bm, uint64_t offset, uint64_t len, uint8_t value) {
+int bitmap_set_range(BHS* bm, uint64_t offset, uint64_t len, uint8_t value) {
     if (!check_if_bitmap(bm)) return merr;
     if (!len) return 0;
     
@@ -503,7 +503,7 @@ int bitmap_set_range(BigNum* bm, uint64_t offset, uint64_t len, uint8_t value) {
 /**
  * 从数据流设置位
  */
-int bitmap_set_from_stream(BigNum* bm, uint64_t offset, uint64_t len, 
+int bitmap_set_from_stream(BHS* bm, uint64_t offset, uint64_t len, 
                           const char* data_stream, char zero_value) {
     if (!check_if_bitmap(bm) || !data_stream || !len) return merr;
     
@@ -529,7 +529,7 @@ int bitmap_set_from_stream(BigNum* bm, uint64_t offset, uint64_t len,
 /**
  * 获取 bitmap 大小
  */
-uint64_t bitmap_size(const BigNum* bm) {
+uint64_t bitmap_size(const BHS* bm) {
     if (!check_if_bitmap(bm)) return 0;
     return bm->length;
 }
@@ -537,7 +537,7 @@ uint64_t bitmap_size(const BigNum* bm) {
 /**
  * 统计指定范围内1的个数
  */
-uint64_t bitmap_count(const BigNum* bm, uint64_t st_offset, uint64_t ed_offset) {
+uint64_t bitmap_count(const BHS* bm, uint64_t st_offset, uint64_t ed_offset) {
     if (!check_if_bitmap(bm)) return merr;
     if (st_offset > ed_offset || ed_offset >= bm->length || st_offset >= bm->length) {
         return merr;
@@ -554,7 +554,7 @@ uint64_t bitmap_count(const BigNum* bm, uint64_t st_offset, uint64_t ed_offset) 
 /**
  * 查找指定值的位
  */
-int64_t bitmap_find(const BigNum* bm, uint8_t value, uint64_t start, uint64_t end) {
+int64_t bitmap_find(const BHS* bm, uint8_t value, uint64_t start, uint64_t end) {
     if (!check_if_bitmap(bm)) return merr;
     if (start > end || end >= bm->length) {
         return merr;
@@ -662,7 +662,7 @@ int64_t bitmap_find(const BigNum* bm, uint8_t value, uint64_t start, uint64_t en
 /**
  * 检查错误状态并尝试修正
  */
-int bitmap_iserr(BigNum* bm) {
+int bitmap_iserr(BHS* bm) {
     if (!check_if_bitmap(bm)) return merr;
     
     uint64_t byte_num = (bm->length + 7) / 8;
@@ -687,7 +687,7 @@ int bitmap_iserr(BigNum* bm) {
 /**
  * 打印位图
  */
-void bitmap_print(const BigNum* bm) {
+void bitmap_print(const BHS* bm) {
     if (!check_if_bitmap(bm)) {
         #ifdef bitmap_debug
         printf("BITMAP is in invalid state!\n");
@@ -709,13 +709,13 @@ void bitmap_print(const BigNum* bm) {
 /**
  * 按位与
  */
-BigNum* bitmap_bitand(const BigNum* a, const BigNum* b) {
+BHS* bitmap_bitand(const BHS* a, const BHS* b) {
     if (!check_if_bitmap(a) || !check_if_bitmap(b)) return NULL;
     
     /* 结果长度取较小值 */
     uint64_t result_len = (a->length < b->length) ? a->length : b->length;
     
-    BigNum* result = bitmap_create_with_size(result_len);
+    BHS* result = bitmap_create_with_size(result_len);
     if (!result) return NULL;
     
     uint8_t* a_data = get_bitmap_data(a);
@@ -733,13 +733,13 @@ BigNum* bitmap_bitand(const BigNum* a, const BigNum* b) {
 /**
  * 按位或
  */
-BigNum* bitmap_bitor(const BigNum* a, const BigNum* b) {
+BHS* bitmap_bitor(const BHS* a, const BHS* b) {
     if (!check_if_bitmap(a) || !check_if_bitmap(b)) return NULL;
     
     /* 结果长度取较大值 */
     uint64_t result_len = (a->length > b->length) ? a->length : b->length;
     
-    BigNum* result = bitmap_create_with_size(result_len);
+    BHS* result = bitmap_create_with_size(result_len);
     if (!result) return NULL;
     
     uint8_t* a_data = get_bitmap_data(a);
@@ -762,13 +762,13 @@ BigNum* bitmap_bitor(const BigNum* a, const BigNum* b) {
 /**
  * 按位异或
  */
-BigNum* bitmap_bitxor(const BigNum* a, const BigNum* b) {
+BHS* bitmap_bitxor(const BHS* a, const BHS* b) {
     if (!check_if_bitmap(a) || !check_if_bitmap(b)) return NULL;
     
     /* 结果长度取较大值 */
     uint64_t result_len = (a->length > b->length) ? a->length : b->length;
     
-    BigNum* result = bitmap_create_with_size(result_len);
+    BHS* result = bitmap_create_with_size(result_len);
     if (!result) return NULL;
     
     uint8_t* a_data = get_bitmap_data(a);
@@ -791,10 +791,10 @@ BigNum* bitmap_bitxor(const BigNum* a, const BigNum* b) {
 /**
  * 按位非
  */
-BigNum* bitmap_bitnot(const BigNum* a) {
+BHS* bitmap_bitnot(const BHS* a) {
     if (!check_if_bitmap(a)) return NULL;
     
-    BigNum* result = bitmap_create_copy(a);
+    BHS* result = bitmap_create_copy(a);
     if (!result) return NULL;
     
     uint8_t* result_data = get_bitmap_data(result);
@@ -816,7 +816,7 @@ BigNum* bitmap_bitnot(const BigNum* a) {
 /**
  * 左移
  */
-BigNum* bitmap_bitshl(const BigNum* a, uint64_t shift) {
+BHS* bitmap_bitshl(const BHS* a, uint64_t shift) {
     if (!check_if_bitmap(a)) return NULL;
     if (shift == 0) return bitmap_create_copy(a);
     
@@ -824,7 +824,7 @@ BigNum* bitmap_bitshl(const BigNum* a, uint64_t shift) {
     if (shift > SIZE_MAX - 1 - a->length) return NULL;
     
     uint64_t result_len = a->length + shift;
-    BigNum* result = bitmap_create_with_size(result_len);
+    BHS* result = bitmap_create_with_size(result_len);
     if (!result) return NULL;
     
     uint8_t* a_data = get_bitmap_data(a);
@@ -844,13 +844,13 @@ BigNum* bitmap_bitshl(const BigNum* a, uint64_t shift) {
 /**
  * 右移
  */
-BigNum* bitmap_bitshr(const BigNum* a, uint64_t shift) {
+BHS* bitmap_bitshr(const BHS* a, uint64_t shift) {
     if (!check_if_bitmap(a)) return NULL;
     if (shift >= a->length) return bitmap_create_from_string("0");
     if (shift == 0) return bitmap_create_copy(a);
     
     uint64_t result_len = a->length - shift;
-    BigNum* result = bitmap_create_with_size(result_len);
+    BHS* result = bitmap_create_with_size(result_len);
     if (!result) return NULL;
     
     uint8_t* a_data = get_bitmap_data(a);

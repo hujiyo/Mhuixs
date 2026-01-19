@@ -88,13 +88,13 @@ Logex 现在支持**包加载机制**。你只需将编译好的包（`.so` 动�
 #include "../bignum.h"
 
 /* 你的函数实现 */
-static int my_func(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int my_func(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     
     // 实现你的逻辑
-    BigNum two;
-    bignum_from_string("2", &two);
-    return bignum_mul(&args[0], &two, result);
+    BHS two;
+    bhs_from_string("2", &two);
+    return bhs_mul(&args[0], &two, result);
 }
 
 /* 包注册函数（必需） */
@@ -138,14 +138,14 @@ expr > myfunc(10)
 ### 函数类型定义
 
 ```c
-typedef int (*NativeFunction)(const BigNum *args, int arg_count, BigNum *result, int precision);
+typedef int (*NativeFunction)(const BHS *args, int arg_count, BHS *result, int precision);
 ```
 
 ### 参数说明
 
-- `args`: 参数数组（BigNum 类型）
+- `args`: 参数数组（BHS 类型）
 - `arg_count`: 参数数量
-- `result`: 结果输出（BigNum 类型）
+- `result`: 结果输出（BHS 类型）
 - `precision`: 精度（小数位数）
 
 ### 返回值
@@ -157,12 +157,12 @@ typedef int (*NativeFunction)(const BigNum *args, int arg_count, BigNum *result,
 
 ```c
 /* 计算平方：square(x) = x * x */
-static int my_square(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int my_square(const BHS *args, int arg_count, BHS *result, int precision) {
     /* 检查参数数量 */
     if (arg_count != 1) return -1;
     
     /* 计算 x * x */
-    return bignum_mul(&args[0], &args[0], result);
+    return bhs_mul(&args[0], &args[0], result);
 }
 ```
 
@@ -172,14 +172,14 @@ static int my_square(const BigNum *args, int arg_count, BigNum *result, int prec
 
 ```c
 /* max(a, b, c, ...) - 返回最大值 */
-static int my_max(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int my_max(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count < 1) return -1;
     
     *result = args[0];
     
     for (int i = 1; i < arg_count; i++) {
-        double current = bignum_to_double(result);
-        double next = bignum_to_double(&args[i]);
+        double current = bhs_to_double(result);
+        double next = bhs_to_double(&args[i]);
         if (next > current) {
             *result = args[i];
         }
@@ -200,10 +200,10 @@ int package_register_constants(void *ctx) {
     if (ctx == NULL) return -1;
     
     Context *context = (Context *)ctx;
-    BigNum value;
+    BHS value;
     
     /* 注册圆周率 π */
-    double_to_bignum(3.141592653589793, &value, BIGNUM_DEFAULT_PRECISION);
+    double_to_bignum(3.141592653589793, &value, BHS_DEFAULT_PRECISION);
     context_set(context, "pi", &value);
     
     return 0;
@@ -215,8 +215,8 @@ int package_register_constants(void *ctx) {
 ```c
 #include <math.h>
 
-/* 辅助函数：BigNum 转 double */
-static double bignum_to_double(const BigNum *num) {
+/* 辅助函数：BHS 转 double */
+static double bhs_to_double(const BHS *num) {
     if (num == NULL) return 0.0;
     
     double result = 0.0;
@@ -237,19 +237,19 @@ static double bignum_to_double(const BigNum *num) {
     return num->is_negative ? -result : result;
 }
 
-/* 辅助函数：double 转 BigNum */
-static int double_to_bignum(double value, BigNum *num, int precision) {
+/* 辅助函数：double 转 BHS */
+static int double_to_bignum(double value, BHS *num, int precision) {
     if (num == NULL) return -1;
     
     char buffer[512];
     snprintf(buffer, sizeof(buffer), "%.*f", precision, value);
-    return bignum_from_string(buffer, num);
+    return bhs_from_string(buffer, num);
 }
 
 /* 正弦函数 */
-static int my_sin(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int my_sin(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
-    double x = bignum_to_double(&args[0]);
+    double x = bhs_to_double(&args[0]);
     return double_to_bignum(sin(x), result, precision);
 }
 ```
@@ -258,10 +258,10 @@ static int my_sin(const BigNum *args, int arg_count, BigNum *result, int precisi
 
 ```c
 /* 平方根函数（带定义域检查） */
-static int my_sqrt(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int my_sqrt(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     
-    double x = bignum_to_double(&args[0]);
+    double x = bhs_to_double(&args[0]);
     
     /* 检查定义域 */
     if (x < 0.0) {
@@ -272,41 +272,41 @@ static int my_sqrt(const BigNum *args, int arg_count, BigNum *result, int precis
 }
 ```
 
-## 🛠️ BigNum API 参考
+## 🛠️ BHS API 参考
 
 ### 基本操作
 
 ```c
 /* 初始化 */
-void bignum_init(BigNum *num);
+void bhs_init(BHS *num);
 
 /* 从字符串创建 */
-int bignum_from_string(const char *str, BigNum *num);
+int bhs_from_string(const char *str, BHS *num);
 
 /* 转换为字符串 */
-int bignum_to_string(const BigNum *num, char *str, size_t max_len, int precision);
+int bhs_to_string(const BHS *num, char *str, size_t max_len, int precision);
 ```
 
 ### 算术运算
 
 ```c
 /* 加法：result = a + b */
-int bignum_add(const BigNum *a, const BigNum *b, BigNum *result);
+int bhs_add(const BHS *a, const BHS *b, BHS *result);
 
 /* 减法：result = a - b */
-int bignum_sub(const BigNum *a, const BigNum *b, BigNum *result);
+int bhs_sub(const BHS *a, const BHS *b, BHS *result);
 
 /* 乘法：result = a * b */
-int bignum_mul(const BigNum *a, const BigNum *b, BigNum *result);
+int bhs_mul(const BHS *a, const BHS *b, BHS *result);
 
 /* 除法：result = a / b */
-int bignum_div(const BigNum *a, const BigNum *b, BigNum *result, int precision);
+int bhs_div(const BHS *a, const BHS *b, BHS *result, int precision);
 
 /* 取模：result = a % b */
-int bignum_mod(const BigNum *a, const BigNum *b, BigNum *result);
+int bhs_mod(const BHS *a, const BHS *b, BHS *result);
 
 /* 幂运算：result = base ^ exp */
-int bignum_pow(const BigNum *base, const BigNum *exp, BigNum *result, int precision);
+int bhs_pow(const BHS *base, const BHS *exp, BHS *result, int precision);
 ```
 
 ## 🎓 完整示例：统计包
@@ -319,41 +319,41 @@ int bignum_pow(const BigNum *base, const BigNum *exp, BigNum *result, int precis
 #include <math.h>
 
 /* 辅助函数 */
-static double bignum_to_double(const BigNum *num) {
+static double bhs_to_double(const BHS *num) {
     /* ... 实现见上文 ... */
 }
 
-static int double_to_bignum(double value, BigNum *num, int precision) {
+static int double_to_bignum(double value, BHS *num, int precision) {
     /* ... 实现见上文 ... */
 }
 
 /* 平均值：avg(a, b, c, ...) */
-static int stats_avg(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int stats_avg(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count < 1) return -1;
     
     double sum = 0.0;
     for (int i = 0; i < arg_count; i++) {
-        sum += bignum_to_double(&args[i]);
+        sum += bhs_to_double(&args[i]);
     }
     
     return double_to_bignum(sum / arg_count, result, precision);
 }
 
 /* 标准差：std(a, b, c, ...) */
-static int stats_std(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int stats_std(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count < 2) return -1;
     
     /* 计算平均值 */
     double sum = 0.0;
     for (int i = 0; i < arg_count; i++) {
-        sum += bignum_to_double(&args[i]);
+        sum += bhs_to_double(&args[i]);
     }
     double mean = sum / arg_count;
     
     /* 计算方差 */
     double variance = 0.0;
     for (int i = 0; i < arg_count; i++) {
-        double diff = bignum_to_double(&args[i]) - mean;
+        double diff = bhs_to_double(&args[i]) - mean;
         variance += diff * diff;
     }
     variance /= arg_count;
@@ -434,7 +434,7 @@ ldd package/libmypackage.so
 
 2. **函数签名**：必须严格遵循 `NativeFunction` 类型定义
 
-3. **内存管理**：BigNum 结构体由计算器管理，包函数不需要释放
+3. **内存管理**：BHS 结构体由计算器管理，包函数不需要释放
 
 4. **线程安全**：当前版本不支持多线程，包函数无需考虑线程安全
 
@@ -455,7 +455,7 @@ ldd package/libmypackage.so
 #include "../bignum.h"
 
 /* 你的函数实现 */
-static int my_func(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int my_func(const BHS *args, int arg_count, BHS *result, int precision) {
     // TODO: 实现你的函数
     return 0;
 }

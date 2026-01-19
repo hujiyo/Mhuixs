@@ -59,7 +59,7 @@
  * @param precision 精度（-1 表示使用默认精度）
  * @return 0 成功, -1 错误, -2 除零错误
  */
-int eval_expression(const char *expr, BigNum *result, void *ctx, int precision);
+int eval_expression(const char *expr, BHS *result, void *ctx, int precision);
 
 /**
  * 求值并转换为字符串
@@ -93,7 +93,7 @@ int eval_statement(const char *stmt, char *result_str, size_t max_len, void *ctx
  * @param num 大数
  * @return 1 为真, 0 为假
  */
-int bignum_is_true(const BigNum *num);
+int bignum_is_true(const BHS *num);
 
 /**
  * 将大数转换为布尔值（0或1）
@@ -102,7 +102,7 @@ int bignum_is_true(const BigNum *num);
  * @param result 输出布尔值（0或1）
  * @return 0 成功
  */
-int bignum_to_bool(const BigNum *num, BigNum *result);
+int bignum_to_bool(const BHS *num, BHS *result);
 
 #endif /* EVALUATOR_H */
 

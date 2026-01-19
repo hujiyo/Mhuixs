@@ -280,13 +280,13 @@ expr > min(data1, data2, data3)
 #include "bignum.h"
 
 /* 示例函数：double(x) = x * 2 */
-static int my_double(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int my_double(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     
-    BigNum two;
-    bignum_from_string("2", &two);
+    BHS two;
+    bhs_from_string("2", &two);
     
-    return bignum_mul(&args[0], &two, result);
+    return bhs_mul(&args[0], &two, result);
 }
 
 /* 注册所有函数 */

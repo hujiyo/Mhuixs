@@ -73,7 +73,7 @@ int main(int argc, char *argv[]) {
     }
     
     /* 输出结果 */
-    BigNum *result = vm_get_result(vm);
+    BHS *result = vm_get_result(vm);
     if (result) {
         char result_str[1024];
         bignum_to_string(result, result_str, sizeof(result_str), 10);

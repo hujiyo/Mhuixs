@@ -221,7 +221,7 @@ int interpreter_execute(Interpreter *interp, const char *source, const char *fil
         }
         
         /* 4. 获取结果 */
-        BigNum *vm_result = vm_get_result(vm);
+        BHS *vm_result = vm_get_result(vm);
         if (vm_result) {
             result->type = RESULT_VALUE;
             bignum_to_string(vm_result, result->value, sizeof(result->value), interp->precision);
@@ -372,7 +372,7 @@ int interpreter_import_package(Interpreter *interp, const char *package_name) {
 int interpreter_get_variable(const Interpreter *interp, const char *name, char *value, size_t max_len) {
     if (!interp || !name || !value || max_len == 0) return -1;
     
-    BigNum var_value;
+    BHS var_value;
     bignum_init(&var_value);
     
     if (context_get(interp->context, name, &var_value) != 0) {
@@ -391,10 +391,10 @@ int interpreter_set_variable(Interpreter *interp, const char *name, const char *
     if (!interp || !name || !value) return -1;
     
     /* 解析值 */
-    BigNum var_value;
+    BHS var_value;
     bignum_init(&var_value);
     
-    BigNum *parsed = bignum_from_string(value);
+    BHS *parsed = bignum_from_string(value);
     if (!parsed) {
         bignum_free(&var_value);
         return -1;

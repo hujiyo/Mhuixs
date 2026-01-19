@@ -8,7 +8,7 @@
 #include <stdio.h>
 
 /* 前向声明 */
-static int bignum_compare_local(const BigNum *a, const BigNum *b);
+static int bignum_compare_local(const BHS *a, const BHS *b);
 
 /* 辅助函数：复制字符串 */
 static char* ast_strdup(const char *str) {
@@ -257,7 +257,7 @@ int ast_execute(ASTNode *node, void *ctx, void *func_registry, void *pkg_manager
         
         case AST_IF: {
             /* 计算条件 */
-            BigNum condition_result;
+            BHS condition_result;
             bignum_init(&condition_result);
             int ret = eval_expression(node->data.if_stmt.condition, &condition_result, ctx, precision);
             
@@ -282,7 +282,7 @@ int ast_execute(ASTNode *node, void *ctx, void *func_registry, void *pkg_manager
         
         case AST_FOR: {
             /* 计算起始值、结束值和步长 */
-            BigNum start_val, end_val, step_val;
+            BHS start_val, end_val, step_val;
             bignum_init(&start_val);
             bignum_init(&end_val);
             bignum_init(&step_val);
@@ -313,7 +313,7 @@ int ast_execute(ASTNode *node, void *ctx, void *func_registry, void *pkg_manager
                     return ret;
                 }
             } else {
-                BigNum *one = bignum_from_string("1");
+                BHS *one = bignum_from_string("1");
                 if (!one) {
                     bignum_free(&start_val);
                     bignum_free(&end_val);
@@ -325,7 +325,7 @@ int ast_execute(ASTNode *node, void *ctx, void *func_registry, void *pkg_manager
             }
             
             /* 执行循环 */
-            BigNum current;
+            BHS current;
             bignum_init(&current);
             bignum_copy(&start_val, &current);
             
@@ -349,7 +349,7 @@ int ast_execute(ASTNode *node, void *ctx, void *func_registry, void *pkg_manager
                 }
                 
                 /* 增加步长 */
-                BigNum *next = bignum_add(&current, &step_val);
+                BHS *next = bignum_add(&current, &step_val);
                 if (!next) {
                     ret = EVAL_ERROR;
                     break;
@@ -377,7 +377,7 @@ int ast_execute(ASTNode *node, void *ctx, void *func_registry, void *pkg_manager
             
             while (1) {
                 /* 计算条件 */
-                BigNum condition_result;
+                BHS condition_result;
                 bignum_init(&condition_result);
                 int ret = eval_expression(node->data.while_stmt.condition, &condition_result, ctx, precision);
                 
@@ -414,7 +414,7 @@ int ast_execute(ASTNode *node, void *ctx, void *func_registry, void *pkg_manager
                 }
                 
                 /* 计算条件 */
-                BigNum condition_result;
+                BHS condition_result;
                 bignum_init(&condition_result);
                 ret = eval_expression(node->data.do_while_stmt.condition, &condition_result, ctx, precision);
                 
@@ -463,7 +463,7 @@ int ast_execute(ASTNode *node, void *ctx, void *func_registry, void *pkg_manager
 }
 
 /* 辅助函数：比较两个大数（需要在这里实现，因为evaluator.c中的是静态函数） */
-static int bignum_compare_local(const BigNum *a, const BigNum *b) {
+static int bignum_compare_local(const BHS *a, const BHS *b) {
     if (a == NULL || b == NULL) return 0;
     
     /* 处理符号 */

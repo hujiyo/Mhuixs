@@ -57,7 +57,7 @@ static int find_variable(const Context *ctx, const char *name) {
 }
 
 /* 设置变量值 */
-int context_set(Context *ctx, const char *name, const BigNum *value) {
+int context_set(Context *ctx, const char *name, const BHS *value) {
     if (ctx == NULL || name == NULL || value == NULL) return -1;
     
     /* 验证变量名 */
@@ -118,7 +118,7 @@ int context_set(Context *ctx, const char *name, const BigNum *value) {
 }
 
 /* 获取变量值 */
-int context_get(const Context *ctx, const char *name, BigNum *value) {
+int context_get(const Context *ctx, const char *name, BHS *value) {
     if (ctx == NULL || name == NULL || value == NULL || ctx->vars == NULL) return -1;
     
     int idx = find_variable(ctx, name);

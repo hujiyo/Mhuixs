@@ -70,7 +70,7 @@ static void vm_error(VM *vm, const char *msg) {
 }
 
 /* 栈操作 */
-static void vm_push(VM *vm, BigNum *value) {
+static void vm_push(VM *vm, BHS *value) {
     if (vm->sp >= VM_STACK_SIZE) {
         vm_error(vm, "Stack overflow");
         return;
@@ -78,7 +78,7 @@ static void vm_push(VM *vm, BigNum *value) {
     bignum_copy(value, &vm->stack[vm->sp++]);
 }
 
-static BigNum* vm_pop(VM *vm) {
+static BHS* vm_pop(VM *vm) {
     if (vm->sp <= 0) {
         vm_error(vm, "Stack underflow");
         return NULL;
@@ -86,7 +86,7 @@ static BigNum* vm_pop(VM *vm) {
     return &vm->stack[--vm->sp];
 }
 
-static BigNum* vm_peek(VM *vm) {
+static BHS* vm_peek(VM *vm) {
     if (vm->sp <= 0) {
         vm_error(vm, "Stack empty");
         return NULL;
@@ -139,9 +139,9 @@ int vm_step(VM *vm) {
         case OP_PUSH_NUM: {
             /* 从常量池加载数字 */
             Constant *c = &vm->program->const_pool[inst->operand.u32];
-            BigNum num;
+            BHS num;
             bignum_init(&num);
-            BigNum *parsed = bignum_from_string(c->value.num.digits);
+            BHS *parsed = bignum_from_string(c->value.num.digits);
             if (parsed) {
                 bignum_copy(parsed, &num);
                 bignum_destroy(parsed);
@@ -154,9 +154,9 @@ int vm_step(VM *vm) {
         case OP_PUSH_STR: {
             /* 从常量池加载字符串 */
             Constant *c = &vm->program->const_pool[inst->operand.u32];
-            BigNum str;
+            BHS str;
             bignum_init(&str);
-            BigNum *parsed = bignum_from_raw_string(c->value.str);
+            BHS *parsed = bignum_from_raw_string(c->value.str);
             if (parsed) {
                 bignum_copy(parsed, &str);
                 bignum_destroy(parsed);
@@ -172,10 +172,10 @@ int vm_step(VM *vm) {
         }
         
         case OP_ADD: {
-            BigNum *b = vm_pop(vm);
-            BigNum *a = vm_pop(vm);
+            BHS *b = vm_pop(vm);
+            BHS *a = vm_pop(vm);
             if (a && b) {
-                BigNum result;
+                BHS result;
                 bignum_init(&result);
                 bignum_add(a, b, &result, 10);
                 vm_push(vm, &result);
@@ -185,10 +185,10 @@ int vm_step(VM *vm) {
         }
         
         case OP_SUB: {
-            BigNum *b = vm_pop(vm);
-            BigNum *a = vm_pop(vm);
+            BHS *b = vm_pop(vm);
+            BHS *a = vm_pop(vm);
             if (a && b) {
-                BigNum result;
+                BHS result;
                 bignum_init(&result);
                 bignum_subtract(a, b, &result, 10);
                 vm_push(vm, &result);
@@ -198,10 +198,10 @@ int vm_step(VM *vm) {
         }
         
         case OP_MUL: {
-            BigNum *b = vm_pop(vm);
-            BigNum *a = vm_pop(vm);
+            BHS *b = vm_pop(vm);
+            BHS *a = vm_pop(vm);
             if (a && b) {
-                BigNum result;
+                BHS result;
                 bignum_init(&result);
                 bignum_multiply(a, b, &result, 10);
                 vm_push(vm, &result);
@@ -211,10 +211,10 @@ int vm_step(VM *vm) {
         }
         
         case OP_DIV: {
-            BigNum *b = vm_pop(vm);
-            BigNum *a = vm_pop(vm);
+            BHS *b = vm_pop(vm);
+            BHS *a = vm_pop(vm);
             if (a && b) {
-                BigNum result;
+                BHS result;
                 bignum_init(&result);
                 if (bignum_divide(a, b, &result, 10) != 0) {
                     vm_error(vm, "Division by zero");
@@ -228,7 +228,7 @@ int vm_step(VM *vm) {
         case OP_STORE_VAR: {
             /* 存储变量 */
             Constant *c = &vm->program->const_pool[inst->operand.u32];
-            BigNum *value = vm_peek(vm);
+            BHS *value = vm_peek(vm);
             if (value) {
                 context_set(vm->context, c->value.str, value);
             }
@@ -238,7 +238,7 @@ int vm_step(VM *vm) {
         case OP_LOAD_VAR: {
             /* 加载变量 */
             Constant *c = &vm->program->const_pool[inst->operand.u32];
-            BigNum *value = context_get(vm->context, c->value.str);
+            BHS *value = context_get(vm->context, c->value.str);
             if (value) {
                 vm_push(vm, value);
             } else {
@@ -253,7 +253,7 @@ int vm_step(VM *vm) {
         }
         
         case OP_JMP_IF_FALSE: {
-            BigNum *cond = vm_pop(vm);
+            BHS *cond = vm_pop(vm);
             if (cond && !bignum_is_true(cond)) {
                 vm->pc = inst->operand.u32;
             }
@@ -261,7 +261,7 @@ int vm_step(VM *vm) {
         }
         
         case OP_CALL_LIST: {
-            BigNum result;
+            BHS result;
             bignum_init(&result);
             const BuiltinFunctionInfo *func = builtin_lookup("list");
             if (func) {
@@ -273,16 +273,16 @@ int vm_step(VM *vm) {
         }
         
         case OP_CALL_LPUSH: {
-            BigNum *value = vm_pop(vm);
-            BigNum *list = vm_pop(vm);
+            BHS *value = vm_pop(vm);
+            BHS *list = vm_pop(vm);
             if (list && value) {
-                BigNum args[2];
+                BHS args[2];
                 bignum_init(&args[0]);
                 bignum_init(&args[1]);
                 bignum_copy(list, &args[0]);
                 bignum_copy(value, &args[1]);
                 
-                BigNum result;
+                BHS result;
                 bignum_init(&result);
                 const BuiltinFunctionInfo *func = builtin_lookup("lpush");
                 if (func) {
@@ -297,16 +297,16 @@ int vm_step(VM *vm) {
         }
         
         case OP_CALL_RPUSH: {
-            BigNum *value = vm_pop(vm);
-            BigNum *list = vm_pop(vm);
+            BHS *value = vm_pop(vm);
+            BHS *list = vm_pop(vm);
             if (list && value) {
-                BigNum args[2];
+                BHS args[2];
                 bignum_init(&args[0]);
                 bignum_init(&args[1]);
                 bignum_copy(list, &args[0]);
                 bignum_copy(value, &args[1]);
                 
-                BigNum result;
+                BHS result;
                 bignum_init(&result);
                 const BuiltinFunctionInfo *func = builtin_lookup("rpush");
                 if (func) {
@@ -321,9 +321,9 @@ int vm_step(VM *vm) {
         }
         
         case OP_CALL_LLEN: {
-            BigNum *list = vm_pop(vm);
+            BHS *list = vm_pop(vm);
             if (list) {
-                BigNum result;
+                BHS result;
                 bignum_init(&result);
                 const BuiltinFunctionInfo *func = builtin_lookup("llen");
                 if (func) {
@@ -336,9 +336,9 @@ int vm_step(VM *vm) {
         }
         
         case OP_CALL_NUM: {
-            BigNum *arg = vm_pop(vm);
+            BHS *arg = vm_pop(vm);
             if (arg) {
-                BigNum result;
+                BHS result;
                 bignum_init(&result);
                 const BuiltinFunctionInfo *func = builtin_lookup("num");
                 if (func) {
@@ -351,9 +351,9 @@ int vm_step(VM *vm) {
         }
         
         case OP_CALL_STR: {
-            BigNum *arg = vm_pop(vm);
+            BHS *arg = vm_pop(vm);
             if (arg) {
-                BigNum result;
+                BHS result;
                 bignum_init(&result);
                 const BuiltinFunctionInfo *func = builtin_lookup("str");
                 if (func) {
@@ -391,7 +391,7 @@ int vm_run(VM *vm) {
 }
 
 /* 获取结果 */
-BigNum* vm_get_result(VM *vm) {
+BHS* vm_get_result(VM *vm) {
     if (!vm || vm->sp <= 0) return NULL;
     return &vm->stack[vm->sp - 1];
 }

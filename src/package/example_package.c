@@ -23,27 +23,27 @@
 #include <string.h>
 
 /* 示例函数1: double(x) = x * 2 */
-static int example_double(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int example_double(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     
-    BigNum two;
+    BHS two;
     bignum_from_string("2", &two);
     
     return bignum_mul(&args[0], &two, result);
 }
 
 /* 示例函数2: triple(x) = x * 3 */
-static int example_triple(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int example_triple(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     
-    BigNum three;
+    BHS three;
     bignum_from_string("3", &three);
     
     return bignum_mul(&args[0], &three, result);
 }
 
 /* 示例函数3: square(x) = x * x */
-static int example_square(const BigNum *args, int arg_count, BigNum *result, int precision) {
+static int example_square(const BHS *args, int arg_count, BHS *result, int precision) {
     if (arg_count != 1) return -1;
     
     return bignum_mul(&args[0], &args[0], result);

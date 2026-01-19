@@ -13,7 +13,7 @@
 /* 变量结构 */
 typedef struct {
     char *name;                    /* 变量名（动态分配） */
-    BigNum *value;                 /* 变量值指针（堆分配） */
+    BHS *value;                 /* 变量值指针（堆分配） */
     int is_defined;                /* 是否已定义 */
 } Variable;
 
@@ -39,7 +39,7 @@ void context_init(Context *ctx);
  * @param value 变量值
  * @return 0 成功, -1 失败（变量名非法或空间不足）
  */
-int context_set(Context *ctx, const char *name, const BigNum *value);
+int context_set(Context *ctx, const char *name, const BHS *value);
 
 /**
  * 获取变量值
@@ -49,7 +49,7 @@ int context_set(Context *ctx, const char *name, const BigNum *value);
  * @param value 输出的变量值
  * @return 0 成功, -1 失败（变量未定义）
  */
-int context_get(const Context *ctx, const char *name, BigNum *value);
+int context_get(const Context *ctx, const char *name, BHS *value);
 
 /**
  * 检查变量是否存在

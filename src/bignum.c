@@ -8,16 +8,16 @@
 #include "lib/list.h"
 
 /* 内部辅助函数声明 */
-static int bignum_add_internal(const BigNum *a, const BigNum *b, BigNum *result);
-static int bignum_sub_internal(const BigNum *a, const BigNum *b, BigNum *result);
-static int bignum_mul_internal(const BigNum *a, const BigNum *b, BigNum *result);
-static int bignum_div_internal(const BigNum *a, const BigNum *b, BigNum *result, int precision);
-static int bignum_pow_internal(const BigNum *base, const BigNum *exponent, BigNum *result, int precision);
-static int bignum_mod_internal(const BigNum *a, const BigNum *b, BigNum *result);
+static int bignum_add_internal(const BHS *a, const BHS *b, BHS *result);
+static int bignum_sub_internal(const BHS *a, const BHS *b, BHS *result);
+static int bignum_mul_internal(const BHS *a, const BHS *b, BHS *result);
+static int bignum_div_internal(const BHS *a, const BHS *b, BHS *result, int precision);
+static int bignum_pow_internal(const BHS *base, const BHS *exponent, BHS *result, int precision);
+static int bignum_mod_internal(const BHS *a, const BHS *b, BHS *result);
 
-/* 创建并初始化一个新的 BigNum */
-BigNum* bignum_create(void) {
-    BigNum *num = (BigNum *)malloc(sizeof(BigNum));
+/* 创建并初始化一个新的 BHS */
+BHS* bignum_create(void) {
+    BHS *num = (BHS *)malloc(sizeof(BHS));
     if (num == NULL) return NULL;
     
     memset(num->data.small_data, 0, BIGNUM_SMALL_SIZE);
@@ -31,8 +31,8 @@ BigNum* bignum_create(void) {
     return num;
 }
 
-/* 销毁 BigNum 并释放所有内存 */
-void bignum_destroy(BigNum *num) {
+/* 销毁 BHS 并释放所有内存 */
+void bignum_destroy(BHS *num) {
     if (num == NULL) return;
     
     /* 根据类型释放内部数据 */
@@ -55,7 +55,7 @@ void bignum_destroy(BigNum *num) {
 }
 
 /* 初始化大数为0（旧版本 API） */
-void bignum_init(BigNum *num) {
+void bignum_init(BHS *num) {
     memset(num->data.small_data, 0, BIGNUM_SMALL_SIZE);
     num->length = 1;
     num->capacity = BIGNUM_SMALL_SIZE;
@@ -66,7 +66,7 @@ void bignum_init(BigNum *num) {
 }
 
 /* 清理大数（释放动态内存，旧版本 API） */
-void bignum_free(BigNum *num) {
+void bignum_free(BHS *num) {
     if (num == NULL) return;
     
     /* 根据类型释放内存 */
@@ -91,7 +91,7 @@ void bignum_free(BigNum *num) {
 }
 
 /* 确保有足够容量，必要时扩展 */
-static int bignum_ensure_capacity(BigNum *num, int required_capacity) {
+static int bignum_ensure_capacity(BHS *num, int required_capacity) {
     if (num == NULL) return BIGNUM_ERROR;
     
     /* 检查数字类型的限制 - 临时计算允许使用更大空间 */
@@ -147,7 +147,7 @@ static int bignum_ensure_capacity(BigNum *num, int required_capacity) {
 }
 
 /* 复制BigNum */
-int bignum_copy(const BigNum *src, BigNum *dst) {
+int bignum_copy(const BHS *src, BHS *dst) {
     if (src == NULL || dst == NULL) return BIGNUM_ERROR;
     
     /* 检查源数据长度是否在最终结果的合法范围内 */
@@ -203,7 +203,7 @@ int bignum_copy(const BigNum *src, BigNum *dst) {
 }
 
 /* 移除前导零 */
-static void bignum_trim(BigNum *num) {
+static void bignum_trim(BHS *num) {
     char *digits = BIGNUM_DIGITS(num);
     
     /* 去除高位的0 */
@@ -242,7 +242,7 @@ static void bignum_trim(BigNum *num) {
 }
 
 /* 比较两个大数的绝对值 (返回: 1 if a>b, 0 if a==b, -1 if a<b) */
-static int bignum_compare_abs(const BigNum *a, const BigNum *b) {
+static int bignum_compare_abs(const BHS *a, const BHS *b) {
     /* 先比较整数部分长度 */
     int a_int_len = a->length - a->type_data.num.decimal_pos;
     int b_int_len = b->length - b->type_data.num.decimal_pos;
@@ -272,7 +272,7 @@ static int bignum_compare_abs(const BigNum *a, const BigNum *b) {
 }
 
 /* 大数绝对值加法（忽略符号） */
-static int bignum_add_abs(const BigNum *a, const BigNum *b, BigNum *result) {
+static int bignum_add_abs(const BHS *a, const BHS *b, BHS *result) {
     int max_decimal = (a->type_data.num.decimal_pos > b->type_data.num.decimal_pos) ? a->type_data.num.decimal_pos : b->type_data.num.decimal_pos;
     int max_len = ((a->length - a->type_data.num.decimal_pos) > (b->length - b->type_data.num.decimal_pos)) ? 
                    (a->length - a->type_data.num.decimal_pos) : (b->length - b->type_data.num.decimal_pos);
@@ -317,7 +317,7 @@ static int bignum_add_abs(const BigNum *a, const BigNum *b, BigNum *result) {
 }
 
 /* 大数绝对值减法（a - b，假设 a >= b） */
-static int bignum_sub_abs(const BigNum *a, const BigNum *b, BigNum *result) {
+static int bignum_sub_abs(const BHS *a, const BHS *b, BHS *result) {
     int max_decimal = (a->type_data.num.decimal_pos > b->type_data.num.decimal_pos) ? a->type_data.num.decimal_pos : b->type_data.num.decimal_pos;
     
     bignum_free(result);
@@ -365,7 +365,7 @@ static int bignum_sub_abs(const BigNum *a, const BigNum *b, BigNum *result) {
 /* API 实现 */
 
 /* 旧版本 API - 保留用于兼容 */
-int bignum_from_string_legacy(const char *str, BigNum *num) {
+int bignum_from_string_legacy(const char *str, BHS *num) {
     if (str == NULL || num == NULL) return BIGNUM_ERROR;
     
     bignum_init(num);
@@ -439,11 +439,11 @@ int bignum_from_string_legacy(const char *str, BigNum *num) {
     return BIGNUM_SUCCESS;
 }
 
-/* 新版本 API - 返回堆分配的 BigNum */
-BigNum* bignum_from_string(const char *str) {
+/* 新版本 API - 返回堆分配的 BHS */
+BHS* bignum_from_string(const char *str) {
     if (str == NULL) return NULL;
     
-    BigNum *num = bignum_create();
+    BHS *num = bignum_create();
     if (num == NULL) return NULL;
     
     if (bignum_from_string_legacy(str, num) != BIGNUM_SUCCESS) {
@@ -454,8 +454,8 @@ BigNum* bignum_from_string(const char *str) {
     return num;
 }
 
-/* 从原始字符串创建字符串类型的 BigNum - 旧版本 */
-int bignum_from_raw_string_legacy(const char *str, BigNum *num) {
+/* 从原始字符串创建字符串类型的 BHS - 旧版本 */
+int bignum_from_raw_string_legacy(const char *str, BHS *num) {
     if (str == NULL || num == NULL) return BIGNUM_ERROR;
     
     bignum_init(num);
@@ -479,11 +479,11 @@ int bignum_from_raw_string_legacy(const char *str, BigNum *num) {
     return BIGNUM_SUCCESS;
 }
 
-/* 新版本 API - 返回堆分配的 BigNum */
-BigNum* bignum_from_raw_string(const char *str) {
+/* 新版本 API - 返回堆分配的 BHS */
+BHS* bignum_from_raw_string(const char *str) {
     if (str == NULL) return NULL;
     
-    BigNum *num = bignum_create();
+    BHS *num = bignum_create();
     if (num == NULL) return NULL;
     
     if (bignum_from_raw_string_legacy(str, num) != BIGNUM_SUCCESS) {
@@ -494,7 +494,7 @@ BigNum* bignum_from_raw_string(const char *str) {
     return num;
 }
 
-int bignum_to_string(const BigNum *num, char *str, size_t max_len, int precision) {
+int bignum_to_string(const BHS *num, char *str, size_t max_len, int precision) {
     if (num == NULL || str == NULL || max_len == 0) return BIGNUM_ERROR;
     
     char *digits = BIGNUM_DIGITS(num);
@@ -598,7 +598,7 @@ int bignum_to_string(const BigNum *num, char *str, size_t max_len, int precision
     return BIGNUM_SUCCESS;
 }
 
-static int bignum_add_internal(const BigNum *a, const BigNum *b, BigNum *result) {
+static int bignum_add_internal(const BHS *a, const BHS *b, BHS *result) {
     if (a == NULL || b == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -626,7 +626,7 @@ static int bignum_add_internal(const BigNum *a, const BigNum *b, BigNum *result)
     return BIGNUM_SUCCESS;
 }
 
-static int bignum_sub_internal(const BigNum *a, const BigNum *b, BigNum *result) {
+static int bignum_sub_internal(const BHS *a, const BHS *b, BHS *result) {
     if (a == NULL || b == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -654,7 +654,7 @@ static int bignum_sub_internal(const BigNum *a, const BigNum *b, BigNum *result)
     return BIGNUM_SUCCESS;
 }
 
-static int bignum_mul_internal(const BigNum *a, const BigNum *b, BigNum *result) {
+static int bignum_mul_internal(const BHS *a, const BHS *b, BHS *result) {
     if (a == NULL || b == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -662,7 +662,7 @@ static int bignum_mul_internal(const BigNum *a, const BigNum *b, BigNum *result)
         return BIGNUM_ERROR;
     }
     
-    BigNum temp;
+    BHS temp;
     bignum_init(&temp);
     temp.type = BIGNUM_TYPE_NUMBER;
     
@@ -741,7 +741,7 @@ static int bignum_mul_internal(const BigNum *a, const BigNum *b, BigNum *result)
     return BIGNUM_SUCCESS;
 }
 
-static int bignum_div_internal(const BigNum *a, const BigNum *b, BigNum *result, int precision) {
+static int bignum_div_internal(const BHS *a, const BHS *b, BHS *result, int precision) {
     if (a == NULL || b == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -760,7 +760,7 @@ static int bignum_div_internal(const BigNum *a, const BigNum *b, BigNum *result,
     result->type = BIGNUM_TYPE_NUMBER;
     
     /* 创建被除数的副本 */
-    BigNum dividend, divisor;
+    BHS dividend, divisor;
     bignum_init(&dividend);
     bignum_init(&divisor);
     
@@ -813,7 +813,7 @@ static int bignum_div_internal(const BigNum *a, const BigNum *b, BigNum *result,
     }
     
     /* 长除法 */
-    BigNum remainder;
+    BHS remainder;
     bignum_init(&remainder);
     
     int max_result_len = dividend.length + 10;
@@ -853,7 +853,7 @@ static int bignum_div_internal(const BigNum *a, const BigNum *b, BigNum *result,
         /* 计算商的当前位 */
         int quotient_digit = 0;
         while (bignum_compare_abs(&remainder, &divisor) >= 0) {
-            BigNum temp;
+            BHS temp;
             bignum_init(&temp);
             bignum_sub_abs(&remainder, &divisor, &temp);
             bignum_free(&remainder);
@@ -903,7 +903,7 @@ static int bignum_div_internal(const BigNum *a, const BigNum *b, BigNum *result,
     return BIGNUM_SUCCESS;
 }
 
-static int bignum_pow_internal(const BigNum *base, const BigNum *exponent, BigNum *result, int precision) {
+static int bignum_pow_internal(const BHS *base, const BHS *exponent, BHS *result, int precision) {
     if (base == NULL || exponent == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -946,7 +946,7 @@ static int bignum_pow_internal(const BigNum *base, const BigNum *exponent, BigNu
     }
     
     /* 使用快速幂算法 */
-    BigNum current_power, temp;
+    BHS current_power, temp;
     bignum_init(&current_power);
     bignum_init(&temp);
     
@@ -963,7 +963,7 @@ static int bignum_pow_internal(const BigNum *base, const BigNum *exponent, BigNu
                 return BIGNUM_ERROR;
             }
             /* 交换 result 和 temp 的内容 */
-            BigNum swap = *result;
+            BHS swap = *result;
             *result = temp;
             temp = swap;
             /* 清空被交换出去的temp（它现在持有旧result），供下次使用 */
@@ -1011,7 +1011,7 @@ static int bignum_pow_internal(const BigNum *base, const BigNum *exponent, BigNu
                 return BIGNUM_ERROR;
             }
             /* 交换 current_power 和 temp 的内容 */
-            BigNum swap = current_power;
+            BHS swap = current_power;
             current_power = temp;
             temp = swap;
             /* 清空被交换出去的temp（它现在持有旧current_power），供下次使用 */
@@ -1057,7 +1057,7 @@ static int bignum_pow_internal(const BigNum *base, const BigNum *exponent, BigNu
     return BIGNUM_SUCCESS;
 }
 
-static int bignum_mod_internal(const BigNum *a, const BigNum *b, BigNum *result) {
+static int bignum_mod_internal(const BHS *a, const BHS *b, BHS *result) {
     if (a == NULL || b == NULL || result == NULL) return BIGNUM_ERROR;
     
     /* 类型检查 */
@@ -1095,7 +1095,7 @@ static int bignum_mod_internal(const BigNum *a, const BigNum *b, BigNum *result)
     if (has_decimal) return BIGNUM_ERROR;
     
     /* 创建a和b的整数副本 */
-    BigNum dividend, divisor;
+    BHS dividend, divisor;
     bignum_init(&dividend);
     bignum_init(&divisor);
     
@@ -1138,7 +1138,7 @@ static int bignum_mod_internal(const BigNum *a, const BigNum *b, BigNum *result)
     divisor.type_data.num.is_negative = 0;
     
     /* 使用长除法计算余数 */
-    BigNum remainder;
+    BHS remainder;
     bignum_init(&remainder);
     
     div_digits = BIGNUM_DIGITS(&dividend);
@@ -1166,7 +1166,7 @@ static int bignum_mod_internal(const BigNum *a, const BigNum *b, BigNum *result)
         
         /* 尽可能多地从余数中减去除数 */
         while (bignum_compare_abs(&remainder, &divisor) >= 0) {
-            BigNum temp;
+            BHS temp;
             bignum_init(&temp);
             bignum_sub_abs(&remainder, &divisor, &temp);
             bignum_free(&remainder);
@@ -1202,27 +1202,27 @@ static int bignum_mod_internal(const BigNum *a, const BigNum *b, BigNum *result)
 
 /* 类型判断和转换函数 */
 
-int bignum_is_number(const BigNum *num) {
+int bignum_is_number(const BHS *num) {
     if (num == NULL) return 0;
     return num->type == BIGNUM_TYPE_NUMBER;
 }
 
-int bignum_is_string(const BigNum *num) {
+int bignum_is_string(const BHS *num) {
     if (num == NULL) return 0;
     return num->type == BIGNUM_TYPE_STRING;
 }
 
-int bignum_is_bitmap(const BigNum *num) {
+int bignum_is_bitmap(const BHS *num) {
     if (num == NULL) return 0;
     return num->type == BIGNUM_TYPE_BITMAP;
 }
 
-int bignum_is_list(const BigNum *num) {
+int bignum_is_list(const BHS *num) {
     if (num == NULL) return 0;
     return num->type == BIGNUM_TYPE_LIST;
 }
 
-int bignum_string_to_number_legacy(const BigNum *str_num, BigNum *num_result) {
+int bignum_string_to_number_legacy(const BHS *str_num, BHS *num_result) {
     if (str_num == NULL || num_result == NULL) return BIGNUM_ERROR;
     if (str_num->type != BIGNUM_TYPE_STRING) return BIGNUM_ERROR;
     
@@ -1240,7 +1240,7 @@ int bignum_string_to_number_legacy(const BigNum *str_num, BigNum *num_result) {
     return ret;
 }
 
-int bignum_number_to_string_type_legacy(const BigNum *num, BigNum *str_result, int precision) {
+int bignum_number_to_string_type_legacy(const BHS *num, BHS *str_result, int precision) {
     if (num == NULL || str_result == NULL) return BIGNUM_ERROR;
     if (num->type != BIGNUM_TYPE_NUMBER) return BIGNUM_ERROR;
     
@@ -1249,16 +1249,16 @@ int bignum_number_to_string_type_legacy(const BigNum *num, BigNum *str_result, i
     int ret = bignum_to_string(num, temp_str, sizeof(temp_str), precision);
     if (ret != BIGNUM_SUCCESS) return ret;
     
-    /* 创建字符串类型的 BigNum */
+    /* 创建字符串类型的 BHS */
     return bignum_from_raw_string_legacy(temp_str, str_result);
 }
 
-/* ========== 新版本 API 实现（返回堆分配的 BigNum 指针） ========== */
+/* ========== 新版本 API 实现（返回堆分配的 BHS 指针） ========== */
 
-BigNum* bignum_add(const BigNum *a, const BigNum *b) {
+BHS* bignum_add(const BHS *a, const BHS *b) {
     if (a == NULL || b == NULL) return NULL;
     
-    BigNum *result = bignum_create();
+    BHS *result = bignum_create();
     if (result == NULL) return NULL;
     
     if (bignum_add_internal(a, b, result) != BIGNUM_SUCCESS) {
@@ -1269,10 +1269,10 @@ BigNum* bignum_add(const BigNum *a, const BigNum *b) {
     return result;
 }
 
-BigNum* bignum_sub(const BigNum *a, const BigNum *b) {
+BHS* bignum_sub(const BHS *a, const BHS *b) {
     if (a == NULL || b == NULL) return NULL;
     
-    BigNum *result = bignum_create();
+    BHS *result = bignum_create();
     if (result == NULL) return NULL;
     
     if (bignum_sub_internal(a, b, result) != BIGNUM_SUCCESS) {
@@ -1283,10 +1283,10 @@ BigNum* bignum_sub(const BigNum *a, const BigNum *b) {
     return result;
 }
 
-BigNum* bignum_mul(const BigNum *a, const BigNum *b) {
+BHS* bignum_mul(const BHS *a, const BHS *b) {
     if (a == NULL || b == NULL) return NULL;
     
-    BigNum *result = bignum_create();
+    BHS *result = bignum_create();
     if (result == NULL) return NULL;
     
     if (bignum_mul_internal(a, b, result) != BIGNUM_SUCCESS) {
@@ -1297,10 +1297,10 @@ BigNum* bignum_mul(const BigNum *a, const BigNum *b) {
     return result;
 }
 
-BigNum* bignum_div(const BigNum *a, const BigNum *b, int precision) {
+BHS* bignum_div(const BHS *a, const BHS *b, int precision) {
     if (a == NULL || b == NULL) return NULL;
     
-    BigNum *result = bignum_create();
+    BHS *result = bignum_create();
     if (result == NULL) return NULL;
     
     int ret = bignum_div_internal(a, b, result, precision);
@@ -1312,10 +1312,10 @@ BigNum* bignum_div(const BigNum *a, const BigNum *b, int precision) {
     return result;
 }
 
-BigNum* bignum_pow(const BigNum *base, const BigNum *exponent, int precision) {
+BHS* bignum_pow(const BHS *base, const BHS *exponent, int precision) {
     if (base == NULL || exponent == NULL) return NULL;
     
-    BigNum *result = bignum_create();
+    BHS *result = bignum_create();
     if (result == NULL) return NULL;
     
     if (bignum_pow_internal(base, exponent, result, precision) != BIGNUM_SUCCESS) {
@@ -1326,10 +1326,10 @@ BigNum* bignum_pow(const BigNum *base, const BigNum *exponent, int precision) {
     return result;
 }
 
-BigNum* bignum_mod(const BigNum *a, const BigNum *b) {
+BHS* bignum_mod(const BHS *a, const BHS *b) {
     if (a == NULL || b == NULL) return NULL;
     
-    BigNum *result = bignum_create();
+    BHS *result = bignum_create();
     if (result == NULL) return NULL;
     
     if (bignum_mod_internal(a, b, result) != BIGNUM_SUCCESS) {
@@ -1340,10 +1340,10 @@ BigNum* bignum_mod(const BigNum *a, const BigNum *b) {
     return result;
 }
 
-BigNum* bignum_string_to_number(const BigNum *str_num) {
+BHS* bignum_string_to_number(const BHS *str_num) {
     if (str_num == NULL) return NULL;
     
-    BigNum *result = bignum_create();
+    BHS *result = bignum_create();
     if (result == NULL) return NULL;
     
     if (bignum_string_to_number_legacy(str_num, result) != BIGNUM_SUCCESS) {
@@ -1354,10 +1354,10 @@ BigNum* bignum_string_to_number(const BigNum *str_num) {
     return result;
 }
 
-BigNum* bignum_number_to_string_type(const BigNum *num, int precision) {
+BHS* bignum_number_to_string_type(const BHS *num, int precision) {
     if (num == NULL) return NULL;
     
-    BigNum *result = bignum_create();
+    BHS *result = bignum_create();
     if (result == NULL) return NULL;
     
     if (bignum_number_to_string_type_legacy(num, result, precision) != BIGNUM_SUCCESS) {
@@ -1377,7 +1377,7 @@ BigNum* bignum_number_to_string_type(const BigNum *num, int precision) {
 /* 注意：大部分bitmap函数使用lib/bitmap.h中的实现 */
 
 /* 从整数转换为位图 */
-BigNum* bignum_number_to_bitmap(const BigNum *num) {
+BHS* bignum_number_to_bitmap(const BHS *num) {
     if (num == NULL || num->type != BIGNUM_TYPE_NUMBER) return NULL;
     
     /* 不支持小数和负数 */
@@ -1394,7 +1394,7 @@ BigNum* bignum_number_to_bitmap(const BigNum *num) {
     int binary_len = 0;
     
     /* 创建数字的副本进行处理 */
-    BigNum temp;
+    BHS temp;
     bignum_init(&temp);
     if (bignum_copy(num, &temp) != BIGNUM_SUCCESS) {
         return NULL;
@@ -1437,10 +1437,10 @@ BigNum* bignum_number_to_bitmap(const BigNum *num) {
 }
 
 /* 将位图转换为整数 */
-BigNum* bignum_bitmap_to_number(const BigNum *bitmap) {
+BHS* bignum_bitmap_to_number(const BHS *bitmap) {
     if (bitmap == NULL || bitmap->type != BIGNUM_TYPE_BITMAP) return NULL;
     
-    BigNum *result = bignum_create();
+    BHS *result = bignum_create();
     if (result == NULL) return NULL;
     
     char *result_digits = BIGNUM_DIGITS(result);
@@ -1493,7 +1493,7 @@ BigNum* bignum_bitmap_to_number(const BigNum *bitmap) {
 }
 
 /* 位图左移（包装函数：将BigNum转换为uint64_t后调用bitmap_bitshl） */
-BigNum* bignum_bitshl(const BigNum *a, const BigNum *shift) {
+BHS* bignum_bitshl(const BHS *a, const BHS *shift) {
     if (a == NULL || shift == NULL) return NULL;
     if (a->type != BIGNUM_TYPE_BITMAP || shift->type != BIGNUM_TYPE_NUMBER) return NULL;
     if (shift->type_data.num.is_negative) return NULL;
@@ -1515,7 +1515,7 @@ BigNum* bignum_bitshl(const BigNum *a, const BigNum *shift) {
 }
 
 /* 位图右移（包装函数：将BigNum转换为uint64_t后调用bitmap_bitshr） */
-BigNum* bignum_bitshr(const BigNum *a, const BigNum *shift) {
+BHS* bignum_bitshr(const BHS *a, const BHS *shift) {
     if (a == NULL || shift == NULL) return NULL;
     if (a->type != BIGNUM_TYPE_BITMAP || shift->type != BIGNUM_TYPE_NUMBER) return NULL;
     if (shift->type_data.num.is_negative) return NULL;
@@ -1535,8 +1535,8 @@ BigNum* bignum_bitshr(const BigNum *a, const BigNum *shift) {
 
 /* ========== LIST 类型相关函数实现 ========== */
 
-BigNum* bignum_create_list(void) {
-    BigNum *num = bignum_create();
+BHS* bignum_create_list(void) {
+    BHS *num = bignum_create();
     if (num == NULL) return NULL;
     
     LIST *list = list_create();
@@ -1552,10 +1552,10 @@ BigNum* bignum_create_list(void) {
     return num;
 }
 
-BigNum* bignum_from_list(struct LIST *list) {
+BHS* bignum_from_list(struct LIST *list) {
     if (list == NULL) return NULL;
     
-    BigNum *num = bignum_create();
+    BHS *num = bignum_create();
     if (num == NULL) return NULL;
     
     /* 复制列表 */
@@ -1572,12 +1572,12 @@ BigNum* bignum_from_list(struct LIST *list) {
     return num;
 }
 
-struct LIST* bignum_get_list(const BigNum *num) {
+struct LIST* bignum_get_list(const BHS *num) {
     if (num == NULL || num->type != BIGNUM_TYPE_LIST) return NULL;
     return num->data.list;
 }
 
-double bignum_to_double(const BigNum *num) {
+double bignum_to_double(const BHS *num) {
     if (num == NULL || num->type != BIGNUM_TYPE_NUMBER) return 0.0;
     
     char *digits = BIGNUM_DIGITS(num);
