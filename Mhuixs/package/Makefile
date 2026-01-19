@@ -34,7 +34,7 @@ liblist.so: list_package.c ../function.h ../bignum.h ../lib/list.h
 
 # 清理编译生成的文件
 clean:
-	rm -f $(PACKAGES)
+	rm -f *.o $(PACKAGES)
 
 # 重新编译
 rebuild: clean all

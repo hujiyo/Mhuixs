@@ -123,7 +123,7 @@ void print_help() {
 /* 读取一行输入，支持智能运算符预测 */
 int read_expression(char *buffer, int max_len) {
     int pos = 0;
-    const char *prompt = "expr > ";
+    const char *prompt = ">>> ";
     
     enable_raw_mode();
     
@@ -328,8 +328,47 @@ int main() {
             continue;
         }
         
+        /* 检查是否是控制流语句，如果是则收集多行输入 */
+        char *full_statement = input;
+        char multi_line_buffer[MAX_INPUT * 10] = {0};
+        
+        if (strncmp(input, "if ", 3) == 0 || strncmp(input, "for ", 4) == 0 || 
+            strncmp(input, "while ", 6) == 0 || strncmp(input, "do", 2) == 0) {
+            
+            strcpy(multi_line_buffer, input);
+            strcat(multi_line_buffer, "\n");
+            
+            /* 继续读取直到遇到 'end' */
+            while (1) {
+                char line[MAX_INPUT];
+                printf("... ");
+                fflush(stdout);
+                
+                if (!fgets(line, sizeof(line), stdin)) {
+                    break;
+                }
+                
+                /* 移除换行符 */
+                line[strcspn(line, "\n")] = 0;
+                
+                /* 检查是否是 'end' */
+                if (strcmp(line, "end") == 0) {
+                    strcat(multi_line_buffer, "end");
+                    break;
+                }
+                
+                /* 添加到缓冲区 */
+                if (strlen(multi_line_buffer) + strlen(line) + 2 < sizeof(multi_line_buffer)) {
+                    strcat(multi_line_buffer, line);
+                    strcat(multi_line_buffer, "\n");
+                }
+            }
+            
+            full_statement = multi_line_buffer;
+        }
+        
         /* 使用统一求值器（支持变量、函数和包） */
-        int ret = eval_statement(input, result_str, MAX_RESULT, &ctx, &func_registry, &pkg_manager, -1);
+        int ret = eval_statement(full_statement, result_str, MAX_RESULT, &ctx, &func_registry, &pkg_manager, -1);
         
         if (ret == EVAL_DIV_ZERO) {
             printf("错误: 除零错误\n");

@@ -68,13 +68,26 @@ void bignum_init(BigNum *num) {
 /* 清理大数（释放动态内存，旧版本 API） */
 void bignum_free(BigNum *num) {
     if (num == NULL) return;
-    if (num->is_large && num->data.large_data != NULL) {
-        free(num->data.large_data);
-        num->data.large_data = NULL;
+    
+    /* 根据类型释放内存 */
+    if (num->type == BIGNUM_TYPE_LIST) {
+        /* 列表类型：释放LIST结构 */
+        if (num->data.list != NULL) {
+            free_list(num->data.list);
+            num->data.list = NULL;
+        }
+    } else {
+        /* 其他类型：释放数据内存 */
+        if (num->is_large && num->data.large_data != NULL) {
+            free(num->data.large_data);
+            num->data.large_data = NULL;
+        }
     }
+    
     num->is_large = 0;
     num->length = 0;
     num->capacity = 0;
+    num->type = BIGNUM_TYPE_NULL;
 }
 
 /* 确保有足够容量，必要时扩展 */
@@ -150,24 +163,40 @@ int bignum_copy(const BigNum *src, BigNum *dst) {
     dst->type = src->type;
     dst->type_data = src->type_data;  /* 复制整个类型数据联合体 */
     
-    /* 复制数据 */
-    size_t copy_size = src->length;
-    /* 对于 bitmap 类型，length 是位数，需要转换为字节数 */
-    if (src->type == BIGNUM_TYPE_BITMAP) {
-        copy_size = (src->length + 7) / 8;
-    }
-    
-    if (src->is_large) {
-        /* 源是大数据 */
-        if (bignum_ensure_capacity(dst, src->capacity) != BIGNUM_SUCCESS) {
-            return BIGNUM_ERROR;
+    /* 根据类型复制数据 */
+    if (src->type == BIGNUM_TYPE_LIST) {
+        /* 列表类型：复制LIST指针 */
+        if (src->data.list != NULL) {
+            LIST *new_list = list_copy(src->data.list);
+            if (new_list == NULL) {
+                return BIGNUM_ERROR;
+            }
+            dst->data.list = new_list;
+        } else {
+            dst->data.list = NULL;
         }
-        memcpy(BIGNUM_DIGITS(dst), BIGNUM_DIGITS(src), copy_size);
+        dst->is_large = 0;  /* 列表类型不使用large_data */
+        dst->capacity = 0;
     } else {
-        /* 源是小数据 */
-        dst->is_large = 0;
-        dst->capacity = BIGNUM_SMALL_SIZE;
-        memcpy(dst->data.small_data, src->data.small_data, copy_size);
+        /* 其他类型：复制数据内容 */
+        size_t copy_size = src->length;
+        /* 对于 bitmap 类型，length 是位数，需要转换为字节数 */
+        if (src->type == BIGNUM_TYPE_BITMAP) {
+            copy_size = (src->length + 7) / 8;
+        }
+        
+        if (src->is_large) {
+            /* 源是大数据 */
+            if (bignum_ensure_capacity(dst, src->capacity) != BIGNUM_SUCCESS) {
+                return BIGNUM_ERROR;
+            }
+            memcpy(BIGNUM_DIGITS(dst), BIGNUM_DIGITS(src), copy_size);
+        } else {
+            /* 源是小数据 */
+            dst->is_large = 0;
+            dst->capacity = BIGNUM_SMALL_SIZE;
+            memcpy(dst->data.small_data, src->data.small_data, copy_size);
+        }
     }
     
     return BIGNUM_SUCCESS;
@@ -489,6 +518,20 @@ int bignum_to_string(const BigNum *num, char *str, size_t max_len, int precision
             str[i + 1] = ((bitmap_data[i / 8] >> (i % 8)) & 1) ? '1' : '0';
         }
         str[num->length + 1] = '\0';
+        return BIGNUM_SUCCESS;
+    }
+    
+    /* 如果是列表类型，输出为 [size] 格式 */
+    if (num->type == BIGNUM_TYPE_LIST) {
+        if (num->data.list == NULL) {
+            if (max_len < 6) return BIGNUM_ERROR;  /* "[]" + null */
+            strcpy(str, "[]");
+            return BIGNUM_SUCCESS;
+        }
+        
+        size_t size = list_size(num->data.list);
+        int written = snprintf(str, max_len, "[%zu]", size);
+        if (written >= (int)max_len) return BIGNUM_ERROR;
         return BIGNUM_SUCCESS;
     }
     

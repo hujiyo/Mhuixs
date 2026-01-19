@@ -8,7 +8,7 @@
 
 typedef char* mstring;
 
-mstring mstr(char* str){
+static inline mstring mstr(char* str){
     mstring result = (mstring)malloc(strlen(str)+sizeof(size_t));
     if(result == NULL){
         return NULL;
@@ -18,7 +18,7 @@ mstring mstr(char* str){
     return result;
 }
 
-size_t mstrlen(mstring str){
+static inline size_t mstrlen(mstring str){
     if(str == NULL){
         return SIZE_MAX;
     }

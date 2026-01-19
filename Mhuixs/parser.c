@@ -1,4 +1,5 @@
 #include "parser.h"
+#include "lexer.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -12,9 +13,9 @@ static void parser_set_error(Parser *parser, const char *msg) {
 
 /* 辅助函数：期望特定token */
 static int parser_expect(Parser *parser, TokenType expected) {
-    if (parser->lexer->current_type != expected) {
+    if (lexer_current_type(parser->lexer) != expected) {
         char msg[256];
-        snprintf(msg, sizeof(msg), "Expected token type %d, got %d", expected, parser->lexer->current_type);
+        snprintf(msg, sizeof(msg), "Expected token type %d, got %d", expected, lexer_current_type(parser->lexer));
         parser_set_error(parser, msg);
         return 0;
     }
@@ -52,18 +53,19 @@ char* parser_parse_expression_string(Parser *parser) {
     int pos = 0;
     int paren_count = 0;
     
-    while (parser->lexer->current_type != TOK_END && 
-           parser->lexer->current_type != TOK_ERROR &&
-           parser->lexer->current_type != TOK_COLON &&
-           parser->lexer->current_type != TOK_END_STMT &&
-           parser->lexer->current_type != TOK_ELSE &&
-           parser->lexer->current_type != TOK_COMMA &&
-           (parser->lexer->current_type != TOK_RPAREN || paren_count > 0)) {
+    while (lexer_current_type(parser->lexer) != TOK_END && 
+           lexer_current_type(parser->lexer) != TOK_ERROR &&
+           lexer_current_type(parser->lexer) != TOK_COLON &&
+           lexer_current_type(parser->lexer) != TOK_END_STMT &&
+           lexer_current_type(parser->lexer) != TOK_ELSE &&
+           lexer_current_type(parser->lexer) != TOK_COMMA &&
+           lexer_current_type(parser->lexer) != TOK_NEWLINE &&
+           (lexer_current_type(parser->lexer) != TOK_RPAREN || paren_count > 0)) {
         
         /* 处理括号平衡 */
-        if (parser->lexer->current_type == TOK_LPAREN) {
+        if (lexer_current_type(parser->lexer) == TOK_LPAREN) {
             paren_count++;
-        } else if (parser->lexer->current_type == TOK_RPAREN) {
+        } else if (lexer_current_type(parser->lexer) == TOK_RPAREN) {
             paren_count--;
         }
         
@@ -71,12 +73,12 @@ char* parser_parse_expression_string(Parser *parser) {
         const char *token_str = NULL;
         char temp_str[64];
         
-        switch (parser->lexer->current_type) {
+        switch (lexer_current_type(parser->lexer)) {
             case TOK_NUMBER:
             case TOK_STRING:
             case TOK_BITMAP:
             case TOK_IDENTIFIER:
-                token_str = parser->lexer->current_value;
+                token_str = lexer_current_value(parser->lexer);
                 break;
             case TOK_PLUS: token_str = " + "; break;
             case TOK_MINUS: token_str = " - "; break;
@@ -105,7 +107,7 @@ char* parser_parse_expression_string(Parser *parser) {
             case TOK_RPAREN: token_str = ")"; break;
             case TOK_COMMA: token_str = ", "; break;
             default:
-                snprintf(temp_str, sizeof(temp_str), "<%d>", parser->lexer->current_type);
+                snprintf(temp_str, sizeof(temp_str), "<%d>", lexer_current_type(parser->lexer));
                 token_str = temp_str;
                 break;
         }
@@ -155,7 +157,7 @@ ASTNode* parser_parse_if(Parser *parser) {
     
     /* 检查是否有else分支 */
     ASTNode *else_block = NULL;
-    if (parser->lexer->current_type == TOK_ELSE) {
+    if (lexer_current_type(parser->lexer) == TOK_ELSE) {
         lexer_next(parser->lexer);  /* 消费 'else' */
         
         if (!parser_expect(parser, TOK_COLON)) {
@@ -191,12 +193,12 @@ ASTNode* parser_parse_for(Parser *parser) {
     /* 已经消费了 'for' token */
     
     /* 期望变量名 */
-    if (parser->lexer->current_type != TOK_IDENTIFIER) {
+    if (lexer_current_type(parser->lexer) != TOK_IDENTIFIER) {
         parser_set_error(parser, "Expected variable name in for loop");
         return NULL;
     }
     
-    char *var_name = parser_strdup(parser->lexer->current_value);
+    char *var_name = parser_strdup(lexer_current_value(parser->lexer));
     lexer_next(parser->lexer);
     
     /* 期望 'in' */
@@ -243,7 +245,7 @@ ASTNode* parser_parse_for(Parser *parser) {
     
     /* 检查是否有步长 */
     char *step_expr = NULL;
-    if (parser->lexer->current_type == TOK_COMMA) {
+    if (lexer_current_type(parser->lexer) == TOK_COMMA) {
         lexer_next(parser->lexer);  /* 消费逗号 */
         step_expr = parser_parse_expression_string(parser);
         if (!step_expr || parser->has_error) {
@@ -395,12 +397,12 @@ ASTNode* parser_parse_import(Parser *parser) {
     /* 已经消费了 'import' token */
     
     /* 期望包名 */
-    if (parser->lexer->current_type != TOK_IDENTIFIER) {
+    if (lexer_current_type(parser->lexer) != TOK_IDENTIFIER) {
         parser_set_error(parser, "Expected package name after import");
         return NULL;
     }
     
-    char *package_name = parser_strdup(parser->lexer->current_value);
+    char *package_name = parser_strdup(lexer_current_value(parser->lexer));
     lexer_next(parser->lexer);
     
     ASTNode *node = ast_create_import(package_name);
@@ -416,11 +418,17 @@ ASTNode* parser_parse_block(Parser *parser) {
         return NULL;
     }
     
-    while (parser->lexer->current_type != TOK_END_STMT && 
-           parser->lexer->current_type != TOK_ELSE &&
-           parser->lexer->current_type != TOK_WHILE &&  /* for do-while */
-           parser->lexer->current_type != TOK_END && 
-           parser->lexer->current_type != TOK_ERROR) {
+    while (lexer_current_type(parser->lexer) != TOK_END_STMT && 
+           lexer_current_type(parser->lexer) != TOK_ELSE &&
+           lexer_current_type(parser->lexer) != TOK_WHILE &&  /* for do-while */
+           lexer_current_type(parser->lexer) != TOK_END && 
+           lexer_current_type(parser->lexer) != TOK_ERROR) {
+        
+        /* 跳过换行符 */
+        if (lexer_current_type(parser->lexer) == TOK_NEWLINE) {
+            lexer_next(parser->lexer);
+            continue;
+        }
         
         ASTNode *stmt = parser_parse_statement(parser);
         if (!stmt || parser->has_error) {
@@ -442,7 +450,7 @@ ASTNode* parser_parse_block(Parser *parser) {
 
 /* 解析语句 */
 ASTNode* parser_parse_statement(Parser *parser) {
-    switch (parser->lexer->current_type) {
+    switch (lexer_current_type(parser->lexer)) {
         case TOK_IF:
             lexer_next(parser->lexer);
             return parser_parse_if(parser);
@@ -466,12 +474,12 @@ ASTNode* parser_parse_statement(Parser *parser) {
         case TOK_LET: {
             lexer_next(parser->lexer);  /* 消费 'let' */
             
-            if (parser->lexer->current_type != TOK_IDENTIFIER) {
+            if (lexer_current_type(parser->lexer) != TOK_IDENTIFIER) {
                 parser_set_error(parser, "Expected variable name after let");
                 return NULL;
             }
             
-            char *var_name = parser_strdup(parser->lexer->current_value);
+            char *var_name = parser_strdup(lexer_current_value(parser->lexer));
             lexer_next(parser->lexer);
             
             if (!parser_expect(parser, TOK_ASSIGN)) {
@@ -485,10 +493,10 @@ ASTNode* parser_parse_statement(Parser *parser) {
         }
         
         case TOK_IDENTIFIER: {
-            char *var_name = parser_strdup(parser->lexer->current_value);
+            char *var_name = parser_strdup(lexer_current_value(parser->lexer));
             lexer_next(parser->lexer);
             
-            if (parser->lexer->current_type == TOK_ASSIGN) {
+            if (lexer_current_type(parser->lexer) == TOK_ASSIGN) {
                 lexer_next(parser->lexer);  /* 消费 '=' */
                 ASTNode *node = parser_parse_assignment(parser, var_name);
                 free(var_name);

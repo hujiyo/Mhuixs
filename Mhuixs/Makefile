@@ -5,7 +5,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -g -O0 -std=c99 -DLOGEX_BUILD
 LDFLAGS = -lm -ldl
 TARGET = logex
-OBJS = calculator.o evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o lib/bitmap.o lib/list.o
+OBJS = calculator.o evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o lib/bitmap.o lib/list.o
 
 # 默认目标：只编译计算器
 all: $(TARGET)
@@ -23,8 +23,12 @@ evaluator.o: evaluator.c evaluator.h lexer.h bignum.h context.h function.h packa
 	$(CC) $(CFLAGS) -c evaluator.c
 
 # 编译 lexer.c
-lexer.o: lexer.c lexer.h bignum.h
+lexer.o: lexer.c lexer.h bignum.h error.h
 	$(CC) $(CFLAGS) -c lexer.c
+
+# 编译 error.c
+error.o: error.c error.h
+	$(CC) $(CFLAGS) -c error.c
 
 # 编译 bignum.c
 bignum.o: bignum.c bignum.h
@@ -63,7 +67,7 @@ run: $(TARGET)
 	./$(TARGET)
 
 # 编译测试程序（不包含calculator.o以避免main函数冲突）
-TEST_OBJS = evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o lib/bitmap.o lib/list.o
+TEST_OBJS = evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o lib/bitmap.o lib/list.o
 test_control_flow: test_control_flow.o $(TEST_OBJS)
 	$(CC) $(CFLAGS) -rdynamic -o test_control_flow test_control_flow.o $(TEST_OBJS) $(LDFLAGS)
 
@@ -98,7 +102,7 @@ debug_do: debug_do_while
 
 # 清理编译生成的文件
 clean:
-	rm -f $(OBJS) $(TARGET) test_control_flow test_control_flow.o debug_control_flow debug_control_flow.o debug_do_while debug_do_while.o
+	rm -f *.o lib/*.o test_control_flow debug_control_flow debug_do_while
 
 # 重新编译
 rebuild: clean all

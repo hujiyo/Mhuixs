@@ -1,0 +1,32 @@
+# Logex 内置函数测试
+# 无需 import，直接使用 LIST/TYPE/BITMAP 函数
+
+# 测试 LIST 操作
+let mylist = list()
+let mylist = rpush(mylist, 100)
+let mylist = rpush(mylist, 200)
+let mylist = lpush(mylist, 50)
+
+let size = llen(mylist)
+let first = lget(mylist, 0)
+let second = lget(mylist, 1)
+
+# 测试 TYPE 转换
+let n = num("123.456")
+let s = str(789)
+let b = bmp(255)
+
+# 测试 BITMAP 操作
+let bitmap = bmp(0)
+let bitmap = bset(bitmap, 10, 1)
+let bit = bget(bitmap, 10)
+let count = bcount(bitmap, 0, 100)
+
+# 输出结果
+size
+first
+second
+n
+s
+bit
+count
