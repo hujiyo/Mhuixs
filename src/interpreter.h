@@ -6,6 +6,8 @@
 #include "function.h"
 #include "package.h"
 #include "ast_v2.h"
+#include "vm.h"
+#include "compiler.h"
 
 /**
  * Logex 解释器统一接口
@@ -27,6 +29,11 @@ typedef struct {
     PackageManager *packages;   /* 包管理器 */
     LogexError error;           /* 错误信息 */
     int precision;              /* 数值精度 */
+    
+    /* 字节码 VM 支持 */
+    VM *vm;                     /* 虚拟机实例 */
+    Compiler *compiler;         /* 编译器实例 */
+    int use_vm;                 /* 是否使用 VM 模式（1=VM, 0=直接解释） */
 } Interpreter;
 
 /* 执行结果 */
@@ -57,15 +64,23 @@ Interpreter* interpreter_create(void);
 void interpreter_destroy(Interpreter *interp);
 
 /**
- * 执行源代码
+ * 执行源代码（多行模式）
  * 
  * @param interp 解释器实例
- * @param source 源代码
+ * @param source 源代码（可以是多行）
  * @param filename 文件名（可选，用于错误报告）
  * @param result 执行结果
  * @return 0 表示成功，非 0 表示失败
  */
 int interpreter_execute(Interpreter *interp, const char *source, const char *filename, InterpreterResult *result);
+
+/**
+ * 设置执行模式
+ * 
+ * @param interp 解释器实例
+ * @param use_vm 1=使用 VM 模式（编译+执行），0=直接解释模式
+ */
+void interpreter_set_vm_mode(Interpreter *interp, int use_vm);
 
 /**
  * 执行文件

@@ -1,0 +1,53 @@
+# Makefile for Logex Bytecode VM
+
+CC = gcc
+CFLAGS = -Wall -Wextra -std=c99 -O2 -g -I. -Ilib -Ishare
+LDFLAGS = -lm
+
+# 源文件
+BYTECODE_SRC = bytecode.c
+COMPILER_SRC = compiler.c
+VM_SRC = vm.c
+GLL_SRC = gll.c
+LOGEX_VM_SRC = logex_vm.c
+
+# 依赖文件
+COMMON_SRC = bignum.c lexer.c parser.c ast.c context.c function.c package.c builtin.c \
+             lib/list.c lib/bitmap.c lib/tblh.c
+
+# 目标文件
+GLL_TARGET = gll
+VM_TARGET = logex_vm
+
+# 默认目标
+all: $(GLL_TARGET) $(VM_TARGET)
+
+# 编译 gll 编译器
+$(GLL_TARGET): $(GLL_SRC) $(COMPILER_SRC) $(BYTECODE_SRC) $(COMMON_SRC)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	@echo "✓ GLL 编译器构建完成"
+
+# 编译 logex_vm 虚拟机
+$(VM_TARGET): $(LOGEX_VM_SRC) $(VM_SRC) $(BYTECODE_SRC) $(COMMON_SRC)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	@echo "✓ Logex VM 虚拟机构建完成"
+
+# 测试
+test: $(GLL_TARGET) $(VM_TARGET)
+	@echo "=== 测试字节码虚拟机 ==="
+	./$(GLL_TARGET) ../test/example.lgx -o ../test/example.ls -d
+	./$(VM_TARGET) ../test/example.ls -v
+
+# 清理
+clean:
+	rm -f $(GLL_TARGET) $(VM_TARGET) *.o lib/*.o
+	rm -f ../test/*.ls
+	@echo "✓ 清理完成"
+
+# 安装
+install: $(GLL_TARGET) $(VM_TARGET)
+	cp $(GLL_TARGET) /usr/local/bin/
+	cp $(VM_TARGET) /usr/local/bin/
+	@echo "✓ 安装完成"
+
+.PHONY: all test clean install

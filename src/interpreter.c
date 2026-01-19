@@ -1,6 +1,9 @@
 #include "interpreter.h"
 #include "lexer.h"
 #include "evaluator.h"  // 临时使用旧的evaluator作为后端
+#include "vm.h"
+#include "compiler.h"
+#include "builtin.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -43,6 +46,33 @@ Interpreter* interpreter_create(void) {
     /* 设置默认精度 */
     interp->precision = -1;  // 使用默认精度
     
+    /* 创建 VM 和编译器 */
+    interp->vm = vm_create();
+    if (!interp->vm) {
+        package_manager_cleanup(interp->packages);
+        free(interp->packages);
+        free(interp->funcs);
+        context_clear(interp->context);
+        free(interp->context);
+        free(interp);
+        return NULL;
+    }
+    
+    interp->compiler = compiler_create();
+    if (!interp->compiler) {
+        vm_destroy(interp->vm);
+        package_manager_cleanup(interp->packages);
+        free(interp->packages);
+        free(interp->funcs);
+        context_clear(interp->context);
+        free(interp->context);
+        free(interp);
+        return NULL;
+    }
+    
+    /* 默认使用 VM 模式 */
+    interp->use_vm = 1;
+    
     return interp;
 }
 
@@ -62,6 +92,14 @@ void interpreter_destroy(Interpreter *interp) {
     
     if (interp->funcs) {
         free(interp->funcs);
+    }
+    
+    if (interp->compiler) {
+        compiler_destroy(interp->compiler);
+    }
+    
+    if (interp->vm) {
+        vm_destroy(interp->vm);
     }
     
     free(interp);
@@ -111,55 +149,146 @@ int interpreter_execute(Interpreter *interp, const char *source, const char *fil
     result->value[0] = '\0';
     result->message[0] = '\0';
     
-    /* 使用增强词法分析器进行初步检查 */
-    Lexer lexer;
-    lexer_init(&lexer, source, filename, &interp->error);
-    
-    /* 检查词法错误 */
-    TokenType first_token = lexer_next(&lexer);
-    if (first_token == TOK_ERROR) {
-        result->type = RESULT_ERROR;
-        error_format(&interp->error, result->value, sizeof(result->value));
-        return -1;
-    }
-    
-    /* 临时使用旧的evaluator执行代码 */
-    char temp_result[512];
-    int legacy_result = eval_statement(source, temp_result, sizeof(temp_result), 
-                                       interp->context, interp->funcs, interp->packages, 
-                                       interp->precision);
-    
-    /* 转换结果 */
-    if (legacy_result < 0) {
-        convert_legacy_error(interp, legacy_result, source, filename);
-        result->type = RESULT_ERROR;
-        error_format(&interp->error, result->value, sizeof(result->value));
-        return -1;
-    }
-    
-    /* 根据返回值确定结果类型 */
-    switch (legacy_result) {
-        case 0:  // 表达式求值
+    /* 根据模式选择执行方式 */
+    if (interp->use_vm) {
+        /* VM 模式：编译 -> 执行 */
+        
+        /* 1. 编译源代码为字节码 */
+        Compiler *comp = compiler_create();
+        if (!comp) {
+            result->type = RESULT_ERROR;
+            snprintf(result->value, sizeof(result->value), "Failed to create compiler");
+            return -1;
+        }
+        
+        if (compiler_compile_string(comp, source, filename ? filename : "<stdin>") != 0) {
+            result->type = RESULT_ERROR;
+            snprintf(result->value, sizeof(result->value), "Compile error: %s", compiler_get_error(comp));
+            compiler_destroy(comp);
+            return -1;
+        }
+        
+        /* 2. 加载字节码到 VM */
+        VM *vm = vm_create();
+        if (!vm) {
+            result->type = RESULT_ERROR;
+            snprintf(result->value, sizeof(result->value), "Failed to create VM");
+            compiler_destroy(comp);
+            return -1;
+        }
+        
+        /* 共享上下文和包管理器 */
+        if (vm->context) {
+            context_clear(vm->context);
+            free(vm->context);
+        }
+        vm->context = interp->context;
+        
+        if (vm->pkg_manager) {
+            package_manager_cleanup(vm->pkg_manager);
+            free(vm->pkg_manager);
+        }
+        vm->pkg_manager = interp->packages;
+        
+        if (vm->func_registry) {
+            free(vm->func_registry);
+        }
+        vm->func_registry = interp->funcs;
+        
+        if (vm_load(vm, comp->program) != 0) {
+            result->type = RESULT_ERROR;
+            snprintf(result->value, sizeof(result->value), "Failed to load bytecode");
+            /* 恢复指针避免 double free */
+            vm->context = NULL;
+            vm->pkg_manager = NULL;
+            vm->func_registry = NULL;
+            vm_destroy(vm);
+            compiler_destroy(comp);
+            return -1;
+        }
+        
+        /* 3. 执行字节码 */
+        if (vm_run(vm) != 0) {
+            result->type = RESULT_ERROR;
+            snprintf(result->value, sizeof(result->value), "Runtime error: %s", vm_get_error(vm));
+            /* 恢复指针避免 double free */
+            vm->context = NULL;
+            vm->pkg_manager = NULL;
+            vm->func_registry = NULL;
+            vm_destroy(vm);
+            compiler_destroy(comp);
+            return -1;
+        }
+        
+        /* 4. 获取结果 */
+        BigNum *vm_result = vm_get_result(vm);
+        if (vm_result) {
             result->type = RESULT_VALUE;
-            strncpy(result->value, temp_result, sizeof(result->value) - 1);
-            result->value[sizeof(result->value) - 1] = '\0';
-            break;
-            
-        case 1:  // 赋值语句
-            result->type = RESULT_ASSIGNMENT;
-            strncpy(result->value, temp_result, sizeof(result->value) - 1);
-            result->value[sizeof(result->value) - 1] = '\0';
-            break;
-            
-        case 2:  // 导入语句
-            result->type = RESULT_IMPORT;
-            strncpy(result->message, temp_result, sizeof(result->message) - 1);
-            result->message[sizeof(result->message) - 1] = '\0';
-            break;
-            
-        default:
+            bignum_to_string(vm_result, result->value, sizeof(result->value), interp->precision);
+        } else {
             result->type = RESULT_NONE;
-            break;
+        }
+        
+        /* 清理（不释放共享的资源） */
+        vm->context = NULL;
+        vm->pkg_manager = NULL;
+        vm->func_registry = NULL;
+        vm_destroy(vm);
+        compiler_destroy(comp);
+        
+    } else {
+        /* 直接解释模式（旧方式） */
+        
+        /* 使用增强词法分析器进行初步检查 */
+        Lexer lexer;
+        lexer_init(&lexer, source, filename, &interp->error);
+        
+        /* 检查词法错误 */
+        TokenType first_token = lexer_next(&lexer);
+        if (first_token == TOK_ERROR) {
+            result->type = RESULT_ERROR;
+            error_format(&interp->error, result->value, sizeof(result->value));
+            return -1;
+        }
+        
+        /* 临时使用旧的evaluator执行代码 */
+        char temp_result[512];
+        int legacy_result = eval_statement(source, temp_result, sizeof(temp_result), 
+                                           interp->context, interp->funcs, interp->packages, 
+                                           interp->precision);
+        
+        /* 转换结果 */
+        if (legacy_result < 0) {
+            convert_legacy_error(interp, legacy_result, source, filename);
+            result->type = RESULT_ERROR;
+            error_format(&interp->error, result->value, sizeof(result->value));
+            return -1;
+        }
+        
+        /* 根据返回值确定结果类型 */
+        switch (legacy_result) {
+            case 0:  // 表达式求值
+                result->type = RESULT_VALUE;
+                strncpy(result->value, temp_result, sizeof(result->value) - 1);
+                result->value[sizeof(result->value) - 1] = '\0';
+                break;
+                
+            case 1:  // 赋值语句
+                result->type = RESULT_ASSIGNMENT;
+                strncpy(result->value, temp_result, sizeof(result->value) - 1);
+                result->value[sizeof(result->value) - 1] = '\0';
+                break;
+                
+            case 2:  // 导入语句
+                result->type = RESULT_IMPORT;
+                strncpy(result->message, temp_result, sizeof(result->message) - 1);
+                result->message[sizeof(result->message) - 1] = '\0';
+                break;
+                
+            default:
+                result->type = RESULT_NONE;
+                break;
+        }
     }
     
     return 0;
@@ -301,6 +430,13 @@ int interpreter_list_functions(const Interpreter *interp, char *buffer, size_t m
 void interpreter_clear_variables(Interpreter *interp) {
     if (interp) {
         context_clear(interp->context);
+    }
+}
+
+/* 设置执行模式 */
+void interpreter_set_vm_mode(Interpreter *interp, int use_vm) {
+    if (interp) {
+        interp->use_vm = use_vm;
     }
 }
 

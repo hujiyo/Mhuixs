@@ -1,0 +1,28 @@
+# Logex 示例程序
+# 演示内置函数和基本语法
+
+# 1. 基本算术
+let x = 10
+let y = 20
+let sum = x + y
+let product = x * y
+
+# 2. LIST 操作
+let mylist = list()
+let mylist = rpush(mylist, 100)
+let mylist = rpush(mylist, 200)
+let mylist = rpush(mylist, 300)
+let size = llen(mylist)
+
+# 3. 类型转换
+let n = num("123.456")
+let s = str(789)
+
+# 4. BITMAP 操作
+let bm = bmp(0)
+let bm = bset(bm, 10, 1)
+let bm = bset(bm, 20, 1)
+let count = bcount(bm, 0, 100)
+
+# 输出结果
+sum

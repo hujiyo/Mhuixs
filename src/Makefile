@@ -2,17 +2,41 @@
 # Logex的编译与Mhuixs独立
 
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O0 -std=c99 -DLOGEX_BUILD
+CFLAGS = -Wall -Wextra -g -O0 -std=c99 -DLOGEX_BUILD -I. -Ilib -Ishare
 LDFLAGS = -lm -ldl
-TARGET = logex
-OBJS = calculator.o evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o lib/bitmap.o lib/list.o
 
-# 默认目标：只编译计算器
-all: $(TARGET)
+# 旧版 Logex（直接解释器）
+TARGET_OLD = logex
+OBJS_OLD = calculator.o evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o lib/bitmap.o lib/list.o
 
-# 链接目标文件生成计算器程序
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -rdynamic -o $(TARGET) $(OBJS) $(LDFLAGS)
+# 新版 Logex REPL（多行编辑 + VM）
+TARGET_REPL = logex_repl
+OBJS_REPL = logex_repl.o interpreter.o evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o \
+            vm.o compiler.o bytecode.o builtin.o lib/bitmap.o lib/list.o lib/tblh.o
+
+# VM 工具
+TARGET_GLL = gll
+TARGET_VM = logex_vm
+
+# 默认目标：编译新版 REPL
+all: $(TARGET_REPL)
+
+# 编译新版 REPL（多行编辑 + VM）
+$(TARGET_REPL): $(OBJS_REPL)
+	$(CC) $(CFLAGS) -rdynamic -o $(TARGET_REPL) $(OBJS_REPL) $(LDFLAGS)
+
+# 编译旧版 Logex（兼容）
+$(TARGET_OLD): $(OBJS_OLD)
+	$(CC) $(CFLAGS) -rdynamic -o $(TARGET_OLD) $(OBJS_OLD) $(LDFLAGS)
+
+# 编译 VM 工具
+vm_tools: $(TARGET_GLL) $(TARGET_VM)
+
+$(TARGET_GLL): gll.o compiler.o bytecode.o lexer.o parser.o ast.o bignum.o context.o function.o package.o error.o builtin.o lib/bitmap.o lib/list.o lib/tblh.o
+	$(CC) $(CFLAGS) -o $(TARGET_GLL) $^ $(LDFLAGS)
+
+$(TARGET_VM): logex_vm.o vm.o bytecode.o bignum.o context.o function.o package.o builtin.o lib/bitmap.o lib/list.o lib/tblh.o
+	$(CC) $(CFLAGS) -o $(TARGET_VM) $^ $(LDFLAGS)
 
 # 编译 calculator.c
 calculator.o: calculator.c evaluator.h context.h function.h package.h
@@ -62,9 +86,49 @@ lib/bitmap.o: lib/bitmap.c lib/bitmap.h
 lib/list.o: lib/list.c lib/list.h
 	$(CC) $(CFLAGS) -c lib/list.c -o lib/list.o
 
-# 运行计算器
-run: $(TARGET)
-	./$(TARGET)
+# 编译 lib/tblh.c
+lib/tblh.o: lib/tblh.c lib/tblh.h
+	$(CC) $(CFLAGS) -c lib/tblh.c -o lib/tblh.o
+
+# 编译 logex_repl.c
+logex_repl.o: logex_repl.c interpreter.h
+	$(CC) $(CFLAGS) -c logex_repl.c
+
+# 编译 interpreter.c
+interpreter.o: interpreter.c interpreter.h vm.h compiler.h
+	$(CC) $(CFLAGS) -c interpreter.c
+
+# 编译 vm.c
+vm.o: vm.c vm.h bytecode.h builtin.h
+	$(CC) $(CFLAGS) -c vm.c
+
+# 编译 compiler.c
+compiler.o: compiler.c compiler.h bytecode.h parser.h
+	$(CC) $(CFLAGS) -c compiler.c
+
+# 编译 bytecode.c
+bytecode.o: bytecode.c bytecode.h
+	$(CC) $(CFLAGS) -c bytecode.c
+
+# 编译 builtin.c
+builtin.o: builtin.c builtin.h bignum.h
+	$(CC) $(CFLAGS) -c builtin.c
+
+# 编译 gll.c
+gll.o: gll.c compiler.h
+	$(CC) $(CFLAGS) -c gll.c
+
+# 编译 logex_vm.c
+logex_vm.o: logex_vm.c vm.h
+	$(CC) $(CFLAGS) -c logex_vm.c
+
+# 运行新版 REPL
+run: $(TARGET_REPL)
+	./$(TARGET_REPL)
+
+# 运行旧版 Logex
+run_old: $(TARGET_OLD)
+	./$(TARGET_OLD)
 
 # 编译测试程序（不包含calculator.o以避免main函数冲突）
 TEST_OBJS = evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o lib/bitmap.o lib/list.o
@@ -102,13 +166,15 @@ debug_do: debug_do_while
 
 # 清理编译生成的文件
 clean:
-	rm -f *.o lib/*.o test_control_flow debug_control_flow debug_do_while
+	rm -f *.o lib/*.o $(TARGET_OLD) $(TARGET_REPL) $(TARGET_GLL) $(TARGET_VM) test_control_flow debug_control_flow debug_do_while
 
 # 重新编译
 rebuild: clean all
 
 # 安装到系统（可选）
-install: $(TARGET)
-	cp $(TARGET) /usr/local/bin/logex
+install: $(TARGET_REPL) $(TARGET_GLL) $(TARGET_VM)
+	cp $(TARGET_REPL) /usr/local/bin/logex
+	cp $(TARGET_GLL) /usr/local/bin/gll
+	cp $(TARGET_VM) /usr/local/bin/logex_vm
 
-.PHONY: all run clean rebuild install test debug debug_do
+.PHONY: all run run_old clean rebuild install test debug debug_do vm_tools
