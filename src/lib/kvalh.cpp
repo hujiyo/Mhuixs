@@ -1,8 +1,8 @@
 #include "kvalh.hpp"
 
-KVALOT::KVALOT(str* kvalot_name)//只能是规定的数量
+KVALOT::KVALOT(mstring kvalot_name)//只能是规定的数量
 :numof_tong(hash_tong_1024ge),keynum(0),
-kvalot_name((char*)kvalot_name->string,kvalot_name->len),
+kvalot_name(mstr_cstr(kvalot_name), mstrlen(kvalot_name)),
 state(success)
 {
     hash_table.resize(numof_tong);//初始化哈希桶表大小
@@ -287,23 +287,23 @@ KVALOT* kvalot_create(const char* name) {
         return NULL;
     }
     
-    str name_str;
-    if (str_from_cstr(&name_str, name) != 0) {
-        report(merr, kvalot_module, "Failed to create str from name");
+    mstring name_str = mstr((char*)name);
+    if (name_str == NULL) {
+        report(merr, kvalot_module, "Failed to create mstring from name");
         return NULL;
     }
     
     KVALOT* kvalot = (KVALOT*)malloc(sizeof(KVALOT));
     if (kvalot == NULL) {
         handle_memory_error("kvalot creation");
-        str_free(&name_str);
+        mstr_free(name_str);
         return NULL;
     }
     
     // 使用placement new创建对象
-    new (kvalot) KVALOT(&name_str);
+    new (kvalot) KVALOT(name_str);
     
-    str_free(&name_str);
+    mstr_free(name_str);
     
     if (kvalot->iserr() != success) {
         kvalot->~KVALOT();
@@ -468,10 +468,10 @@ uint32_t KVALOT::bits(uint32_t X){
     }
 }
 
-uint32_t KVALOT::murmurhash(str& stream, uint32_t result_bits) 
+uint32_t KVALOT::murmurhash(mstring stream, uint32_t result_bits) 
 {
-    int len = stream.len;
-    const uint8_t *data = (const uint8_t*)stream.string;
+    int len = mstrlen(stream);
+    const uint8_t *data = (const uint8_t*)mstr_cstr(stream);
     
     // 参数验证
     if (data == NULL || len < 0 || result_bits > 32) {

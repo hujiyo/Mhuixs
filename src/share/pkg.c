@@ -26,48 +26,44 @@ typedef struct {
 } __attribute__((packed)) PacketHeader;
 
 
-str packing(uint8_t *data,uint32_t data_length){
+mstring packing(uint8_t *data, uint32_t data_length){
     // 检查数据长度是否合法
     if (data_length > MAX_PACKET_SIZE - PACKET_HEADER_SIZE ||
         !data || !data_length) {
-        return end;
+        return NULL;
     }
-    // 初始化包头
-    PacketHeader header = {
-        .magic[0] = MHUIXS_MAGIC0,
-        .magic[1] = MHUIXS_MAGIC1,
-        .magic[2] = MHUIXS_MAGIC2,
-        .magic[3] = MHUIXS_MAGIC3,
-        .data_length = htonl(data_length),
-        .delimiter = MHUIXS_DELIMITER
-    };
 
-    //序列化数据包
-    uint8_t *buffer = (uint8_t*)malloc(PACKET_HEADER_SIZE + data_length);
+    uint32_t total_len = PACKET_HEADER_SIZE + data_length;
+    
+    // 分配内存：size_t + 包头 + 数据
+    mstring buffer = (mstring)malloc(sizeof(size_t) + total_len);
     if (!buffer) {
-        printf("错误: 序列化缓冲区分配失败\n");
-        return end;
+        return NULL;
     }
-    memcpy(buffer, &header, PACKET_HEADER_SIZE);// 复制包头
-    memcpy(buffer + PACKET_HEADER_SIZE, data, data_length);// 复制数据  
 
-    str ret = {
-        .string = buffer,
-        .len = PACKET_HEADER_SIZE + data_length,
-        .state = 0
+    // 设置长度
+    *(size_t*)buffer = total_len;
+    
+    // 构造包头
+    PacketHeader header = {
+        .magic = {'M', 'U', 'I', 'X'},
+        .data_length = htonl(data_length),  // 转换为大端字节序
+        .delimiter = '$'
     };
-    return ret;
+
+    // 复制包头和数据到 mstring 数据区
+    uint8_t* data_ptr = (uint8_t*)(buffer + sizeof(size_t));
+    memcpy(data_ptr, &header, PACKET_HEADER_SIZE);
+    memcpy(data_ptr + PACKET_HEADER_SIZE, data, data_length);
+    
+    return buffer;
 }
 
 //解包：解包失败表示数据包非法
-str unpacking(const uint8_t *packet, uint32_t packet_length) {
-    str result = {
-        .string = NULL,
-        .len = 0,
-        .state = 0
-    };    
+mstring unpacking(const uint8_t *packet, uint32_t packet_length) {    
     // 检查基本条件
     if (!packet || packet_length < PACKET_HEADER_SIZE) {
+        return NULL; // 返回空字符串表示错误
         return result; // 返回空字符串表示错误
     }    
     // 检查魔数

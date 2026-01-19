@@ -11,7 +11,7 @@
 
 #include "mstring.h"
 #include "Mhudef.hpp"
-//#include "stdstr.h" // 引入str结构支持
+
 /*
 #版权所有 (c) HUJI 2025
 #许可证协议:
@@ -73,7 +73,7 @@ private:
 
     static uint32_t bits(uint32_t X);
     int rise_capacity();
-    static uint32_t murmurhash(str& stream, uint32_t result_bits);
+    static uint32_t murmurhash(mstring stream, uint32_t result_bits);
     
     // 辅助函数：C风格的内存管理
     int tong_ensure_capacity(HASH_TONG* tong, uint32_t needed_capacity);
