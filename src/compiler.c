@@ -206,7 +206,198 @@ static int compile_assignment(Compiler *comp, ASTNode *node) {
     
     /* 存储到变量 */
     uint32_t idx = compiler_add_symbol(comp, node->data.assignment.var_name);
-    bytecode_emit_u32(comp->program, OP_STORE_VAR, idx);
+    
+    /* 根据 is_static 选择存储指令 */
+    if (node->data.assignment.is_static) {
+        bytecode_emit_u32(comp->program, OP_STORE_STATIC, idx);
+    } else {
+        bytecode_emit_u32(comp->program, OP_STORE_VAR, idx);
+    }
+    
+    return 0;
+}
+
+/* ==================== NAQL 编译函数 ==================== */
+
+/* 编译 HOOK 操作 */
+static int compile_hook_op(Compiler *comp, ASTNode *node) {
+    ASTHookOp *op = &node->data.hook_op;
+    
+    /* 压入对象名 */
+    uint32_t name_idx = bytecode_add_const_string(comp->program, op->obj_name);
+    bytecode_emit_u32(comp->program, OP_PUSH_STR, name_idx);
+    
+    /* 压入对象类型（如果有） */
+    if (op->obj_type) {
+        uint32_t type_idx = bytecode_add_const_string(comp->program, op->obj_type);
+        bytecode_emit_u32(comp->program, OP_PUSH_STR, type_idx);
+    }
+    
+    /* 发射 HOOK 操作指令 */
+    DBSubOpCode subop = DB_HOOK_CREATE;
+    if (strcmp(op->operation, "SWITCH") == 0) subop = DB_HOOK_SWITCH;
+    else if (strcmp(op->operation, "DEL") == 0) subop = DB_HOOK_DEL;
+    else if (strcmp(op->operation, "CLEAR") == 0) subop = DB_HOOK_CLEAR;
+    
+    bytecode_emit_ref(comp->program, OP_DB_HOOK, subop, op->obj_type ? 2 : 1);
+    
+    return 0;
+}
+
+/* 编译 FIELD 操作 */
+static int compile_field_op(Compiler *comp, ASTNode *node) {
+    ASTFieldOp *op = &node->data.field_op;
+    
+    if (strcmp(op->operation, "ADD") == 0) {
+        /* FIELD ADD field_name data_type [constraint]; */
+        uint32_t name_idx = bytecode_add_const_string(comp->program, op->field_name);
+        bytecode_emit_u32(comp->program, OP_PUSH_STR, name_idx);
+        
+        uint32_t type_idx = bytecode_add_const_string(comp->program, op->data_type);
+        bytecode_emit_u32(comp->program, OP_PUSH_STR, type_idx);
+        
+        int arg_count = 2;
+        if (op->constraint) {
+            uint32_t cons_idx = bytecode_add_const_string(comp->program, op->constraint);
+            bytecode_emit_u32(comp->program, OP_PUSH_STR, cons_idx);
+            arg_count = 3;
+        }
+        
+        bytecode_emit_ref(comp->program, OP_DB_TABLE, DB_FIELD_ADD, arg_count);
+    }
+    else if (strcmp(op->operation, "DEL") == 0) {
+        /* FIELD DEL index; */
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->index1);
+        bytecode_emit_ref(comp->program, OP_DB_TABLE, DB_FIELD_DEL, 1);
+    }
+    else if (strcmp(op->operation, "SWAP") == 0) {
+        /* FIELD SWAP index1 index2; */
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->index1);
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->index2);
+        bytecode_emit_ref(comp->program, OP_DB_TABLE, DB_FIELD_SWAP, 2);
+    }
+    
+    return 0;
+}
+
+/* 编译 TABLE 操作 */
+static int compile_table_op(Compiler *comp, ASTNode *node) {
+    ASTTableOp *op = &node->data.table_op;
+    
+    if (strcmp(op->operation, "ADD") == 0) {
+        /* ADD val1 val2 ...; */
+        for (int i = 0; i < op->value_count; i++) {
+            uint32_t idx = bytecode_add_const_string(comp->program, op->value_strings[i]);
+            bytecode_emit_u32(comp->program, OP_PUSH_STR, idx);
+        }
+        bytecode_emit_ref(comp->program, OP_DB_TABLE, DB_TABLE_ADD, op->value_count);
+    }
+    else if (strcmp(op->operation, "GET") == 0) {
+        /* GET index; */
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->row_index);
+        bytecode_emit_ref(comp->program, OP_DB_TABLE, DB_TABLE_GET, 1);
+    }
+    else if (strcmp(op->operation, "SET") == 0) {
+        /* SET row col value; */
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->row_index);
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->col_index);
+        if (op->value_strings && op->value_count > 0) {
+            uint32_t idx = bytecode_add_const_string(comp->program, op->value_strings[0]);
+            bytecode_emit_u32(comp->program, OP_PUSH_STR, idx);
+        }
+        bytecode_emit_ref(comp->program, OP_DB_TABLE, DB_TABLE_SET, 3);
+    }
+    else if (strcmp(op->operation, "DEL") == 0) {
+        /* DEL index; */
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->row_index);
+        bytecode_emit_ref(comp->program, OP_DB_TABLE, DB_TABLE_DEL, 1);
+    }
+    else if (strcmp(op->operation, "WHERE") == 0) {
+        /* GET WHERE condition; */
+        uint32_t idx = bytecode_add_const_string(comp->program, op->condition);
+        bytecode_emit_u32(comp->program, OP_PUSH_STR, idx);
+        bytecode_emit_ref(comp->program, OP_DB_TABLE, DB_TABLE_WHERE, 1);
+    }
+    
+    return 0;
+}
+
+/* 编译 KVALOT 操作 */
+static int compile_kvalot_op(Compiler *comp, ASTNode *node) {
+    ASTKvalotOp *op = &node->data.kvalot_op;
+    
+    /* 压入键名 */
+    uint32_t key_idx = bytecode_add_const_string(comp->program, op->key);
+    bytecode_emit_u32(comp->program, OP_PUSH_STR, key_idx);
+    
+    if (strcmp(op->operation, "SET") == 0) {
+        /* SET key value; */
+        uint32_t val_idx = bytecode_add_const_string(comp->program, op->value_string);
+        bytecode_emit_u32(comp->program, OP_PUSH_STR, val_idx);
+        bytecode_emit_ref(comp->program, OP_DB_KVALOT, DB_KVALOT_SET, 2);
+    }
+    else if (strcmp(op->operation, "GET") == 0) {
+        bytecode_emit_ref(comp->program, OP_DB_KVALOT, DB_KVALOT_GET, 1);
+    }
+    else if (strcmp(op->operation, "DEL") == 0) {
+        bytecode_emit_ref(comp->program, OP_DB_KVALOT, DB_KVALOT_DEL, 1);
+    }
+    else if (strcmp(op->operation, "EXISTS") == 0) {
+        bytecode_emit_ref(comp->program, OP_DB_KVALOT, DB_KVALOT_EXISTS, 1);
+    }
+    
+    return 0;
+}
+
+/* 编译 LIST 操作 */
+static int compile_list_op(Compiler *comp, ASTNode *node) {
+    ASTListOp *op = &node->data.list_op;
+    
+    if (strcmp(op->operation, "LPUSH") == 0 || strcmp(op->operation, "RPUSH") == 0) {
+        /* LPUSH/RPUSH value; */
+        uint32_t val_idx = bytecode_add_const_string(comp->program, op->value_string);
+        bytecode_emit_u32(comp->program, OP_PUSH_STR, val_idx);
+        DBSubOpCode subop = (strcmp(op->operation, "LPUSH") == 0) ? DB_LIST_LPUSH : DB_LIST_RPUSH;
+        bytecode_emit_ref(comp->program, OP_DB_LIST, subop, 1);
+    }
+    else if (strcmp(op->operation, "LPOP") == 0 || strcmp(op->operation, "RPOP") == 0) {
+        /* LPOP/RPOP; */
+        DBSubOpCode subop = (strcmp(op->operation, "LPOP") == 0) ? DB_LIST_LPOP : DB_LIST_RPOP;
+        bytecode_emit_ref(comp->program, OP_DB_LIST, subop, 0);
+    }
+    else if (strcmp(op->operation, "GET") == 0) {
+        /* GET index; */
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->index);
+        bytecode_emit_ref(comp->program, OP_DB_LIST, DB_LIST_GET, 1);
+    }
+    
+    return 0;
+}
+
+/* 编译 BITMAP 操作 */
+static int compile_bitmap_op(Compiler *comp, ASTNode *node) {
+    ASTBitmapOp *op = &node->data.bitmap_op;
+    
+    if (strcmp(op->operation, "SET") == 0) {
+        /* SET offset value; */
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->offset);
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->value);
+        bytecode_emit_ref(comp->program, OP_DB_BITMAP, DB_BITMAP_SET, 2);
+    }
+    else if (strcmp(op->operation, "GET") == 0) {
+        /* GET offset; */
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->offset);
+        bytecode_emit_ref(comp->program, OP_DB_BITMAP, DB_BITMAP_GET, 1);
+    }
+    else if (strcmp(op->operation, "COUNT") == 0) {
+        /* COUNT; */
+        bytecode_emit_ref(comp->program, OP_DB_BITMAP, DB_BITMAP_COUNT, 0);
+    }
+    else if (strcmp(op->operation, "FLIP") == 0) {
+        /* FLIP offset; */
+        bytecode_emit_i64(comp->program, OP_PUSH_NUM, op->offset);
+        bytecode_emit_ref(comp->program, OP_DB_BITMAP, DB_BITMAP_FLIP, 1);
+    }
     
     return 0;
 }
@@ -262,6 +453,44 @@ static int compile_statement(Compiler *comp, ASTNode *node) {
             
         case AST_EXPRESSION_STMT:
             return compile_expression(comp, node->data.expr_stmt);
+        
+        /* NAQL 语句 */
+        case AST_HOOK_CREATE:
+        case AST_HOOK_SWITCH:
+        case AST_HOOK_DEL:
+        case AST_HOOK_CLEAR:
+            return compile_hook_op(comp, node);
+            
+        case AST_FIELD_ADD:
+        case AST_FIELD_DEL:
+        case AST_FIELD_SWAP:
+            return compile_field_op(comp, node);
+            
+        case AST_TABLE_ADD:
+        case AST_TABLE_GET:
+        case AST_TABLE_SET:
+        case AST_TABLE_DEL:
+        case AST_TABLE_WHERE:
+            return compile_table_op(comp, node);
+            
+        case AST_KVALOT_SET:
+        case AST_KVALOT_GET:
+        case AST_KVALOT_DEL:
+        case AST_KVALOT_EXISTS:
+            return compile_kvalot_op(comp, node);
+            
+        case AST_LIST_LPUSH:
+        case AST_LIST_RPUSH:
+        case AST_LIST_LPOP:
+        case AST_LIST_RPOP:
+        case AST_LIST_GET:
+            return compile_list_op(comp, node);
+            
+        case AST_BITMAP_SET:
+        case AST_BITMAP_GET:
+        case AST_BITMAP_COUNT:
+        case AST_BITMAP_FLIP:
+            return compile_bitmap_op(comp, node);
             
         default:
             return compile_expression(comp, node);

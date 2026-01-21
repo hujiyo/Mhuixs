@@ -365,6 +365,227 @@ int vm_step(VM *vm) {
             break;
         }
         
+        case OP_STORE_STATIC: {
+            /* 存储持久化变量（注册到 Mhuixs） */
+            Constant *c = &vm->program->const_pool[inst->operand.u32];
+            BHS *value = vm_peek(vm);
+            if (value) {
+                /* TODO: 调用 C 接口注册到 Mhuixs */
+                /* hook_c_set_bhs(current_hook, caller_uid, value); */
+                /* 暂时也存储到本地上下文 */
+                context_set(vm->context, c->value.str, value);
+            }
+            break;
+        }
+        
+        case OP_LOAD_STATIC: {
+            /* 加载持久化变量 */
+            Constant *c = &vm->program->const_pool[inst->operand.u32];
+            /* TODO: 调用 C 接口从 Mhuixs 获取 */
+            /* BHS *value = hook_c_get_bhs(current_hook, caller_uid); */
+            BHS *value = context_get(vm->context, c->value.str);
+            if (value) {
+                vm_push(vm, value);
+            } else {
+                vm_error(vm, "Undefined static variable");
+            }
+            break;
+        }
+        
+        case OP_DB_HOOK: {
+            /* HOOK 操作 */
+            uint32_t subop = inst->operand.ref.idx;
+            uint32_t arg_count = inst->operand.ref.len;
+            
+            /* 弹出参数 */
+            BHS *obj_name = vm_pop(vm);
+            BHS *obj_type = (arg_count > 1) ? vm_pop(vm) : NULL;
+            
+            /* TODO: 调用 C 接口执行 HOOK 操作 */
+            /* 根据 subop 执行不同操作 */
+            switch (subop) {
+                case DB_HOOK_CREATE:
+                    /* reg_c_register(caller_uid, name, &hook); */
+                    break;
+                case DB_HOOK_SWITCH:
+                    /* 切换当前 HOOK */
+                    break;
+                case DB_HOOK_DEL:
+                    /* reg_c_unregister(name); */
+                    break;
+                case DB_HOOK_CLEAR:
+                    /* 清空 HOOK 内容 */
+                    break;
+            }
+            break;
+        }
+        
+        case OP_DB_TABLE: {
+            /* TABLE 操作 */
+            uint32_t subop = inst->operand.ref.idx;
+            uint32_t arg_count = inst->operand.ref.len;
+            
+            switch (subop) {
+                case DB_TABLE_ADD: {
+                    /* 弹出所有值字符串 */
+                    /* TODO: 解析字符串为 BHS，调用 add_record */
+                    for (uint32_t i = 0; i < arg_count; i++) {
+                        vm_pop(vm);
+                    }
+                    break;
+                }
+                case DB_TABLE_GET: {
+                    BHS *index = vm_pop(vm);
+                    /* TODO: 调用 get_record */
+                    (void)index;
+                    break;
+                }
+                case DB_TABLE_SET: {
+                    BHS *value = vm_pop(vm);
+                    BHS *col = vm_pop(vm);
+                    BHS *row = vm_pop(vm);
+                    /* TODO: 调用 set_record */
+                    (void)value; (void)col; (void)row;
+                    break;
+                }
+                case DB_TABLE_DEL: {
+                    BHS *index = vm_pop(vm);
+                    /* TODO: 调用 del_record */
+                    (void)index;
+                    break;
+                }
+                case DB_TABLE_WHERE: {
+                    BHS *condition = vm_pop(vm);
+                    /* TODO: 解析条件，执行查询 */
+                    (void)condition;
+                    break;
+                }
+                case DB_FIELD_ADD: {
+                    /* 弹出字段信息 */
+                    for (uint32_t i = 0; i < arg_count; i++) {
+                        vm_pop(vm);
+                    }
+                    /* TODO: 调用 add_field */
+                    break;
+                }
+                case DB_FIELD_DEL: {
+                    BHS *index = vm_pop(vm);
+                    /* TODO: 调用 del_field */
+                    (void)index;
+                    break;
+                }
+                case DB_FIELD_SWAP: {
+                    BHS *idx2 = vm_pop(vm);
+                    BHS *idx1 = vm_pop(vm);
+                    /* TODO: 调用 swap_field */
+                    (void)idx1; (void)idx2;
+                    break;
+                }
+            }
+            break;
+        }
+        
+        case OP_DB_KVALOT: {
+            /* KVALOT 操作 */
+            uint32_t subop = inst->operand.ref.idx;
+            
+            switch (subop) {
+                case DB_KVALOT_SET: {
+                    BHS *value = vm_pop(vm);
+                    BHS *key = vm_pop(vm);
+                    /* TODO: 调用 kvalot_set */
+                    (void)key; (void)value;
+                    break;
+                }
+                case DB_KVALOT_GET: {
+                    BHS *key = vm_pop(vm);
+                    /* TODO: 调用 kvalot_get，结果压栈 */
+                    (void)key;
+                    break;
+                }
+                case DB_KVALOT_DEL: {
+                    BHS *key = vm_pop(vm);
+                    /* TODO: 调用 kvalot_del */
+                    (void)key;
+                    break;
+                }
+                case DB_KVALOT_EXISTS: {
+                    BHS *key = vm_pop(vm);
+                    /* TODO: 调用 kvalot_exists，结果压栈 */
+                    (void)key;
+                    break;
+                }
+            }
+            break;
+        }
+        
+        case OP_DB_LIST: {
+            /* LIST 操作 */
+            uint32_t subop = inst->operand.ref.idx;
+            
+            switch (subop) {
+                case DB_LIST_LPUSH: {
+                    BHS *value = vm_pop(vm);
+                    /* TODO: 调用 list_lpush */
+                    (void)value;
+                    break;
+                }
+                case DB_LIST_RPUSH: {
+                    BHS *value = vm_pop(vm);
+                    /* TODO: 调用 list_rpush */
+                    (void)value;
+                    break;
+                }
+                case DB_LIST_LPOP: {
+                    /* TODO: 调用 list_lpop，结果压栈 */
+                    break;
+                }
+                case DB_LIST_RPOP: {
+                    /* TODO: 调用 list_rpop，结果压栈 */
+                    break;
+                }
+                case DB_LIST_GET: {
+                    BHS *index = vm_pop(vm);
+                    /* TODO: 调用 list_get，结果压栈 */
+                    (void)index;
+                    break;
+                }
+            }
+            break;
+        }
+        
+        case OP_DB_BITMAP: {
+            /* BITMAP 操作 */
+            uint32_t subop = inst->operand.ref.idx;
+            
+            switch (subop) {
+                case DB_BITMAP_SET: {
+                    BHS *value = vm_pop(vm);
+                    BHS *offset = vm_pop(vm);
+                    /* TODO: 调用 bitmap_set */
+                    (void)offset; (void)value;
+                    break;
+                }
+                case DB_BITMAP_GET: {
+                    BHS *offset = vm_pop(vm);
+                    /* TODO: 调用 bitmap_get，结果压栈 */
+                    (void)offset;
+                    break;
+                }
+                case DB_BITMAP_COUNT: {
+                    /* TODO: 调用 bitmap_count，结果压栈 */
+                    break;
+                }
+                case DB_BITMAP_FLIP: {
+                    BHS *offset = vm_pop(vm);
+                    /* TODO: 调用 bitmap_flip */
+                    (void)offset;
+                    break;
+                }
+            }
+            break;
+        }
+        
         case OP_HALT:
             vm->status = VM_HALT;
             break;

@@ -24,6 +24,7 @@ typedef enum {
     /* 标识符和关键字 */
     TOK_IDENTIFIER,  /* 标识符（变量名） */
     TOK_LET,         /* let 关键字 */
+    TOK_STATIC,      /* static 关键字（持久化变量） */
     TOK_IMPORT,      /* import 关键字 */
     TOK_ASSIGN,      /* = 赋值运算符 */
     
@@ -75,7 +76,113 @@ typedef enum {
     TOK_RPAREN,      /* ) */
     TOK_COMMA,       /* , */
     
+    /* NAQL 数据库操作关键字 */
+    TOK_HOOK,        /* HOOK */
+    TOK_TABLE,       /* TABLE */
+    TOK_KVALOT,      /* KVALOT */
+    TOK_FIELD,       /* FIELD */
+    TOK_ADD,         /* ADD */
+    TOK_GET,         /* GET */
+    TOK_SET,         /* SET */
+    TOK_DEL,         /* DEL */
+    TOK_WHERE,       /* WHERE */
+    TOK_INSERT,      /* INSERT */
+    TOK_SWAP,        /* SWAP */
+    TOK_CLEAR,       /* CLEAR */
+    TOK_EXISTS,      /* EXISTS */
+    TOK_SELECT,      /* SELECT */
+    TOK_KEY,         /* KEY */
+    TOK_COPY,        /* COPY */
+    TOK_RENAME,      /* RENAME */
+    TOK_APPEND,      /* APPEND */
+    TOK_MERGE,       /* MERGE */
+    TOK_LPUSH,       /* LPUSH */
+    TOK_RPUSH,       /* RPUSH */
+    TOK_LPOP,        /* LPOP */
+    TOK_RPOP,        /* RPOP */
+    TOK_LEN,         /* LEN */
+    TOK_COUNT,       /* COUNT */
+    TOK_FIND,        /* FIND */
+    TOK_SORT,        /* SORT */
+    TOK_REVERSE,     /* REVERSE */
+    TOK_UNIQUE,      /* UNIQUE */
+    TOK_JOIN,        /* JOIN */
+    TOK_FLIP,        /* FLIP */
+    TOK_FILL,        /* FILL */
+    TOK_RESIZE,      /* RESIZE */
+    TOK_SHIFT,       /* SHIFT */
+    TOK_EXPORT,      /* EXPORT */
+    TOK_BACKUP,      /* BACKUP */
+    TOK_RESTORE,     /* RESTORE */
+    TOK_LOCK,        /* LOCK */
+    TOK_UNLOCK,      /* UNLOCK */
+    TOK_SYSTEM,      /* SYSTEM */
+    TOK_INFO,        /* INFO */
+    TOK_STATUS,      /* STATUS */
+    TOK_REGISTER,    /* REGISTER */
+    TOK_CLEANUP,     /* CLEANUP */
+    TOK_SHUTDOWN,    /* SHUTDOWN */
+    TOK_LOG,         /* LOG */
+    TOK_RANK,        /* RANK */
+    TOK_CHMOD,       /* CHMOD */
+    TOK_DESC,        /* DESC */
+    TOK_TYPE,        /* TYPE */
+    TOK_POS,         /* POS */
+    TOK_TEMP,        /* TEMP */
+    TOK_ATTRIBUTE,   /* ATTRIBUTE */
+    TOK_INDEX,       /* INDEX */
+    TOK_ASYNC,       /* ASYNC */
+    TOK_SYNC,        /* SYNC */
+    TOK_WAIT,        /* WAIT */
+    TOK_MULTI,       /* MULTI */
+    TOK_EXEC,        /* EXEC */
+    TOK_BREAK,       /* BREAK */
+    TOK_CONTINUE,    /* CONTINUE */
+    
+    /* NAQL 数据类型关键字 */
+    TOK_I1,          /* i1/int8_t */
+    TOK_I2,          /* i2/int16_t */
+    TOK_I4,          /* i4/int32_t/int */
+    TOK_I8,          /* i8/int64_t */
+    TOK_UI1,         /* ui1/uint8_t */
+    TOK_UI2,         /* ui2/uint16_t */
+    TOK_UI4,         /* ui4/uint32_t */
+    TOK_UI8,         /* ui8/uint64_t */
+    TOK_F4,          /* f4/float */
+    TOK_F8,          /* f8/double */
+    TOK_STR,         /* str/string */
+    TOK_BOOL,        /* bool */
+    TOK_BLOB,        /* blob */
+    TOK_JSON,        /* json */
+    TOK_DATE,        /* date */
+    TOK_TIME,        /* time */
+    TOK_DATETIME,    /* datetime */
+    
+    /* NAQL 约束关键字 */
+    TOK_PKEY,        /* PKEY (Primary Key) */
+    TOK_FKEY,        /* FKEY (Foreign Key) */
+    TOK_UNIQUE,      /* UNIQUE */
+    TOK_NOTNULL,     /* NOTNULL */
+    TOK_DEFAULT,     /* DEFAULT */
+    TOK_AUTO_INCREMENT, /* AUTO_INCREMENT */
+    
+    /* NAQL 逻辑关键字 */
+    TOK_AND_KW,      /* AND (关键字形式) */
+    TOK_OR_KW,       /* OR (关键字形式) */
+    TOK_NOT_KW,      /* NOT (关键字形式) */
+    TOK_IN_KW,       /* IN (关键字形式) */
+    TOK_BETWEEN,     /* BETWEEN */
+    TOK_LIKE,        /* LIKE */
+    TOK_IS,          /* IS */
+    TOK_NULL,        /* NULL */
+    
+    /* NAQL 对象类型 */
+    TOK_LIST,        /* LIST */
+    TOK_BITMAP,      /* BITMAP */
+    TOK_STREAM,      /* STREAM */
+    
     /* 控制符号 */
+    TOK_SEMICOLON,   /* ; 分号（NAQL 语句结束符） */
     TOK_NEWLINE,     /* 换行符（语句分隔符） */
     TOK_END,         /* 结束 */
     TOK_ERROR        /* 错误 */

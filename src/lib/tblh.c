@@ -1,6 +1,5 @@
 #include "tblh.h"
 
-
 TABLE* create_table(int* types, mstring* field_names, size_t field_num, mstring table_name){
     //先验证参数是否合法
     if(types==NULL || field_names==NULL || field_num==0 || table_name==NULL){

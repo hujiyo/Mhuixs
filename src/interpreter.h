@@ -5,7 +5,7 @@
 #include "context.h"
 #include "function.h"
 #include "package.h"
-#include "ast_v2.h"
+#include "ast.h"
 #include "vm.h"
 #include "compiler.h"
 
@@ -20,6 +20,14 @@
  * - 清晰的执行流程
  * - 易于扩展的架构
  * - 完整的上下文管理
+ *
+ *  ```
+ *  应用层 (logex.c) **logex.c 只依赖且直接依赖 interpreter.h**
+ *      ↓
+ *  接口层 (interpreter.h) **整合执行层的各种逻辑**
+ *      ↓
+ *  执行层 (vm.h, evaluator.h)
+ *  ```
  */
 
 /* 解释器状态 */
@@ -172,6 +180,16 @@ int interpreter_list_variables(const Interpreter *interp, char *buffer, size_t m
  * @return 0 表示成功，非 0 表示失败
  */
 int interpreter_list_functions(const Interpreter *interp, char *buffer, size_t max_len);
+
+/**
+ * 执行字节码文件
+ * 
+ * @param interp 解释器实例
+ * @param bytecode_file 字节码文件路径
+ * @param result 执行结果
+ * @return 0 表示成功，非 0 表示失败
+ */
+int interpreter_execute_bytecode(Interpreter *interp, const char *bytecode_file, InterpreterResult *result);
 
 /**
  * 清空所有变量

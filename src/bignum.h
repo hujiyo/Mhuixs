@@ -52,6 +52,8 @@ typedef struct {
     } type_data;                              /* 8字节（类型特定数据） */
 } BHS, BigNum, basic_handle_struct, bhs;  /* BHS 是推荐的类型名，BigNum 保留兼容 */
 
+typedef BHS* Obj;
+
 /* ========================================
  * 依赖库引用
  * ======================================== */

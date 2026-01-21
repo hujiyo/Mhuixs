@@ -10,15 +10,14 @@ TARGET_OLD = logex
 OBJS_OLD = calculator.o evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o lib/bitmap.o lib/list.o
 
 # 新版 Logex REPL（多行编辑 + VM）
-TARGET_REPL = logex_repl
-OBJS_REPL = logex_repl.o interpreter.o evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o \
+TARGET_REPL = logex
+OBJS_REPL = logex.o interpreter.o evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o \
             vm.o compiler.o bytecode.o builtin.o lib/bitmap.o lib/list.o lib/tblh.o
 
 # VM 工具
 TARGET_GLL = gll
-TARGET_VM = logex_vm
 
-# 默认目标：编译新版 REPL
+# 默认目标：编译新版 Logex
 all: $(TARGET_REPL)
 
 # 编译新版 REPL（多行编辑 + VM）
@@ -30,13 +29,10 @@ $(TARGET_OLD): $(OBJS_OLD)
 	$(CC) $(CFLAGS) -rdynamic -o $(TARGET_OLD) $(OBJS_OLD) $(LDFLAGS)
 
 # 编译 VM 工具
-vm_tools: $(TARGET_GLL) $(TARGET_VM)
+vm_tools: $(TARGET_GLL)
 
 $(TARGET_GLL): gll.o compiler.o bytecode.o lexer.o parser.o ast.o bignum.o context.o function.o package.o error.o builtin.o lib/bitmap.o lib/list.o lib/tblh.o
 	$(CC) $(CFLAGS) -o $(TARGET_GLL) $^ $(LDFLAGS)
-
-$(TARGET_VM): logex_vm.o vm.o bytecode.o bignum.o context.o function.o package.o builtin.o lib/bitmap.o lib/list.o lib/tblh.o
-	$(CC) $(CFLAGS) -o $(TARGET_VM) $^ $(LDFLAGS)
 
 # 编译 calculator.c
 calculator.o: calculator.c evaluator.h context.h function.h package.h
@@ -90,9 +86,9 @@ lib/list.o: lib/list.c lib/list.h
 lib/tblh.o: lib/tblh.c lib/tblh.h
 	$(CC) $(CFLAGS) -c lib/tblh.c -o lib/tblh.o
 
-# 编译 logex_repl.c
-logex_repl.o: logex_repl.c interpreter.h
-	$(CC) $(CFLAGS) -c logex_repl.c
+# 编译 logex.c
+logex.o: logex.c interpreter.h compiler.h bytecode.h
+	$(CC) $(CFLAGS) -c logex.c
 
 # 编译 interpreter.c
 interpreter.o: interpreter.c interpreter.h vm.h compiler.h
@@ -118,11 +114,7 @@ builtin.o: builtin.c builtin.h bignum.h
 gll.o: gll.c compiler.h
 	$(CC) $(CFLAGS) -c gll.c
 
-# 编译 logex_vm.c
-logex_vm.o: logex_vm.c vm.h
-	$(CC) $(CFLAGS) -c logex_vm.c
-
-# 运行新版 REPL
+# 运行新版 Logex
 run: $(TARGET_REPL)
 	./$(TARGET_REPL)
 
@@ -166,15 +158,16 @@ debug_do: debug_do_while
 
 # 清理编译生成的文件
 clean:
-	rm -f *.o lib/*.o $(TARGET_OLD) $(TARGET_REPL) $(TARGET_GLL) $(TARGET_VM) test_control_flow debug_control_flow debug_do_while
+	rm -f *.o lib/*.o $(TARGET_OLD) $(TARGET_REPL) $(TARGET_GLL) test_control_flow debug_control_flow debug_do_while
 
 # 重新编译
 rebuild: clean all
 
 # 安装到系统（可选）
-install: $(TARGET_REPL) $(TARGET_GLL) $(TARGET_VM)
+install: $(TARGET_REPL) $(TARGET_GLL)
 	cp $(TARGET_REPL) /usr/local/bin/logex
 	cp $(TARGET_GLL) /usr/local/bin/gll
-	cp $(TARGET_VM) /usr/local/bin/logex_vm
+	@echo "✓ 安装完成: logex (统一解释器) 和 gll (编译器)"
+	@echo "  logex_vm 功能已合并到 logex 中"
 
 .PHONY: all run run_old clean rebuild install test debug debug_do vm_tools

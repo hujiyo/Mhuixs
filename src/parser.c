@@ -377,7 +377,7 @@ ASTNode* parser_parse_do_while(Parser *parser) {
 }
 
 /* 解析赋值语句 */
-ASTNode* parser_parse_assignment(Parser *parser, const char *var_name) {
+ASTNode* parser_parse_assignment(Parser *parser, const char *var_name, int is_static) {
     /* 已经消费了变量名和等号 */
     
     /* 解析表达式 */
@@ -387,7 +387,7 @@ ASTNode* parser_parse_assignment(Parser *parser, const char *var_name) {
         return NULL;
     }
     
-    ASTNode *node = ast_create_assignment(var_name, expr);
+    ASTNode *node = ast_create_assignment(var_name, expr, is_static);
     free(expr);
     return node;
 }
@@ -470,8 +470,65 @@ ASTNode* parser_parse_statement(Parser *parser) {
         case TOK_IMPORT:
             lexer_next(parser->lexer);
             return parser_parse_import(parser);
+        
+        /* NAQL 语句 */
+        case TOK_HOOK:
+            return parser_parse_hook(parser);
             
+        case TOK_FIELD:
+            return parser_parse_field(parser);
+            
+        case TOK_ADD:
+        case TOK_GET:
+        case TOK_SET:
+        case TOK_DEL:
+            /* 需要根据当前上下文判断是 TABLE/KVALOT/LIST/BITMAP 操作 */
+            /* 这里简化处理，默认为 TABLE 操作 */
+            return parser_parse_table_op(parser);
+            
+        case TOK_LPUSH:
+        case TOK_RPUSH:
+        case TOK_LPOP:
+        case TOK_RPOP:
+            return parser_parse_list_op(parser);
+            
+        case TOK_EXISTS:
+            return parser_parse_kvalot_op(parser);
+            
+        case TOK_COUNT:
+        case TOK_FLIP:
+            return parser_parse_bitmap_op(parser);
+            
+        case TOK_STATIC: {
+            /* static let var = expr; 持久化变量 */
+            lexer_next(parser->lexer);  /* 消费 'static' */
+            
+            if (lexer_current_type(parser->lexer) != TOK_LET) {
+                parser_set_error(parser, "Expected 'let' after 'static'");
+                return NULL;
+            }
+            lexer_next(parser->lexer);  /* 消费 'let' */
+            
+            if (lexer_current_type(parser->lexer) != TOK_IDENTIFIER) {
+                parser_set_error(parser, "Expected variable name after static let");
+                return NULL;
+            }
+            
+            char *var_name = parser_strdup(lexer_current_value(parser->lexer));
+            lexer_next(parser->lexer);
+            
+            if (!parser_expect(parser, TOK_ASSIGN)) {
+                free(var_name);
+                return NULL;
+            }
+            
+            ASTNode *node = parser_parse_assignment(parser, var_name, 1);  /* is_static = 1 */
+            free(var_name);
+            return node;
+        }
+        
         case TOK_LET: {
+            /* let var = expr; 临时变量（栈上） */
             lexer_next(parser->lexer);  /* 消费 'let' */
             
             if (lexer_current_type(parser->lexer) != TOK_IDENTIFIER) {
@@ -487,7 +544,7 @@ ASTNode* parser_parse_statement(Parser *parser) {
                 return NULL;
             }
             
-            ASTNode *node = parser_parse_assignment(parser, var_name);
+            ASTNode *node = parser_parse_assignment(parser, var_name, 0);  /* is_static = 0 */
             free(var_name);
             return node;
         }
@@ -498,7 +555,7 @@ ASTNode* parser_parse_statement(Parser *parser) {
             
             if (lexer_current_type(parser->lexer) == TOK_ASSIGN) {
                 lexer_next(parser->lexer);  /* 消费 '=' */
-                ASTNode *node = parser_parse_assignment(parser, var_name);
+                ASTNode *node = parser_parse_assignment(parser, var_name, 0);  /* 默认非持久化 */
                 free(var_name);
                 return node;
             } else {
@@ -550,4 +607,512 @@ int parser_has_error(Parser *parser) {
 /* 获取错误消息 */
 const char* parser_get_error(Parser *parser) {
     return parser->error_msg;
+}
+
+/* ==================== NAQL 解析函数 ==================== */
+
+/* 解析 HOOK 语句 */
+ASTNode* parser_parse_hook(Parser *parser) {
+    /* HOOK TABLE users; */
+    /* HOOK users; */
+    /* HOOK DEL users; */
+    
+    if (!parser_expect(parser, TOK_HOOK)) {
+        return NULL;
+    }
+    
+    TokenType current = lexer_current_type(parser->lexer);
+    char *operation = NULL;
+    char *obj_type = NULL;
+    char *obj_name = NULL;
+    
+    /* 检查是否是对象类型 */
+    if (current == TOK_TABLE || current == TOK_KVALOT || 
+        current == TOK_LIST || current == TOK_BITMAP || current == TOK_STREAM) {
+        operation = parser_strdup("CREATE");
+        obj_type = parser_strdup(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_IDENTIFIER) {
+            parser_set_error(parser, "Expected object name after object type");
+            free(operation);
+            free(obj_type);
+            return NULL;
+        }
+        obj_name = parser_strdup(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+    }
+    /* 检查是否是 DEL 操作 */
+    else if (current == TOK_DEL) {
+        operation = parser_strdup("DELETE");
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_IDENTIFIER) {
+            parser_set_error(parser, "Expected object name after DEL");
+            free(operation);
+            return NULL;
+        }
+        obj_name = parser_strdup(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+    }
+    /* 检查是否是 CLEAR 操作 */
+    else if (current == TOK_CLEAR) {
+        operation = parser_strdup("CLEAR");
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_IDENTIFIER) {
+            parser_set_error(parser, "Expected object name after CLEAR");
+            free(operation);
+            return NULL;
+        }
+        obj_name = parser_strdup(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+    }
+    /* 否则是 SWITCH 操作 */
+    else if (current == TOK_IDENTIFIER) {
+        operation = parser_strdup("SWITCH");
+        obj_name = parser_strdup(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+    }
+    else {
+        parser_set_error(parser, "Invalid HOOK syntax");
+        return NULL;
+    }
+    
+    /* 期望分号 */
+    if (!parser_expect(parser, TOK_SEMICOLON)) {
+        free(operation);
+        free(obj_type);
+        free(obj_name);
+        return NULL;
+    }
+    
+    ASTNode *node = ast_create_hook(operation, obj_type, obj_name);
+    free(operation);
+    free(obj_type);
+    free(obj_name);
+    
+    return node;
+}
+
+/* 解析 FIELD 语句 */
+ASTNode* parser_parse_field(Parser *parser) {
+    /* FIELD ADD id i4 PKEY; */
+    /* FIELD DEL 0; */
+    /* FIELD SWAP 0 1; */
+    
+    if (!parser_expect(parser, TOK_FIELD)) {
+        return NULL;
+    }
+    
+    TokenType op_type = lexer_current_type(parser->lexer);
+    
+    if (op_type == TOK_ADD) {
+        lexer_next(parser->lexer);
+        
+        /* 字段名 */
+        if (lexer_current_type(parser->lexer) != TOK_IDENTIFIER) {
+            parser_set_error(parser, "Expected field name");
+            return NULL;
+        }
+        char *field_name = parser_strdup(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        /* 数据类型 */
+        char *data_type = parser_strdup(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        /* 约束（可选） */
+        char *constraint = NULL;
+        if (lexer_current_type(parser->lexer) != TOK_SEMICOLON) {
+            constraint = parser_strdup(lexer_current_value(parser->lexer));
+            lexer_next(parser->lexer);
+        }
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            free(field_name);
+            free(data_type);
+            free(constraint);
+            return NULL;
+        }
+        
+        ASTNode *node = ast_create_field_add(field_name, data_type, constraint);
+        free(field_name);
+        free(data_type);
+        free(constraint);
+        return node;
+    }
+    else if (op_type == TOK_DEL) {
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_NUMBER) {
+            parser_set_error(parser, "Expected field index");
+            return NULL;
+        }
+        int index = atoi(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            return NULL;
+        }
+        
+        return ast_create_field_del(index);
+    }
+    else if (op_type == TOK_SWAP) {
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_NUMBER) {
+            parser_set_error(parser, "Expected first field index");
+            return NULL;
+        }
+        int index1 = atoi(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_NUMBER) {
+            parser_set_error(parser, "Expected second field index");
+            return NULL;
+        }
+        int index2 = atoi(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            return NULL;
+        }
+        
+        return ast_create_field_swap(index1, index2);
+    }
+    else {
+        parser_set_error(parser, "Invalid FIELD operation");
+        return NULL;
+    }
+}
+
+
+/* 解析 TABLE 操作 */
+ASTNode* parser_parse_table_op(Parser *parser) {
+    /* ADD 1 'Alice' 25; */
+    /* GET 0; */
+    /* SET 0 1 'Bob'; */
+    /* DEL 0; */
+    
+    TokenType op_type = lexer_current_type(parser->lexer);
+    
+    if (op_type == TOK_ADD) {
+        lexer_next(parser->lexer);
+        
+        /* 收集所有值字符串 */
+        char **value_strings = malloc(sizeof(char*) * 32);
+        int count = 0;
+        
+        while (lexer_current_type(parser->lexer) != TOK_SEMICOLON && 
+               lexer_current_type(parser->lexer) != TOK_END) {
+            value_strings[count] = parser_strdup(lexer_current_value(parser->lexer));
+            if (!value_strings[count]) {
+                for (int i = 0; i < count; i++) {
+                    free(value_strings[i]);
+                }
+                free(value_strings);
+                return NULL;
+            }
+            lexer_next(parser->lexer);
+            count++;
+        }
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            for (int i = 0; i < count; i++) {
+                free(value_strings[i]);
+            }
+            free(value_strings);
+            return NULL;
+        }
+        
+        return ast_create_table_add(value_strings, count);
+    }
+    else if (op_type == TOK_GET) {
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) == TOK_WHERE) {
+            lexer_next(parser->lexer);
+            char *condition = parser_parse_expression_string(parser);
+            if (!parser_expect(parser, TOK_SEMICOLON)) {
+                free(condition);
+                return NULL;
+            }
+            ASTNode *node = ast_create_table_where(condition);
+            free(condition);
+            return node;
+        }
+        else if (lexer_current_type(parser->lexer) == TOK_NUMBER) {
+            int index = atoi(lexer_current_value(parser->lexer));
+            lexer_next(parser->lexer);
+            if (!parser_expect(parser, TOK_SEMICOLON)) {
+                return NULL;
+            }
+            return ast_create_table_get(index);
+        }
+        else {
+            parser_set_error(parser, "Expected index or WHERE after GET");
+            return NULL;
+        }
+    }
+    else if (op_type == TOK_SET) {
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_NUMBER) {
+            parser_set_error(parser, "Expected row index");
+            return NULL;
+        }
+        int row_index = atoi(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_NUMBER) {
+            parser_set_error(parser, "Expected column index");
+            return NULL;
+        }
+        int col_index = atoi(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        char *value_string = parser_strdup(lexer_current_value(parser->lexer));
+        if (!value_string) {
+            return NULL;
+        }
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            free(value_string);
+            return NULL;
+        }
+        
+        return ast_create_table_set(row_index, col_index, value_string);
+    }
+    else if (op_type == TOK_DEL) {
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_NUMBER) {
+            parser_set_error(parser, "Expected row index");
+            return NULL;
+        }
+        int index = atoi(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            return NULL;
+        }
+        
+        return ast_create_table_del(index);
+    }
+    else {
+        parser_set_error(parser, "Invalid TABLE operation");
+        return NULL;
+    }
+}
+
+/* 解析 KVALOT 操作 */
+ASTNode* parser_parse_kvalot_op(Parser *parser) {
+    /* SET key value; */
+    /* GET key; */
+    /* DEL key; */
+    /* EXISTS key; */
+    
+    TokenType op_type = lexer_current_type(parser->lexer);
+    lexer_next(parser->lexer);
+    
+    if (lexer_current_type(parser->lexer) != TOK_IDENTIFIER && 
+        lexer_current_type(parser->lexer) != TOK_STRING) {
+        parser_set_error(parser, "Expected key");
+        return NULL;
+    }
+    
+    char *key = parser_strdup(lexer_current_value(parser->lexer));
+    lexer_next(parser->lexer);
+    
+    if (op_type == TOK_SET) {
+        char *value_string = parser_strdup(lexer_current_value(parser->lexer));
+        if (!value_string) {
+            free(key);
+            return NULL;
+        }
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            free(key);
+            free(value_string);
+            return NULL;
+        }
+        
+        ASTNode *node = ast_create_kvalot_set(key, value_string);
+        free(key);
+        free(value_string);
+        return node;
+    }
+    else if (op_type == TOK_GET) {
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            free(key);
+            return NULL;
+        }
+        ASTNode *node = ast_create_kvalot_get(key);
+        free(key);
+        return node;
+    }
+    else if (op_type == TOK_DEL) {
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            free(key);
+            return NULL;
+        }
+        ASTNode *node = ast_create_kvalot_del(key);
+        free(key);
+        return node;
+    }
+    else if (op_type == TOK_EXISTS) {
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            free(key);
+            return NULL;
+        }
+        ASTNode *node = ast_create_kvalot_exists(key);
+        free(key);
+        return node;
+    }
+    else {
+        free(key);
+        parser_set_error(parser, "Invalid KVALOT operation");
+        return NULL;
+    }
+}
+
+/* 解析 LIST 操作 */
+ASTNode* parser_parse_list_op(Parser *parser) {
+    /* LPUSH value; */
+    /* RPUSH value; */
+    /* LPOP; */
+    /* RPOP; */
+    /* GET index; */
+    
+    TokenType op_type = lexer_current_type(parser->lexer);
+    
+    if (op_type == TOK_LPUSH || op_type == TOK_RPUSH) {
+        char *operation = (op_type == TOK_LPUSH) ? "LPUSH" : "RPUSH";
+        lexer_next(parser->lexer);
+        
+        char *value_string = parser_strdup(lexer_current_value(parser->lexer));
+        if (!value_string) {
+            return NULL;
+        }
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            free(value_string);
+            return NULL;
+        }
+        
+        return ast_create_list_push(operation, value_string);
+    }
+    else if (op_type == TOK_LPOP || op_type == TOK_RPOP) {
+        char *operation = (op_type == TOK_LPOP) ? "LPOP" : "RPOP";
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            return NULL;
+        }
+        
+        return ast_create_list_pop(operation);
+    }
+    else if (op_type == TOK_GET) {
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_NUMBER) {
+            parser_set_error(parser, "Expected index");
+            return NULL;
+        }
+        int index = atoi(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            return NULL;
+        }
+        
+        return ast_create_list_get(index);
+    }
+    else {
+        parser_set_error(parser, "Invalid LIST operation");
+        return NULL;
+    }
+}
+
+/* 解析 BITMAP 操作 */
+ASTNode* parser_parse_bitmap_op(Parser *parser) {
+    /* SET offset value; */
+    /* GET offset; */
+    /* COUNT; */
+    /* FLIP offset; */
+    
+    TokenType op_type = lexer_current_type(parser->lexer);
+    
+    if (op_type == TOK_SET) {
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_NUMBER) {
+            parser_set_error(parser, "Expected offset");
+            return NULL;
+        }
+        int offset = atoi(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_NUMBER) {
+            parser_set_error(parser, "Expected value (0 or 1)");
+            return NULL;
+        }
+        int value = atoi(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            return NULL;
+        }
+        
+        return ast_create_bitmap_set(offset, value);
+    }
+    else if (op_type == TOK_GET) {
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_NUMBER) {
+            parser_set_error(parser, "Expected offset");
+            return NULL;
+        }
+        int offset = atoi(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            return NULL;
+        }
+        
+        return ast_create_bitmap_get(offset);
+    }
+    else if (op_type == TOK_COUNT) {
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            return NULL;
+        }
+        
+        return ast_create_bitmap_count();
+    }
+    else if (op_type == TOK_FLIP) {
+        lexer_next(parser->lexer);
+        
+        if (lexer_current_type(parser->lexer) != TOK_NUMBER) {
+            parser_set_error(parser, "Expected offset");
+            return NULL;
+        }
+        int offset = atoi(lexer_current_value(parser->lexer));
+        lexer_next(parser->lexer);
+        
+        if (!parser_expect(parser, TOK_SEMICOLON)) {
+            return NULL;
+        }
+        
+        return ast_create_bitmap_flip(offset);
+    }
+    else {
+        parser_set_error(parser, "Invalid BITMAP operation");
+        return NULL;
+    }
 }

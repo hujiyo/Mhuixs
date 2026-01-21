@@ -15,7 +15,7 @@ Email:hj18914255909@outlook.com
 #include <time.h>
 #include <stdint.h>
 
-#include "../lib/mstring.h"
+#include "lib/mstring.h"
 #include "merr.h"
 
 #ifdef __cplusplus

@@ -97,11 +97,56 @@ typedef enum {
     OP_DB_BITMAP,         /* BITMAP 操作 */
     OP_DB_STREAM,         /* STREAM 操作 */
     
+    /* 持久化变量操作 (125-129) */
+    OP_STORE_STATIC = 125,/* 存储持久化变量（注册到 Mhuixs） */
+    OP_LOAD_STATIC,       /* 加载持久化变量 */
+    
     /* 调试和元数据 (200-209) */
-    OP_LINE,              /* 行号信息（调试用） */
+    OP_LINE = 200,        /* 行号信息（调试用） */
     OP_HALT,              /* 停止执行 */
     
 } OpCode;
+
+/* NAQL 子操作码 - 用于 OP_DB_* 指令的第二字节 */
+typedef enum {
+    /* HOOK 子操作 */
+    DB_HOOK_CREATE = 0,   /* 创建 HOOK */
+    DB_HOOK_SWITCH,       /* 切换 HOOK */
+    DB_HOOK_DEL,          /* 删除 HOOK */
+    DB_HOOK_CLEAR,        /* 清空 HOOK */
+    
+    /* TABLE 子操作 */
+    DB_TABLE_ADD = 10,    /* 添加记录 */
+    DB_TABLE_GET,         /* 获取记录 */
+    DB_TABLE_SET,         /* 设置记录 */
+    DB_TABLE_DEL,         /* 删除记录 */
+    DB_TABLE_WHERE,       /* 条件查询 */
+    
+    /* FIELD 子操作 */
+    DB_FIELD_ADD = 20,    /* 添加字段 */
+    DB_FIELD_DEL,         /* 删除字段 */
+    DB_FIELD_SWAP,        /* 交换字段 */
+    
+    /* KVALOT 子操作 */
+    DB_KVALOT_SET = 30,   /* 设置键值 */
+    DB_KVALOT_GET,        /* 获取键值 */
+    DB_KVALOT_DEL,        /* 删除键值 */
+    DB_KVALOT_EXISTS,     /* 检查键是否存在 */
+    
+    /* LIST 子操作 */
+    DB_LIST_LPUSH = 40,   /* 左侧压入 */
+    DB_LIST_RPUSH,        /* 右侧压入 */
+    DB_LIST_LPOP,         /* 左侧弹出 */
+    DB_LIST_RPOP,         /* 右侧弹出 */
+    DB_LIST_GET,          /* 获取元素 */
+    
+    /* BITMAP 子操作 */
+    DB_BITMAP_SET = 50,   /* 设置位 */
+    DB_BITMAP_GET,        /* 获取位 */
+    DB_BITMAP_COUNT,      /* 统计位数 */
+    DB_BITMAP_FLIP,       /* 翻转位 */
+    
+} DBSubOpCode;
 
 /* 字节码指令结构 */
 typedef struct {

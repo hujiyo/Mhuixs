@@ -1,188 +1,69 @@
+/* SPDX-License-Identifier: MIT */
 /*
-Repo: https://github.com/hujiyo/bitcpy
-Author: hujiyo
-License: MIT
-FROM 2025
-*/
+ * bitcpy.h - 位级别内存拷贝库头文件
+ *
+ * 本库提供高效的位级别内存拷贝功能,支持任意位偏移的拷贝操作。
+ * 适用于需要精确位操作的场景,如压缩算法、网络协议等。
+ *
+ * Copyright (C) 2024-2025 hujiyo
+ * Author: hujiyo <Mhuixs.db@outlook.com>
+ *
+ * Repository: https://github.com/hujiyo/bitcpy
+ *
+ * 主要功能:
+ *   - 支持任意位偏移的内存拷贝 (0-7位)
+ *   - 自动优化对齐拷贝,使用 memcpy 加速
+ *   - 支持自拷贝 (源和目标可以是同一区域)
+ *   - 高效的三阶段处理: 前导位对齐 + 64位块 + 尾部处理
+ *
+ * 性能特性:
+ *   - 字节对齐时直接使用 memcpy
+ *   - 64位块处理利用 CPU 64位加载
+ *   - 预计算的位掩码表避免运行时计算
+ */
 
 #ifndef BITCPY_H
 #define BITCPY_H
+
 #include <stdint.h>
 #include <string.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+/**
+ * @brief 位级别内存拷贝
+ * @param dest      目标缓冲区（指向起始字节），必须非 NULL
+ * @param dest_bit  目标起始位偏移（0-7），0 表示最低有效位
+ * @param src       源缓冲区（指向起始字节），必须非 NULL
+ * @param src_bit   源起始位偏移（0-7），0 表示最低有效位
+ * @param len       要拷贝的位数，必须 >= 0
+ *
+ * === 参数要求（调用者保证） ===
+ * - dest 必须是非 NULL 指针
+ * - src 必须是非 NULL 指针
+ * - dest_bit 必须在 [0, 7] 范围内
+ * - src_bit 必须在 [0, 7] 范围内
+ * - len 必须 >= 0
+ * - dest 缓冲区至少需要 (dest_bit + len + 7) / 8 字节
+ * - src 缓冲区至少需要 (src_bit + len + 7) / 8 字节
+ * - 当 len > 0 时，dest 和 src 可以指向同一内存区域（支持自拷贝）
+ *
+ * === 未定义行为 ===
+ * 如果违反以下任何条件，行为未定义：
+ * 1. dest 为 NULL
+ * 2. src 为 NULL
+ * 3. dest_bit 不在 [0, 7] 范围内
+ * 4. src_bit 不在 [0, 7] 范围内
+ * 5. dest 缓冲区空间不足
+ * 6. src 缓冲区空间不足
+ * === 位序说明 ===
+ * 位序为小端序（Little Endian）：
+ * - 位 0 是字节的最低有效位（LSB）
+ * - 位 7 是字节的最高有效位（MSB）
+ * === 性能特点 ===
+ * - 最优情况：字节对齐且长度为8的倍数，接近 memcpy 性能
+ * - 次优情况：目标对齐后的大块数据（>=64位），充分利用内存带宽
+ * - 一般情况：通过分阶段处理减少位操作次数
+ * - 查找表优化：mask_low[] 和 mask_high[] 避免运行时计算
+ */
+void bitcpy(uint8_t* dest, uint8_t dest_bit,const uint8_t* src, uint8_t src_bit,uint64_t len);
 
-static inline int bitcpy(uint8_t* destination, uint64_t dest_first_bit, 
-                  const uint8_t* source, uint64_t source_first_bit, 
-                  uint64_t len, uint64_t dest_buffer_size, 
-                  uint64_t source_buffer_size) {
-    // 参数有效性检查
-    if (!destination || !source || !len) {
-        return -1;
-    }
-    
-    // 溢出检查
-    if (dest_first_bit > UINT64_MAX - len || source_first_bit > UINT64_MAX - len) {
-        return -1;
-    }
-    
-    // 缓冲区边界检查
-    uint64_t dest_last_bit = dest_first_bit + len - 1;
-    uint64_t source_last_bit = source_first_bit + len - 1;
-    
-    if ((dest_last_bit >> 3) >= dest_buffer_size || 
-        (source_last_bit >> 3) >= source_buffer_size) {
-        return -2;
-    }
-    
-    // 快速路径：源和目标都字节对齐且长度是8的倍数
-    if (((source_first_bit | dest_first_bit) & 7) == 0 && (len & 7) == 0) {
-        memcpy(destination + (dest_first_bit >> 3), 
-               source + (source_first_bit >> 3), 
-               len >> 3);
-        return 0;
-    }
-    
-    // 位掩码查找表
-    static const uint8_t bit_mask_table[9] = {
-        0x00, 0x01, 0x03, 0x07, 0x0F, 0x1F, 0x3F, 0x7F, 0xFF
-    };
-    
-    uint64_t bits_copied = 0;
-    
-    // 阶段1：处理前导位，使目标对齐到字节边界
-    if ((dest_first_bit & 7) != 0) {
-        uint8_t align_bits = 8 - (dest_first_bit & 7);
-        if (align_bits > len) align_bits = len;
-        
-        uint64_t s_byte_idx = (source_first_bit + bits_copied) >> 3;
-        uint8_t s_bit_offset = (source_first_bit + bits_copied) & 7;
-        uint64_t d_byte_idx = (dest_first_bit + bits_copied) >> 3;
-        uint8_t d_bit_offset = (dest_first_bit + bits_copied) & 7;
-        
-        // 安全边界检查
-        if (s_byte_idx >= source_buffer_size || d_byte_idx >= dest_buffer_size) {
-            return -2;
-        }
-        
-        // 提取源数据
-        uint16_t src_data = source[s_byte_idx];
-        if (s_bit_offset + align_bits > 8 && s_byte_idx + 1 < source_buffer_size) {
-            src_data |= (uint16_t)source[s_byte_idx + 1] << 8;
-        }
-        src_data >>= s_bit_offset;
-        src_data &= bit_mask_table[align_bits];
-        
-        // 写入目标
-        uint8_t dest_mask = bit_mask_table[align_bits] << d_bit_offset;
-        destination[d_byte_idx] = (destination[d_byte_idx] & ~dest_mask) | 
-                                  ((src_data << d_bit_offset) & dest_mask);
-        
-        bits_copied += align_bits;
-    }
-    
-    // 阶段2：64位块操作（目标已字节对齐）
-    while (bits_copied + 64 <= len) {
-        uint64_t s_bit_pos = source_first_bit + bits_copied;
-        uint64_t d_bit_pos = dest_first_bit + bits_copied;
-        
-        uint64_t s_byte_idx = s_bit_pos >> 3;
-        uint8_t s_bit_offset = s_bit_pos & 7;
-        uint64_t d_byte_idx = d_bit_pos >> 3;
-        
-        // 边界检查（统一使用 >）
-        if (s_byte_idx + 8 > source_buffer_size || d_byte_idx + 8 > dest_buffer_size) {
-            break; // 退回到字节级处理
-        }
-        
-        uint64_t data;
-        
-        if (s_bit_offset == 0) {
-            // 源也是字节对齐的，直接复制
-            memcpy(&data, source + s_byte_idx, 8);
-        } else {
-            // 源未对齐，需要位移操作
-            uint64_t part1, part2 = 0;
-            memcpy(&part1, source + s_byte_idx, 8);
-            
-            if (s_byte_idx + 8 < source_buffer_size) {
-                part2 = source[s_byte_idx + 8];
-            }
-            
-            // 修复：避免位移64位的未定义行为
-            data = (part1 >> s_bit_offset) | (part2 << (64 - s_bit_offset));
-        }
-        
-        memcpy(destination + d_byte_idx, &data, 8);
-        bits_copied += 64;
-    }
-    
-    // 阶段3：字节级处理
-    while (bits_copied + 8 <= len) {
-        uint64_t s_bit_pos = source_first_bit + bits_copied;
-        uint64_t d_bit_pos = dest_first_bit + bits_copied;
-        
-        uint64_t s_byte_idx = s_bit_pos >> 3;
-        uint8_t s_bit_offset = s_bit_pos & 7;
-        uint64_t d_byte_idx = d_bit_pos >> 3;
-        
-        // 边界检查
-        if (s_byte_idx >= source_buffer_size || d_byte_idx >= dest_buffer_size) {
-            break; // 退回到位级处理
-        }
-        
-        uint8_t data;
-        if (s_bit_offset == 0) {
-            data = source[s_byte_idx];
-        } else {
-            uint16_t extended = source[s_byte_idx];
-            if (s_byte_idx + 1 < source_buffer_size) {
-                extended |= (uint16_t)source[s_byte_idx + 1] << 8;
-            }
-            data = extended >> s_bit_offset;
-        }
-        
-        destination[d_byte_idx] = data;
-        bits_copied += 8;
-    }
-    
-    // 阶段4：处理剩余位
-    if (bits_copied < len) {
-        uint64_t remaining = len - bits_copied;
-        
-        uint64_t s_bit_pos = source_first_bit + bits_copied;
-        uint64_t d_bit_pos = dest_first_bit + bits_copied;
-        
-        uint64_t s_byte_idx = s_bit_pos >> 3;
-        uint8_t s_bit_offset = s_bit_pos & 7;
-        uint64_t d_byte_idx = d_bit_pos >> 3;
-        uint8_t d_bit_offset = d_bit_pos & 7;
-        
-        // 边界检查
-        if (s_byte_idx >= source_buffer_size || d_byte_idx >= dest_buffer_size) {
-            return -2;
-        }
-        
-        // 批量处理剩余位（remaining 应该总是 <= 8）
-        uint16_t src_data = source[s_byte_idx];
-        if (s_bit_offset + remaining > 8 && s_byte_idx + 1 < source_buffer_size) {
-            src_data |= (uint16_t)source[s_byte_idx + 1] << 8;
-        }
-        src_data >>= s_bit_offset;
-        src_data &= bit_mask_table[remaining];
-        
-        uint8_t dest_mask = bit_mask_table[remaining] << d_bit_offset;
-        destination[d_byte_idx] = (destination[d_byte_idx] & ~dest_mask) | 
-                                  ((src_data << d_bit_offset) & dest_mask);
-    }
-    
-    return 0;
-}
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif
+#endif // BITCPY_H

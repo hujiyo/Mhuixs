@@ -38,13 +38,14 @@ ASTNode* ast_create_expression(const char *expr) {
 }
 
 /* 创建赋值节点 */
-ASTNode* ast_create_assignment(const char *var, const char *expr) {
+ASTNode* ast_create_assignment(const char *var, const char *expr, int is_static) {
     ASTNode *node = malloc(sizeof(ASTNode));
     if (!node) return NULL;
     
     node->type = AST_ASSIGNMENT;
     node->data.assignment.variable = ast_strdup(var);
     node->data.assignment.expression = ast_strdup(expr);
+    node->data.assignment.is_static = is_static;
     
     if (!node->data.assignment.variable || !node->data.assignment.expression) {
         free(node->data.assignment.variable);
@@ -178,6 +179,312 @@ ASTNode* ast_create_import(const char *package_name) {
         free(node);
         return NULL;
     }
+    
+    return node;
+}
+
+/* ==================== NAQL 节点构造函数 ==================== */
+
+/* 创建 HOOK 操作节点 */
+ASTNode* ast_create_hook(const char *operation, const char *obj_type, const char *obj_name) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_HOOK_CREATE;  // 根据 operation 设置具体类型
+    node->data.hook_op.operation = ast_strdup(operation);
+    node->data.hook_op.obj_type = obj_type ? ast_strdup(obj_type) : NULL;
+    node->data.hook_op.obj_name = ast_strdup(obj_name);
+    
+    if (!node->data.hook_op.operation || !node->data.hook_op.obj_name) {
+        free(node->data.hook_op.operation);
+        free(node->data.hook_op.obj_type);
+        free(node->data.hook_op.obj_name);
+        free(node);
+        return NULL;
+    }
+    
+    return node;
+}
+
+/* 创建 FIELD ADD 节点 */
+ASTNode* ast_create_field_add(const char *field_name, const char *data_type, const char *constraint) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_FIELD_ADD;
+    node->data.field_op.operation = ast_strdup("ADD");
+    node->data.field_op.field_name = ast_strdup(field_name);
+    node->data.field_op.data_type = ast_strdup(data_type);
+    node->data.field_op.constraint = constraint ? ast_strdup(constraint) : NULL;
+    node->data.field_op.index1 = 0;
+    node->data.field_op.index2 = 0;
+    
+    if (!node->data.field_op.operation || !node->data.field_op.field_name || !node->data.field_op.data_type) {
+        free(node->data.field_op.operation);
+        free(node->data.field_op.field_name);
+        free(node->data.field_op.data_type);
+        free(node->data.field_op.constraint);
+        free(node);
+        return NULL;
+    }
+    
+    return node;
+}
+
+/* 创建 FIELD DEL 节点 */
+ASTNode* ast_create_field_del(int index) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_FIELD_DEL;
+    node->data.field_op.operation = ast_strdup("DEL");
+    node->data.field_op.field_name = NULL;
+    node->data.field_op.data_type = NULL;
+    node->data.field_op.constraint = NULL;
+    node->data.field_op.index1 = index;
+    node->data.field_op.index2 = 0;
+    
+    return node;
+}
+
+/* 创建 FIELD SWAP 节点 */
+ASTNode* ast_create_field_swap(int index1, int index2) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_FIELD_SWAP;
+    node->data.field_op.operation = ast_strdup("SWAP");
+    node->data.field_op.field_name = NULL;
+    node->data.field_op.data_type = NULL;
+    node->data.field_op.constraint = NULL;
+    node->data.field_op.index1 = index1;
+    node->data.field_op.index2 = index2;
+    
+    return node;
+}
+
+/* 创建 TABLE ADD 节点 */
+ASTNode* ast_create_table_add(char **value_strings, int value_count) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_TABLE_ADD;
+    node->data.table_op.operation = ast_strdup("ADD");
+    node->data.table_op.value_strings = value_strings;
+    node->data.table_op.value_count = value_count;
+    node->data.table_op.condition = NULL;
+    node->data.table_op.row_index = 0;
+    node->data.table_op.col_index = 0;
+    
+    return node;
+}
+
+/* 创建 TABLE GET 节点 */
+ASTNode* ast_create_table_get(int row_index) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_TABLE_GET;
+    node->data.table_op.operation = ast_strdup("GET");
+    node->data.table_op.value_strings = NULL;
+    node->data.table_op.value_count = 0;
+    node->data.table_op.condition = NULL;
+    node->data.table_op.row_index = row_index;
+    node->data.table_op.col_index = 0;
+    
+    return node;
+}
+
+/* 创建 TABLE SET 节点 */
+ASTNode* ast_create_table_set(int row_index, int col_index, const char *value_string) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_TABLE_SET;
+    node->data.table_op.operation = ast_strdup("SET");
+    node->data.table_op.value_strings = malloc(sizeof(char*));
+    if (node->data.table_op.value_strings) {
+        node->data.table_op.value_strings[0] = ast_strdup(value_string);
+    }
+    node->data.table_op.value_count = 1;
+    node->data.table_op.condition = NULL;
+    node->data.table_op.row_index = row_index;
+    node->data.table_op.col_index = col_index;
+    
+    return node;
+}
+
+/* 创建 TABLE DEL 节点 */
+ASTNode* ast_create_table_del(int row_index) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_TABLE_DEL;
+    node->data.table_op.operation = ast_strdup("DEL");
+    node->data.table_op.value_strings = NULL;
+    node->data.table_op.value_count = 0;
+    node->data.table_op.condition = NULL;
+    node->data.table_op.row_index = row_index;
+    node->data.table_op.col_index = 0;
+    
+    return node;
+}
+
+/* 创建 TABLE WHERE 节点 */
+ASTNode* ast_create_table_where(const char *condition) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_TABLE_WHERE;
+    node->data.table_op.operation = ast_strdup("WHERE");
+    node->data.table_op.value_strings = NULL;
+    node->data.table_op.value_count = 0;
+    node->data.table_op.condition = ast_strdup(condition);
+    node->data.table_op.row_index = 0;
+    node->data.table_op.col_index = 0;
+    
+    return node;
+}
+
+/* 创建 KVALOT SET 节点 */
+ASTNode* ast_create_kvalot_set(const char *key, const char *value_string) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_KVALOT_SET;
+    node->data.kvalot_op.operation = ast_strdup("SET");
+    node->data.kvalot_op.key = ast_strdup(key);
+    node->data.kvalot_op.value_string = ast_strdup(value_string);
+    
+    return node;
+}
+
+/* 创建 KVALOT GET 节点 */
+ASTNode* ast_create_kvalot_get(const char *key) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_KVALOT_GET;
+    node->data.kvalot_op.operation = ast_strdup("GET");
+    node->data.kvalot_op.key = ast_strdup(key);
+    node->data.kvalot_op.value_string = NULL;
+    
+    return node;
+}
+
+/* 创建 KVALOT DEL 节点 */
+ASTNode* ast_create_kvalot_del(const char *key) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_KVALOT_DEL;
+    node->data.kvalot_op.operation = ast_strdup("DEL");
+    node->data.kvalot_op.key = ast_strdup(key);
+    node->data.kvalot_op.value_string = NULL;
+    
+    return node;
+}
+
+/* 创建 KVALOT EXISTS 节点 */
+ASTNode* ast_create_kvalot_exists(const char *key) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_KVALOT_EXISTS;
+    node->data.kvalot_op.operation = ast_strdup("EXISTS");
+    node->data.kvalot_op.key = ast_strdup(key);
+    node->data.kvalot_op.value_string = NULL;
+    
+    return node;
+}
+
+/* 创建 LIST PUSH 节点 */
+ASTNode* ast_create_list_push(const char *operation, const char *value_string) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = (strcmp(operation, "LPUSH") == 0) ? AST_LIST_LPUSH : AST_LIST_RPUSH;
+    node->data.list_op.operation = ast_strdup(operation);
+    node->data.list_op.value_string = ast_strdup(value_string);
+    node->data.list_op.index = 0;
+    
+    return node;
+}
+
+/* 创建 LIST POP 节点 */
+ASTNode* ast_create_list_pop(const char *operation) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = (strcmp(operation, "LPOP") == 0) ? AST_LIST_LPOP : AST_LIST_RPOP;
+    node->data.list_op.operation = ast_strdup(operation);
+    node->data.list_op.value_string = NULL;
+    node->data.list_op.index = 0;
+    
+    return node;
+}
+
+/* 创建 LIST GET 节点 */
+ASTNode* ast_create_list_get(int index) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_LIST_GET;
+    node->data.list_op.operation = ast_strdup("GET");
+    node->data.list_op.value_string = NULL;
+    node->data.list_op.index = index;
+    
+    return node;
+}
+
+/* 创建 BITMAP SET 节点 */
+ASTNode* ast_create_bitmap_set(int offset, int value) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_BITMAP_SET;
+    node->data.bitmap_op.operation = ast_strdup("SET");
+    node->data.bitmap_op.offset = offset;
+    node->data.bitmap_op.value = value;
+    
+    return node;
+}
+
+/* 创建 BITMAP GET 节点 */
+ASTNode* ast_create_bitmap_get(int offset) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_BITMAP_GET;
+    node->data.bitmap_op.operation = ast_strdup("GET");
+    node->data.bitmap_op.offset = offset;
+    node->data.bitmap_op.value = 0;
+    
+    return node;
+}
+
+/* 创建 BITMAP COUNT 节点 */
+ASTNode* ast_create_bitmap_count(void) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_BITMAP_COUNT;
+    node->data.bitmap_op.operation = ast_strdup("COUNT");
+    node->data.bitmap_op.offset = 0;
+    node->data.bitmap_op.value = 0;
+    
+    return node;
+}
+
+/* 创建 BITMAP FLIP 节点 */
+ASTNode* ast_create_bitmap_flip(int offset) {
+    ASTNode *node = malloc(sizeof(ASTNode));
+    if (!node) return NULL;
+    
+    node->type = AST_BITMAP_FLIP;
+    node->data.bitmap_op.operation = ast_strdup("FLIP");
+    node->data.bitmap_op.offset = offset;
+    node->data.bitmap_op.value = 0;
     
     return node;
 }

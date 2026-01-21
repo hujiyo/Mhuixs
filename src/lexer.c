@@ -77,7 +77,9 @@ static void set_lexer_error(Lexer *lexer, const char *msg) {
 
 /* 检查关键字 */
 static TokenType check_keyword(const char *value) {
+    /* Logex 关键字 */
     if (strcmp(value, "let") == 0) return TOK_LET;
+    if (strcmp(value, "static") == 0) return TOK_STATIC;
     if (strcmp(value, "import") == 0) return TOK_IMPORT;
     if (strcmp(value, "if") == 0) return TOK_IF;
     if (strcmp(value, "else") == 0) return TOK_ELSE;
@@ -87,6 +89,112 @@ static TokenType check_keyword(const char *value) {
     if (strcmp(value, "end") == 0) return TOK_END_STMT;
     if (strcmp(value, "in") == 0) return TOK_IN;
     if (strcmp(value, "range") == 0) return TOK_RANGE;
+    
+    /* NAQL 数据库操作关键字 */
+    if (strcmp(value, "HOOK") == 0) return TOK_HOOK;
+    if (strcmp(value, "TABLE") == 0) return TOK_TABLE;
+    if (strcmp(value, "KVALOT") == 0) return TOK_KVALOT;
+    if (strcmp(value, "FIELD") == 0) return TOK_FIELD;
+    if (strcmp(value, "ADD") == 0) return TOK_ADD;
+    if (strcmp(value, "GET") == 0) return TOK_GET;
+    if (strcmp(value, "SET") == 0) return TOK_SET;
+    if (strcmp(value, "DEL") == 0) return TOK_DEL;
+    if (strcmp(value, "WHERE") == 0) return TOK_WHERE;
+    if (strcmp(value, "INSERT") == 0) return TOK_INSERT;
+    if (strcmp(value, "SWAP") == 0) return TOK_SWAP;
+    if (strcmp(value, "CLEAR") == 0) return TOK_CLEAR;
+    if (strcmp(value, "EXISTS") == 0) return TOK_EXISTS;
+    if (strcmp(value, "SELECT") == 0) return TOK_SELECT;
+    if (strcmp(value, "KEY") == 0) return TOK_KEY;
+    if (strcmp(value, "COPY") == 0) return TOK_COPY;
+    if (strcmp(value, "RENAME") == 0) return TOK_RENAME;
+    if (strcmp(value, "APPEND") == 0) return TOK_APPEND;
+    if (strcmp(value, "MERGE") == 0) return TOK_MERGE;
+    if (strcmp(value, "LPUSH") == 0) return TOK_LPUSH;
+    if (strcmp(value, "RPUSH") == 0) return TOK_RPUSH;
+    if (strcmp(value, "LPOP") == 0) return TOK_LPOP;
+    if (strcmp(value, "RPOP") == 0) return TOK_RPOP;
+    if (strcmp(value, "LEN") == 0) return TOK_LEN;
+    if (strcmp(value, "COUNT") == 0) return TOK_COUNT;
+    if (strcmp(value, "FIND") == 0) return TOK_FIND;
+    if (strcmp(value, "SORT") == 0) return TOK_SORT;
+    if (strcmp(value, "REVERSE") == 0) return TOK_REVERSE;
+    if (strcmp(value, "UNIQUE") == 0) return TOK_UNIQUE;
+    if (strcmp(value, "JOIN") == 0) return TOK_JOIN;
+    if (strcmp(value, "FLIP") == 0) return TOK_FLIP;
+    if (strcmp(value, "FILL") == 0) return TOK_FILL;
+    if (strcmp(value, "RESIZE") == 0) return TOK_RESIZE;
+    if (strcmp(value, "SHIFT") == 0) return TOK_SHIFT;
+    if (strcmp(value, "EXPORT") == 0) return TOK_EXPORT;
+    if (strcmp(value, "BACKUP") == 0) return TOK_BACKUP;
+    if (strcmp(value, "RESTORE") == 0) return TOK_RESTORE;
+    if (strcmp(value, "LOCK") == 0) return TOK_LOCK;
+    if (strcmp(value, "UNLOCK") == 0) return TOK_UNLOCK;
+    if (strcmp(value, "SYSTEM") == 0) return TOK_SYSTEM;
+    if (strcmp(value, "INFO") == 0) return TOK_INFO;
+    if (strcmp(value, "STATUS") == 0) return TOK_STATUS;
+    if (strcmp(value, "REGISTER") == 0) return TOK_REGISTER;
+    if (strcmp(value, "CLEANUP") == 0) return TOK_CLEANUP;
+    if (strcmp(value, "SHUTDOWN") == 0) return TOK_SHUTDOWN;
+    if (strcmp(value, "LOG") == 0) return TOK_LOG;
+    if (strcmp(value, "RANK") == 0) return TOK_RANK;
+    if (strcmp(value, "CHMOD") == 0) return TOK_CHMOD;
+    if (strcmp(value, "DESC") == 0) return TOK_DESC;
+    if (strcmp(value, "TYPE") == 0) return TOK_TYPE;
+    if (strcmp(value, "POS") == 0) return TOK_POS;
+    if (strcmp(value, "TEMP") == 0) return TOK_TEMP;
+    if (strcmp(value, "ATTRIBUTE") == 0) return TOK_ATTRIBUTE;
+    if (strcmp(value, "INDEX") == 0) return TOK_INDEX;
+    if (strcmp(value, "ASYNC") == 0) return TOK_ASYNC;
+    if (strcmp(value, "SYNC") == 0) return TOK_SYNC;
+    if (strcmp(value, "WAIT") == 0) return TOK_WAIT;
+    if (strcmp(value, "MULTI") == 0) return TOK_MULTI;
+    if (strcmp(value, "EXEC") == 0) return TOK_EXEC;
+    if (strcmp(value, "BREAK") == 0) return TOK_BREAK;
+    if (strcmp(value, "CONTINUE") == 0) return TOK_CONTINUE;
+    
+    /* NAQL 数据类型关键字 */
+    if (strcmp(value, "i1") == 0 || strcmp(value, "int8_t") == 0) return TOK_I1;
+    if (strcmp(value, "i2") == 0 || strcmp(value, "int16_t") == 0) return TOK_I2;
+    if (strcmp(value, "i4") == 0 || strcmp(value, "int32_t") == 0 || strcmp(value, "int") == 0) return TOK_I4;
+    if (strcmp(value, "i8") == 0 || strcmp(value, "int64_t") == 0) return TOK_I8;
+    if (strcmp(value, "ui1") == 0 || strcmp(value, "uint8_t") == 0) return TOK_UI1;
+    if (strcmp(value, "ui2") == 0 || strcmp(value, "uint16_t") == 0) return TOK_UI2;
+    if (strcmp(value, "ui4") == 0 || strcmp(value, "uint32_t") == 0) return TOK_UI4;
+    if (strcmp(value, "ui8") == 0 || strcmp(value, "uint64_t") == 0) return TOK_UI8;
+    if (strcmp(value, "f4") == 0 || strcmp(value, "float") == 0) return TOK_F4;
+    if (strcmp(value, "f8") == 0 || strcmp(value, "double") == 0) return TOK_F8;
+    if (strcmp(value, "str") == 0 || strcmp(value, "string") == 0) return TOK_STR;
+    if (strcmp(value, "bool") == 0) return TOK_BOOL;
+    if (strcmp(value, "blob") == 0) return TOK_BLOB;
+    if (strcmp(value, "json") == 0) return TOK_JSON;
+    if (strcmp(value, "date") == 0) return TOK_DATE;
+    if (strcmp(value, "time") == 0) return TOK_TIME;
+    if (strcmp(value, "datetime") == 0) return TOK_DATETIME;
+    
+    /* NAQL 约束关键字 */
+    if (strcmp(value, "PKEY") == 0) return TOK_PKEY;
+    if (strcmp(value, "FKEY") == 0) return TOK_FKEY;
+    if (strcmp(value, "UNIQUE") == 0) return TOK_UNIQUE;
+    if (strcmp(value, "NOTNULL") == 0) return TOK_NOTNULL;
+    if (strcmp(value, "DEFAULT") == 0) return TOK_DEFAULT;
+    if (strcmp(value, "AUTO_INCREMENT") == 0) return TOK_AUTO_INCREMENT;
+    
+    /* NAQL 逻辑关键字 */
+    if (strcmp(value, "AND") == 0) return TOK_AND_KW;
+    if (strcmp(value, "OR") == 0) return TOK_OR_KW;
+    if (strcmp(value, "NOT") == 0) return TOK_NOT_KW;
+    if (strcmp(value, "IN") == 0) return TOK_IN_KW;
+    if (strcmp(value, "BETWEEN") == 0) return TOK_BETWEEN;
+    if (strcmp(value, "LIKE") == 0) return TOK_LIKE;
+    if (strcmp(value, "IS") == 0) return TOK_IS;
+    if (strcmp(value, "NULL") == 0) return TOK_NULL;
+    
+    /* NAQL 对象类型 */
+    if (strcmp(value, "LIST") == 0) return TOK_LIST;
+    if (strcmp(value, "BITMAP") == 0) return TOK_BITMAP;
+    if (strcmp(value, "STREAM") == 0) return TOK_STREAM;
+    
     return TOK_IDENTIFIER;
 }
 
@@ -370,6 +478,7 @@ TokenType lexer_next(Lexer *lexer) {
         case ')': return make_single_char_token(lexer, TOK_RPAREN);
         case ',': return make_single_char_token(lexer, TOK_COMMA);
         case ':': return make_single_char_token(lexer, TOK_COLON);
+        case ';': return make_single_char_token(lexer, TOK_SEMICOLON);
         default:
             set_lexer_error(lexer, "unexpected character");
             return TOK_ERROR;

@@ -15,7 +15,7 @@ Email:hj18914255909@outlook.com
 
 #include "bitcpy.h"
 
-#include "../bignum.h"  /* 提供 BHS 类型定义 */ 
+#include "bignum.h"  /* 提供 BHS 类型定义 */ 
 
 
 #define bitmap_debug

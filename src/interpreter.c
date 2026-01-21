@@ -440,4 +440,84 @@ void interpreter_set_vm_mode(Interpreter *interp, int use_vm) {
     }
 }
 
+/* 执行字节码文件 */
+int interpreter_execute_bytecode(Interpreter *interp, const char *bytecode_file, InterpreterResult *result) {
+    if (!interp || !bytecode_file || !result) return -1;
+    
+    /* 清除之前的错误 */
+    error_clear(&interp->error);
+    
+    /* 初始化结果 */
+    result->type = RESULT_NONE;
+    result->value[0] = '\0';
+    result->message[0] = '\0';
+    
+    /* 创建虚拟机 */
+    VM *vm = vm_create();
+    if (!vm) {
+        result->type = RESULT_ERROR;
+        snprintf(result->value, sizeof(result->value), "Failed to create VM");
+        return -1;
+    }
+    
+    /* 共享上下文和包管理器 */
+    if (vm->context) {
+        context_clear(vm->context);
+        free(vm->context);
+    }
+    vm->context = interp->context;
+    
+    if (vm->pkg_manager) {
+        package_manager_cleanup(vm->pkg_manager);
+        free(vm->pkg_manager);
+    }
+    vm->pkg_manager = interp->packages;
+    
+    if (vm->func_registry) {
+        free(vm->func_registry);
+    }
+    vm->func_registry = interp->funcs;
+    
+    /* 加载字节码文件 */
+    if (vm_load_file(vm, bytecode_file) != 0) {
+        result->type = RESULT_ERROR;
+        snprintf(result->value, sizeof(result->value), "Failed to load bytecode: %s", vm_get_error(vm));
+        /* 恢复指针避免 double free */
+        vm->context = NULL;
+        vm->pkg_manager = NULL;
+        vm->func_registry = NULL;
+        vm_destroy(vm);
+        return -1;
+    }
+    
+    /* 执行字节码 */
+    if (vm_run(vm) != 0) {
+        result->type = RESULT_ERROR;
+        snprintf(result->value, sizeof(result->value), "Runtime error: %s", vm_get_error(vm));
+        /* 恢复指针避免 double free */
+        vm->context = NULL;
+        vm->pkg_manager = NULL;
+        vm->func_registry = NULL;
+        vm_destroy(vm);
+        return -1;
+    }
+    
+    /* 获取结果 */
+    BHS *vm_result = vm_get_result(vm);
+    if (vm_result) {
+        result->type = RESULT_VALUE;
+        bignum_to_string(vm_result, result->value, sizeof(result->value), interp->precision);
+    } else {
+        result->type = RESULT_NONE;
+    }
+    
+    /* 清理（不释放共享的资源） */
+    vm->context = NULL;
+    vm->pkg_manager = NULL;
+    vm->func_registry = NULL;
+    vm_destroy(vm);
+    
+    return 0;
+}
+
 /* 兼容性接口实现 - 直接调用原有的evaluator函数 */

@@ -13,11 +13,9 @@ Email:hj18914255909@outlook.com
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
-#include "../bignum.h"  /* 提供 BHS 类型定义 */
+#include "bignum.h"  /* 提供 BHS 类型定义 */
 
 /* 内部使用 Obj 作为 void* 别名，减少代码改动 */
-typedef void* Obj;
-
 #define UINTDEQUE_BLOCK_SIZE 4096 // 每块最大元素数
 #define MIN_BLOCK_SIZE 512 // 块合并的最小阈值
 
@@ -29,7 +27,7 @@ typedef struct Block {
     uint32_t start; // 块内数据起始下标（data[start]为第一个元素）
 } Block;
 
-typedef struct LIST {
+typedef struct {
     Block* head_block;
     Block* tail_block;
     size_t num; // 总元素数
@@ -41,14 +39,14 @@ LIST* list_copy(const LIST* other);
 void free_list(LIST* lst);
 void list_clear(LIST* lst);
 size_t list_size(const LIST* lst);
-int list_lpush(LIST* lst, BHS* value);
-int list_rpush(LIST* lst, BHS* value);
-BHS* list_lpop(LIST* lst);
-BHS* list_rpop(LIST* lst);
-int list_insert(LIST* lst, size_t pos, BHS* value);
+int list_lpush(LIST* lst, Obj value);
+int list_rpush(LIST* lst, Obj value);
+Obj list_lpop(LIST* lst);
+Obj list_rpop(LIST* lst);
+int list_insert(LIST* lst, size_t pos, Obj value);
 int list_rm_index(LIST* lst, size_t pos);
-BHS* list_get_index(const LIST* lst, size_t pos);
-int list_set_index(LIST* lst, size_t pos, BHS* value);
+Obj list_get_index(const LIST* lst, size_t pos);
+int list_set_index(LIST* lst, size_t pos, Obj value);
 int list_swap(LIST* lst, size_t idx1, size_t idx2);
 
 #endif

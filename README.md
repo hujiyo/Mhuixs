@@ -4,12 +4,14 @@
 
 [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hujiyo/Mhuixs)
 
+> Hook Engine • Mhuixs Database
+
 ## 1. 介绍
 
-Mhuixs 是一个**基于内存的 AI Agent 数据库**，将数据库引擎与脚本语言深度融合。
+Mhuixs 是一个**基于内存的数据库**，将数据库引擎与脚本语言深度融合。Hook是Mhuixs的核心接口程序。
 
 **核心理念**：
-- **HOOK 注册系统**：数据库核心，提供"大海捞针"式的数据持久化管理
+- **HOOK 注册系统**：数据库核心，数据持久化管理
 - **Logex 原生操作语言**：内置脚本解释器，直接操作数据结构
 - **BHS 统一数据类型**：任意精度数值、字符串、LIST、TABLE、BITMAP 的统一封装
 
@@ -17,7 +19,6 @@ Mhuixs 是一个**基于内存的 AI Agent 数据库**，将数据库引擎与�
 - ✅ **Logex 内置化完成**：13 个核心函数已内置
 - ✅ **数据结构完善**：LIST/TABLE/BITMAP/KVALOT 已实现并集成
 - ✅ **客户端 muixclt**：支持完整的 NAQL 语法解析和网络通信
-- 🚧 **服务端 hub**：开发中
 - 📋 **MCP 协议支持**：规划中
 
 ---
@@ -28,7 +29,7 @@ Mhuixs 是一个**基于内存的 AI Agent 数据库**，将数据库引擎与�
 
 ```
 Mhuixs 数据库核心
-  ├── HOOK 注册系统（持久化管理，"大海捞针"）
+  ├── HOOK 注册系统
   │   ├── 权限管理（owner/group/other）
   │   ├── 对象注册/注销/查找
   │   └── 生命周期管理
@@ -53,33 +54,15 @@ Mhuixs 数据库核心
        │   ├── TYPE 转换：num, str, bmp
        │   └── BITMAP 操作：bset, bget, bcount
        │
-       └── 外部包（需要 import）
+       └── 外部包
            └── math：sin, cos, sqrt, π, e 等
 ```
-
-### 关键设计
-
-1. **HOOK ≠ BHS**
-   - `HOOK` 是数据库核心注册系统，体现"大海捞针"理念
-   - `BHS`/`bhs` 只是 Logex 旧时代的数据类型名称
-   - 两者是同一个结构体的不同别名：`typedef struct {...} BHS, basic_handle_struct, bhs;`
-
-2. **Logex 是 Mhuixs 的执行模块**
-   - Logex 不是独立项目，而是 Mhuixs 的原生操作语言
-   - 核心函数内置化，无需 `import list` 或 `import type`
-   - 只有 `math` 等非数据库功能才需要 import
-
-3. **内置函数 vs 外部包**
-   - **内置函数**：直接可用，性能最优，无需注册
-   - **外部包**：通过 `.so` 动态加载，需要 `import`
-
----
 
 ## 3. Logex 脚本语言
 
 ### 核心特性
 
-Logex 是 Mhuixs 的原生操作语言：
+Logex 是 Mhuixs 的操作语言：
 
 - ✅ **任意精度数值计算**（BHS 实现）
 - ✅ **完整的布尔逻辑运算**
@@ -89,7 +72,7 @@ Logex 是 Mhuixs 的原生操作语言：
 - ✅ **递归下降解析器**
 - ✅ **交互式 REPL**
 
-> **名称由来**: Logex = Logic + Expression，同时与《三体》中的"罗辑"谐音
+> **名称由来**: Logex = Logic + Expression
 
 ### 内置函数
 

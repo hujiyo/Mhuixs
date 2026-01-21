@@ -1,13 +1,24 @@
 /**
- * Logex REPL - 多行编辑模式
+ * Logex - 统一的脚本解释器、虚拟机和编译器
+ * 
+ * 用法：
+ * - logex                    : 交互式 REPL 模式
+ * - logex script.lgx         : 执行源代码文件
+ * - logex script.ls          : 执行字节码文件
+ * - logex script.ls -v       : 详细模式执行字节码
+ * - logex input.lgx -o out.ls: 编译源码为字节码
+ * - logex input.lgx -o out.ls -d : 编译并反汇编
  * 
  * 特性：
- * - 普通回车：换行继续编辑
- * - Ctrl+Enter：编译并执行当前所有输入
- * - 先编译为字节码，再由 VM 执行
+ * - 多行编辑模式（REPL）
+ * - 编译 + VM 执行
+ * - 直接执行字节码
+ * - 编译源码为字节码（替代 gll）
  */
 
 #include "interpreter.h"
+#include "compiler.h"
+#include "bytecode.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,6 +34,13 @@
 
 #define MAX_INPUT_SIZE 8192
 #define MAX_LINE_SIZE 512
+
+/* 函数声明 */
+int run_repl(void);
+int execute_bytecode(const char *bytecode_file, int verbose);
+int execute_source_file(const char *source_file);
+int compile_source(const char *input_file, const char *output_file, int disassemble);
+void print_usage(const char *prog_name);
 
 /* 多行输入缓冲区 */
 typedef struct {
@@ -123,6 +141,29 @@ int read_line_with_ctrl(char *line, int max_len, int *is_ctrl_enter) {
     return 0;
 }
 
+/* 打印使用说明 */
+void print_usage(const char *prog_name) {
+    printf("Logex - 统一的脚本解释器、虚拟机和编译器\n\n");
+    printf("用法:\n");
+    printf("  %s                         交互式 REPL 模式\n", prog_name);
+    printf("  %s <script.lgx>            执行源代码文件\n", prog_name);
+    printf("  %s <script.ls> [-v]        执行字节码文件\n", prog_name);
+    printf("  %s <input.lgx> -o <out.ls> 编译源码为字节码\n", prog_name);
+    printf("\n");
+    printf("选项:\n");
+    printf("  -o <file>         指定输出字节码文件（编译模式）\n");
+    printf("  -d                反汇编输出（编译模式，调试用）\n");
+    printf("  -v, --verbose     详细模式（执行字节码时）\n");
+    printf("  -h, --help        显示此帮助信息\n");
+    printf("\n");
+    printf("示例:\n");
+    printf("  %s                         # 启动 REPL\n", prog_name);
+    printf("  %s test.lgx                # 执行源码\n", prog_name);
+    printf("  %s test.ls -v              # 详细模式执行字节码\n", prog_name);
+    printf("  %s test.lgx -o test.ls     # 编译为字节码\n", prog_name);
+    printf("  %s test.lgx -o test.ls -d  # 编译并反汇编\n", prog_name);
+}
+
 /* 打印欢迎信息 */
 void print_welcome(void) {
     printf("╔════════════════════════════════════════════════════════════╗\n");
@@ -159,11 +200,118 @@ void print_help(void) {
     printf("30\n\n");
 }
 
-/* 主函数 */
-int main(int argc, char *argv[]) {
-    (void)argc;
-    (void)argv;
+/* 执行字节码文件 */
+int execute_bytecode(const char *bytecode_file, int verbose) {
+    if (verbose) {
+        printf("加载字节码: %s\n", bytecode_file);
+    }
     
+    /* 创建解释器 */
+    Interpreter *interp = interpreter_create();
+    if (!interp) {
+        fprintf(stderr, "错误: 无法创建解释器\n");
+        return 1;
+    }
+    
+    if (verbose) {
+        printf("✓ 解释器创建成功\n");
+    }
+    
+    /* 执行字节码 */
+    InterpreterResult result;
+    if (interpreter_execute_bytecode(interp, bytecode_file, &result) != 0) {
+        fprintf(stderr, "错误: %s\n", result.value);
+        interpreter_destroy(interp);
+        return 1;
+    }
+    
+    if (verbose) {
+        printf("✓ 字节码加载成功\n");
+        printf("开始执行...\n\n");
+    }
+    
+    /* 输出结果 */
+    if (result.type == RESULT_VALUE) {
+        printf("%s\n", result.value);
+    } else if (result.type == RESULT_ERROR) {
+        fprintf(stderr, "运行时错误: %s\n", result.value);
+        interpreter_destroy(interp);
+        return 1;
+    }
+    
+    if (verbose) {
+        printf("\n✓ 执行完成\n");
+    }
+    
+    interpreter_destroy(interp);
+    return 0;
+}
+
+/* 执行源代码文件 */
+int execute_source_file(const char *source_file) {
+    /* 创建解释器 */
+    Interpreter *interp = interpreter_create();
+    if (!interp) {
+        fprintf(stderr, "错误: 无法创建解释器\n");
+        return 1;
+    }
+    
+    /* 使用 VM 模式 */
+    interpreter_set_vm_mode(interp, 1);
+    
+    /* 执行文件 */
+    InterpreterResult result;
+    if (interpreter_execute_file(interp, source_file, &result) != 0) {
+        fprintf(stderr, "执行失败: %s\n", result.value);
+        interpreter_destroy(interp);
+        return 1;
+    }
+    
+    /* 输出结果 */
+    if (result.type == RESULT_VALUE) {
+        printf("%s\n", result.value);
+    } else if (result.type == RESULT_ERROR) {
+        fprintf(stderr, "错误: %s\n", result.value);
+        interpreter_destroy(interp);
+        return 1;
+    }
+    
+    interpreter_destroy(interp);
+    return 0;
+}
+
+/* 编译源代码为字节码 */
+int compile_source(const char *input_file, const char *output_file, int disassemble) {
+    printf("编译: %s -> %s\n", input_file, output_file);
+    
+    /* 创建编译器 */
+    Compiler *comp = compiler_create();
+    if (!comp) {
+        fprintf(stderr, "错误: 无法创建编译器\n");
+        return 1;
+    }
+    
+    /* 编译 */
+    if (compiler_compile_file(comp, input_file, output_file) != 0) {
+        fprintf(stderr, "编译错误: %s\n", compiler_get_error(comp));
+        compiler_destroy(comp);
+        return 1;
+    }
+    
+    printf("✓ 编译成功\n");
+    
+    /* 反汇编 */
+    if (disassemble) {
+        printf("\n");
+        bytecode_disassemble(comp->program);
+    }
+    
+    compiler_destroy(comp);
+    return 0;
+}
+
+/* REPL 模式 */
+int run_repl(void) {
     print_welcome();
     
     /* 创建解释器 */
@@ -299,4 +447,60 @@ execute_buffer:
     interpreter_destroy(interp);
     
     return 0;
+}
+
+/* 主函数 */
+int main(int argc, char *argv[]) {
+    /* 无参数：REPL 模式 */
+    if (argc == 1) {
+        return run_repl();
+    }
+    
+    /* 解析命令行参数 */
+    const char *input_file = NULL;
+    const char *output_file = NULL;
+    int verbose = 0;
+    int disassemble = 0;
+    
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+            print_usage(argv[0]);
+            return 0;
+        } else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--verbose") == 0) {
+            verbose = 1;
+        } else if (strcmp(argv[i], "-o") == 0) {
+            if (i + 1 < argc) {
+                output_file = argv[++i];
+            } else {
+                fprintf(stderr, "错误: -o 需要指定输出文件\n");
+                return 1;
+            }
+        } else if (strcmp(argv[i], "-d") == 0) {
+            disassemble = 1;
+        } else if (!input_file) {
+            input_file = argv[i];
+        }
+    }
+    
+    if (!input_file) {
+        fprintf(stderr, "错误: 未指定输入文件\n");
+        print_usage(argv[0]);
+        return 1;
+    }
+    
+    /* 检查是否为编译模式 */
+    if (output_file) {
+        /* 编译模式：logex input.lgx -o output.ls */
+        return compile_source(input_file, output_file, disassemble);
+    }
+    
+    /* 检查文件扩展名 */
+    const char *ext = strrchr(input_file, '.');
+    if (ext && strcmp(ext, ".ls") == 0) {
+        /* 字节码文件：直接执行 */
+        return execute_bytecode(input_file, verbose);
+    } else {
+        /* 源代码文件：编译后执行 */
+        return execute_source_file(input_file);
+    }
 }
