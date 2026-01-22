@@ -2,7 +2,7 @@
 #define NETPLUG_H
 
 #include "funseq.h"
-#include "getid.hpp"
+#include "getid.h"
 #include "hook.hpp"
 #include "pkg.h"
 
@@ -88,7 +88,6 @@ typedef struct {
 extern netplug_t *g_netplug;
 extern BlockingConcurrentQueue<command_t *> command_queue;
 extern BlockingReaderWriterQueue<response_t *> response_queue;
-extern Id_alloctor Idalloc;
 
 // API函数
 int netplug_init(uint16_t port);

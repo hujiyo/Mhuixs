@@ -1,11 +1,13 @@
-#ifndef GETID_HPP
-#define GETID_HPP
+#ifndef GETID_H
+#define GETID_H
 
 #include "bitmap.h"
 #include "merr.h"
 
-#include <mutex>
-using namespace std;
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
 #版权所有 (c) HuJi 2024
 #许可证协议:
@@ -13,6 +15,7 @@ using namespace std;
 start from 2024.11
 Email:hj18914255909@outlook.com
 */
+
 /*
 ===================================
 ID分配器模块 线程安全：所有公有方法均加锁
@@ -31,35 +34,38 @@ ID分配器模块 线程安全：所有公有方法均加锁
     1-65535为普通组ID    COMMON_GID
     （65536为临时用户组ID的特殊标识符,不纳入id管理器管）
 */
-typedef int SID,UID,GID;
 
-enum UID_t{
-    ROOT_UID,     // root用户ID
-    SYSTEM_UID,   // 系统用户ID
-    COMMON_UID,   // 普通用户ID
-};//用户ID类型
+typedef int SID, UID, GID;
 
-enum GID_t{
-    SYSTEM_GID,     // 系统组ID
-    COMMON_GID,    // 普通组ID
-};//组ID类型
+typedef enum {
+    ROOT_UID,     /* root用户ID */
+    SYSTEM_UID,   /* 系统用户ID */
+    COMMON_UID,   /* 普通用户ID */
+} UID_t;
 
-class Id_alloctor{
-    BITMAP sid_bitmap;  // 会话ID位图
-    BITMAP uid_bitmap;  // 用户ID位图    
-    BITMAP gid_bitmap;  // 组ID位图
-public:
-    int close();
-    int init();
+typedef enum {
+    SYSTEM_GID,   /* 系统组ID */
+    COMMON_GID,   /* 普通组ID */
+} GID_t;
 
-    SID get_sid();//获得会话ID
-    SID del_sid(SID sid);//释放会话ID
+/* 初始化和清理 */
+int idalloc_init(void);
+int idalloc_close(void);
 
-    UID get_uid(UID_t type);//获得用户ID
-    UID del_uid(UID_t type,UID uid);//释放用户ID
+/* 会话ID管理 */
+SID get_sid(void);
+SID del_sid(SID sid);
 
-    GID get_gid(GID_t type);//获得组ID    
-    GID del_gid(GID_t type,GID gid);//释放组ID
-};
+/* 用户ID管理 */
+UID get_uid(UID_t type);
+UID del_uid(UID_t type, UID uid);
 
+/* 组ID管理 */
+GID get_gid(GID_t type);
+GID del_gid(GID_t type, GID gid);
+
+#ifdef __cplusplus
+}
 #endif
+
+#endif /* GETID_H */

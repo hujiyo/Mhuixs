@@ -17,11 +17,9 @@ table需要增添表格恢复功能
 #define _MHUIXS_ //Mhuixs服务端标志宏
 
 #include "merr.h"
-#include "env.hpp"//环境变量模块
-#include "getid.hpp"//ID分配器模块
-#include "usergroup.hpp"//用户组管理模块
-
-#include "Mhudef.hpp"
+#include "env.h"//环境变量模块
+#include "getid.h"//ID分配器模块
+#include "usergroup.h"//用户组管理模块
 
 #include "netplug.h"
 
@@ -50,8 +48,6 @@ table需要增添表格恢复功能
 3.数据压缩和储存在磁盘中的基本单位都是hook.
 */
 
-Id_alloctor Idalloc;//全局id分配器
-
 int main()
 {
     //环境变量模块
@@ -67,7 +63,7 @@ int main()
     }
 
     //id分配器模块
-    if (Idalloc.init() != success)   {
+    if (idalloc_init() != success)   {
         printf("\nID allocator module failed!\n");
         return 1;
     }

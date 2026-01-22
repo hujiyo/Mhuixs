@@ -22,7 +22,6 @@ merr.h
 
 //Mhuixs return codes
 typedef enum errlevel {
-
     error = -1,//错误
     success = 0,//成功
     hint = 1,//提示

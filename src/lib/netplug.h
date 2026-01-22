@@ -2,10 +2,8 @@
 #define NETPLUG_H
 
 #include "funseq.h"
-#include "getid.hpp"
-//#include "hook.hpp"
-#include "pkg.h"
-
+#include "getid.h"
+#include "lib/pkg.h"
 #include "concurrentqueue.h"
 #include <atomic>
 #include <errno.h>
@@ -14,10 +12,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/resource.h>
+
 #include <time.h>
 #include <unistd.h>
 #include <uv.h>
+#include <sys/resource.h>
 
 using namespace std;
 using namespace moodycamel;
@@ -86,7 +85,6 @@ typedef struct {
 // 全局变量
 extern netplug_t *g_netplug;
 extern BlockingConcurrentQueue<command_t *> command_queue;
-extern Id_alloctor Idalloc;
 
 // API函数
 int netplug_init(uint16_t port);

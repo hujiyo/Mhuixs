@@ -371,7 +371,7 @@ int vm_step(VM *vm) {
             BHS *value = vm_peek(vm);
             if (value) {
                 /* TODO: 调用 C 接口注册到 Mhuixs */
-                /* hook_c_set_bhs(current_hook, caller_uid, value); */
+                /* hook_set_bhs(current_hook, caller_uid, value); */
                 /* 暂时也存储到本地上下文 */
                 context_set(vm->context, c->value.str, value);
             }
@@ -382,7 +382,7 @@ int vm_step(VM *vm) {
             /* 加载持久化变量 */
             Constant *c = &vm->program->const_pool[inst->operand.u32];
             /* TODO: 调用 C 接口从 Mhuixs 获取 */
-            /* BHS *value = hook_c_get_bhs(current_hook, caller_uid); */
+            /* BHS *value = hook_get_bhs(current_hook, caller_uid); */
             BHS *value = context_get(vm->context, c->value.str);
             if (value) {
                 vm_push(vm, value);
@@ -405,13 +405,13 @@ int vm_step(VM *vm) {
             /* 根据 subop 执行不同操作 */
             switch (subop) {
                 case DB_HOOK_CREATE:
-                    /* reg_c_register(caller_uid, name, &hook); */
+                    /* reg_register(caller_uid, name, &hook); */
                     break;
                 case DB_HOOK_SWITCH:
                     /* 切换当前 HOOK */
                     break;
                 case DB_HOOK_DEL:
-                    /* reg_c_unregister(name); */
+                    /* reg_unregister(name); */
                     break;
                 case DB_HOOK_CLEAR:
                     /* 清空 HOOK 内容 */

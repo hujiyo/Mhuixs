@@ -5,7 +5,6 @@
 netplug_t* g_netplug = nullptr;
 BlockingConcurrentQueue<command_t*> command_queue;
 BlockingReaderWriterQueue<response_t*> response_queue;
-Id_alloctor Idalloc;
 
 static uv_thread_t response_thread;
 static uv_mutex_t shutdown_mutex;
@@ -327,7 +326,7 @@ static void on_connection(uv_stream_t* server, int status) {
             fprintf(stderr, "Warning: Failed to set socket options\n");
         }
 
-        session->session_id = Idalloc.get_sid();
+        session->session_id = get_sid();
         session->user_id = 65536; // 默认未认证用户ID
         session->state = SESS_ALIVE;
         session->last_activity = uv_now(g_netplug->loop);
