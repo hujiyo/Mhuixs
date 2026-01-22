@@ -3,25 +3,23 @@
 
 #include "funseq.h"
 #include "getid.h"
-#include "hook.hpp"
+#include "hook.h"
 #include "pkg.h"
-
-#include "concurrentqueue.h"
-#include "readerwriterqueue.h"
-#include <atomic>
+#include "netplug_queue.h"
 #include <errno.h>
 #include <signal.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/resource.h>
 #include <time.h>
-#include <unistd.h>
 #include <uv.h>
 
-using namespace std;
-using namespace moodycamel;
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/resource.h>
+#endif
 
 #define MAX_SESSIONS 1024
 #define BUFFER_SIZE 8192
@@ -86,13 +84,13 @@ typedef struct {
 
 // 全局变量
 extern netplug_t *g_netplug;
-extern BlockingConcurrentQueue<command_t *> command_queue;
-extern BlockingReaderWriterQueue<response_t *> response_queue;
+extern netplug_queue_t command_queue;
+extern netplug_queue_t response_queue;
 
 // API函数
 int netplug_init(uint16_t port);
-int netplug_start();
-void netplug_shutdown();
+int netplug_start(void);
+void netplug_shutdown(void);
 int auth_session(SID session_id, UID uid);
 
 #ifdef __cplusplus

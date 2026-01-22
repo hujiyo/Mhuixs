@@ -449,8 +449,8 @@ execute_buffer:
     return 0;
 }
 
-/* 主函数 */
-int main(int argc, char *argv[]) {
+/* Logex主函数 */
+int logex_main(int argc, char *argv[]) {
     /* 无参数：REPL 模式 */
     if (argc == 1) {
         return run_repl();

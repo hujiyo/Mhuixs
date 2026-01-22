@@ -1,0 +1,150 @@
+# Makefile for Mhuixs (整合版)
+# 将Logex作为模块集成到Mhuixs中
+
+CC = gcc
+CFLAGS = -Wall -Wextra -g -O0 -std=c99 -I. -Ilib -Ishare
+LDFLAGS = -lm -ldl -lpthread
+
+# 目标程序
+TARGET = mhuixs
+
+# Mhuixs核心模块对象文件
+MHUIXS_OBJS = Mhuixs.o \
+              lib/env.o \
+              lib/getid.o \
+              lib/merr.o \
+              lib/hook.o \
+              lib/bitmap.o
+
+# Logex模块对象文件
+LOGEX_OBJS = logex.o \
+             interpreter.o \
+             evaluator.o \
+             lexer.o \
+             bignum.o \
+             context.o \
+             function.o \
+             package.o \
+             parser.o \
+             ast.o \
+             vm.o \
+             compiler.o \
+             bytecode.o \
+             builtin.o \
+             lib/list.o \
+             lib/tblh.o
+
+# 所有对象文件
+ALL_OBJS = $(MHUIXS_OBJS) $(LOGEX_OBJS)
+
+# 默认目标
+all: $(TARGET)
+
+# 链接生成可执行文件
+$(TARGET): $(ALL_OBJS)
+	$(CC) $(CFLAGS) -rdynamic -o $(TARGET) $(ALL_OBJS) $(LDFLAGS)
+	@echo "✓ Mhuixs编译完成"
+
+# ==================== Mhuixs核心模块 ====================
+
+Mhuixs.o: Mhuixs.c lib/merr.h lib/env.h lib/getid.h lib/hook.h
+	$(CC) $(CFLAGS) -c Mhuixs.c
+
+lib/env.o: lib/env.c lib/env.h lib/mstring.h
+	$(CC) $(CFLAGS) -c lib/env.c -o lib/env.o
+
+lib/getid.o: lib/getid.c lib/getid.h lib/bitmap.h lib/merr.h
+	$(CC) $(CFLAGS) -c lib/getid.c -o lib/getid.o
+
+lib/merr.o: lib/merr.c lib/merr.h
+	$(CC) $(CFLAGS) -c lib/merr.c -o lib/merr.o
+
+lib/hook.o: lib/hook.c lib/hook.h lib/merr.h lib/getid.h lib/mstring.h
+	$(CC) $(CFLAGS) -c lib/hook.c -o lib/hook.o
+
+lib/bitmap.o: lib/bitmap.c lib/bitmap.h
+	$(CC) $(CFLAGS) -c lib/bitmap.c -o lib/bitmap.o
+
+# ==================== Logex模块 ====================
+
+logex.o: logex.c interpreter.h compiler.h bytecode.h
+	$(CC) $(CFLAGS) -c logex.c
+
+interpreter.o: interpreter.c interpreter.h vm.h compiler.h
+	$(CC) $(CFLAGS) -c interpreter.c
+
+evaluator.o: evaluator.c evaluator.h lexer.h bignum.h context.h function.h package.h parser.h ast.h
+	$(CC) $(CFLAGS) -c evaluator.c
+
+lexer.o: lexer.c lexer.h bignum.h
+	$(CC) $(CFLAGS) -c lexer.c
+
+bignum.o: bignum.c bignum.h
+	$(CC) $(CFLAGS) -c bignum.c
+
+context.o: context.c context.h bignum.h
+	$(CC) $(CFLAGS) -c context.c
+
+function.o: function.c function.h bignum.h
+	$(CC) $(CFLAGS) -c function.c
+
+package.o: package.c package.h function.h
+	$(CC) $(CFLAGS) -c package.c
+
+parser.o: parser.c parser.h ast.h lexer.h
+	$(CC) $(CFLAGS) -c parser.c
+
+ast.o: ast.c ast.h evaluator.h context.h function.h package.h
+	$(CC) $(CFLAGS) -c ast.c
+
+vm.o: vm.c vm.h bytecode.h builtin.h
+	$(CC) $(CFLAGS) -c vm.c
+
+compiler.o: compiler.c compiler.h bytecode.h parser.h
+	$(CC) $(CFLAGS) -c compiler.c
+
+bytecode.o: bytecode.c bytecode.h
+	$(CC) $(CFLAGS) -c bytecode.c
+
+builtin.o: builtin.c builtin.h bignum.h
+	$(CC) $(CFLAGS) -c builtin.c
+
+lib/list.o: lib/list.c lib/list.h
+	$(CC) $(CFLAGS) -c lib/list.c -o lib/list.o
+
+lib/tblh.o: lib/tblh.c lib/tblh.h
+	$(CC) $(CFLAGS) -c lib/tblh.c -o lib/tblh.o
+
+# ==================== 运行和测试 ====================
+
+# 运行REPL模式
+run: $(TARGET)
+	./$(TARGET)
+
+# 测试编译模式
+test_compile: $(TARGET)
+	./$(TARGET) test.lgx -o test.ls
+
+# 测试执行模式
+test_run: $(TARGET)
+	./$(TARGET) test.lgx
+
+# ==================== 清理 ====================
+
+clean:
+	rm -f *.o lib/*.o $(TARGET)
+	@echo "✓ 清理完成"
+
+rebuild: clean all
+
+# ==================== 安装 ====================
+
+install: $(TARGET)
+	cp $(TARGET) /usr/local/bin/mhuixs
+	@echo "✓ Mhuixs已安装到 /usr/local/bin/mhuixs"
+	@echo "  使用方法:"
+	@echo "    mhuixs              # 启动Logex REPL"
+	@echo "    mhuixs script.lgx   # 执行Logex脚本"
+	@echo "    mhuixs in.lgx -o out.ls  # 编译Logex脚本"
+
+.PHONY: all run test_compile test_run clean rebuild install

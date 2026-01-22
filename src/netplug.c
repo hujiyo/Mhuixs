@@ -1,10 +1,17 @@
 #include "netplug.h"
 
+#ifdef _WIN32
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#pragma comment(lib, "ws2_32.lib")
+#else
+#include <arpa/inet.h>  // for ntohl
+#endif
 
 // 全局变量
-netplug_t* g_netplug = nullptr;
-BlockingConcurrentQueue<command_t*> command_queue;
-BlockingReaderWriterQueue<response_t*> response_queue;
+netplug_t* g_netplug = NULL;
+netplug_queue_t command_queue;
+netplug_queue_t response_queue;
 
 static uv_thread_t response_thread;
 static uv_mutex_t shutdown_mutex;
@@ -21,10 +28,10 @@ static void on_write(uv_write_t* req, int status);
 static void on_close(uv_handle_t* handle);
 static void on_cleanup_timer(uv_timer_t* timer);
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf);
-static session_t* alloc_session();
+static session_t* alloc_session(void);
 static void free_session(session_t* session);
 static int process_buffer(session_t* session);
-static void cleanup_expired_sessions();
+static void cleanup_expired_sessions(void);
 static int validate_session(session_t* session);
 static void reset_session(session_t* session);
 static int setup_socket_options(uv_tcp_t* handle);
@@ -42,7 +49,7 @@ static void send_response(response_t* resp);
 #define SAFE_FREE(ptr) do { \
     if (ptr) { \
         free(ptr); \
-        (ptr) = nullptr; \
+        (ptr) = NULL; \
     } \
 } while(0)
 
@@ -54,6 +61,7 @@ int netplug_init(uint16_t port) {
     }
 
     // 忽略SIGPIPE信号
+#ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
 
     // 设置资源限制
@@ -62,15 +70,16 @@ int netplug_init(uint16_t port) {
         rlim.rlim_cur = rlim.rlim_max;
         setrlimit(RLIMIT_NOFILE, &rlim);
     }
+#endif
 
     g_netplug = (netplug_t*)calloc(1, sizeof(netplug_t));
     CHECK_NULL_RET(g_netplug, -1);
 
     g_netplug->max_sessions = MAX_SESSIONS;
 
-    // 初始化会话池 - 使用对齐内存分配提升性能
+    // 初始化会话池
     size_t sessions_size = MAX_SESSIONS * sizeof(session_t);
-    g_netplug->sessions = (session_t*)aligned_alloc(64, sessions_size);
+    g_netplug->sessions = (session_t*)calloc(MAX_SESSIONS, sizeof(session_t));
     g_netplug->idle_sessions = (uint32_t*)calloc(MAX_SESSIONS, sizeof(uint32_t));
 
     if (!g_netplug->sessions || !g_netplug->idle_sessions) {
@@ -80,8 +89,6 @@ int netplug_init(uint16_t port) {
         return -1;
     }
 
-    memset(g_netplug->sessions, 0, sessions_size);
-
     // 初始化空闲会话索引和缓冲区
     for (uint32_t i = 0; i < MAX_SESSIONS; i++) {
         g_netplug->idle_sessions[i] = i;
@@ -89,7 +96,7 @@ int netplug_init(uint16_t port) {
 
         session->state = SESS_IDLE;
         session->pool_index = i;
-        session->recv_buffer.data = (uint8_t*)aligned_alloc(64, BUFFER_SIZE);
+        session->recv_buffer.data = (uint8_t*)malloc(BUFFER_SIZE);
 
         if (!session->recv_buffer.data) {
             // 清理已分配的缓冲区
@@ -133,9 +140,39 @@ int netplug_init(uint16_t port) {
         return -1;
     }
 
-    // 启动回复处理线程
-    ret = uv_thread_create(&response_thread, response_thread_func, nullptr);
+    // 初始化队列
+    ret = netplug_queue_init(&command_queue);
     if (ret != 0) {
+        uv_mutex_destroy(&shutdown_mutex);
+        uv_mutex_destroy(&g_netplug->pool_mutex);
+        for (uint32_t i = 0; i < MAX_SESSIONS; i++) {
+            SAFE_FREE(g_netplug->sessions[i].recv_buffer.data);
+        }
+        SAFE_FREE(g_netplug->sessions);
+        SAFE_FREE(g_netplug->idle_sessions);
+        SAFE_FREE(g_netplug);
+        return -1;
+    }
+
+    ret = netplug_queue_init(&response_queue);
+    if (ret != 0) {
+        netplug_queue_destroy(&command_queue);
+        uv_mutex_destroy(&shutdown_mutex);
+        uv_mutex_destroy(&g_netplug->pool_mutex);
+        for (uint32_t i = 0; i < MAX_SESSIONS; i++) {
+            SAFE_FREE(g_netplug->sessions[i].recv_buffer.data);
+        }
+        SAFE_FREE(g_netplug->sessions);
+        SAFE_FREE(g_netplug->idle_sessions);
+        SAFE_FREE(g_netplug);
+        return -1;
+    }
+
+    // 启动回复处理线程
+    ret = uv_thread_create(&response_thread, response_thread_func, NULL);
+    if (ret != 0) {
+        netplug_queue_destroy(&response_queue);
+        netplug_queue_destroy(&command_queue);
         uv_mutex_destroy(&shutdown_mutex);
         uv_mutex_destroy(&g_netplug->pool_mutex);
         for (uint32_t i = 0; i < MAX_SESSIONS; i++) {
@@ -150,6 +187,8 @@ int netplug_init(uint16_t port) {
     // 初始化libuv
     g_netplug->loop = uv_default_loop();
     if (!g_netplug->loop) {
+        netplug_queue_destroy(&response_queue);
+        netplug_queue_destroy(&command_queue);
         uv_mutex_destroy(&shutdown_mutex);
         uv_mutex_destroy(&g_netplug->pool_mutex);
         for (uint32_t i = 0; i < MAX_SESSIONS; i++) {
@@ -163,6 +202,8 @@ int netplug_init(uint16_t port) {
 
     ret = uv_tcp_init(g_netplug->loop, &g_netplug->server);
     if (ret != 0) {
+        netplug_queue_destroy(&response_queue);
+        netplug_queue_destroy(&command_queue);
         uv_mutex_destroy(&shutdown_mutex);
         uv_mutex_destroy(&g_netplug->pool_mutex);
         for (uint32_t i = 0; i < MAX_SESSIONS; i++) {
@@ -183,6 +224,8 @@ int netplug_init(uint16_t port) {
     struct sockaddr_in addr;
     ret = uv_ip4_addr("0.0.0.0", port, &addr);
     if (ret != 0) {
+        netplug_queue_destroy(&response_queue);
+        netplug_queue_destroy(&command_queue);
         uv_mutex_destroy(&shutdown_mutex);
         uv_mutex_destroy(&g_netplug->pool_mutex);
         for (uint32_t i = 0; i < MAX_SESSIONS; i++) {
@@ -193,13 +236,16 @@ int netplug_init(uint16_t port) {
         SAFE_FREE(g_netplug);
         return ret;
     }
-    #ifdef UV_TCP_REUSEADDR
-        ret = uv_tcp_bind(&g_netplug->server, (const sockaddr*)&addr, UV_TCP_REUSEADDR);
-    #else
-        ret = uv_tcp_bind(&g_netplug->server, (const sockaddr*)&addr, 0);
-    #endif
+
+#ifdef UV_TCP_REUSEADDR
+    ret = uv_tcp_bind(&g_netplug->server, (const struct sockaddr*)&addr, UV_TCP_REUSEADDR);
+#else
+    ret = uv_tcp_bind(&g_netplug->server, (const struct sockaddr*)&addr, 0);
+#endif
 
     if (ret != 0) {
+        netplug_queue_destroy(&response_queue);
+        netplug_queue_destroy(&command_queue);
         uv_mutex_destroy(&shutdown_mutex);
         uv_mutex_destroy(&g_netplug->pool_mutex);
         for (uint32_t i = 0; i < MAX_SESSIONS; i++) {
@@ -219,6 +265,8 @@ int netplug_init(uint16_t port) {
     }
 
     if (ret != 0) {
+        netplug_queue_destroy(&response_queue);
+        netplug_queue_destroy(&command_queue);
         uv_mutex_destroy(&shutdown_mutex);
         uv_mutex_destroy(&g_netplug->pool_mutex);
         for (uint32_t i = 0; i < MAX_SESSIONS; i++) {
@@ -234,7 +282,7 @@ int netplug_init(uint16_t port) {
 }
 
 // 启动服务器
-int netplug_start() {
+int netplug_start(void) {
     CHECK_NULL_RET(g_netplug, -1);
 
     int ret = uv_listen((uv_stream_t*)&g_netplug->server, 1024, on_connection);
@@ -248,7 +296,7 @@ int netplug_start() {
 }
 
 // 关闭服务器
-void netplug_shutdown() {
+void netplug_shutdown(void) {
     if (!g_netplug) return;
 
     // 设置关闭标志
@@ -258,17 +306,20 @@ void netplug_shutdown() {
 
     printf("Shutting down server...\n");
 
+    // 关闭队列，唤醒等待的线程
+    netplug_queue_shutdown(&command_queue);
+    netplug_queue_shutdown(&response_queue);
+
     // 等待回复线程结束
     uv_thread_join(&response_thread);
     uv_mutex_destroy(&shutdown_mutex);
 
-
     // 停止接受新连接
-    uv_close((uv_handle_t*)&g_netplug->server, nullptr);
+    uv_close((uv_handle_t*)&g_netplug->server, NULL);
 
     // 停止清理定时器
     uv_timer_stop(&g_netplug->cleanup_timer);
-    uv_close((uv_handle_t*)&g_netplug->cleanup_timer, nullptr);
+    uv_close((uv_handle_t*)&g_netplug->cleanup_timer, NULL);
 
     // 关闭所有活跃会话
     uv_mutex_lock(&g_netplug->pool_mutex);
@@ -284,6 +335,8 @@ void netplug_shutdown() {
     uv_run(g_netplug->loop, UV_RUN_DEFAULT);
 
     // 清理资源
+    netplug_queue_destroy(&response_queue);
+    netplug_queue_destroy(&command_queue);
     uv_mutex_destroy(&g_netplug->pool_mutex);
 
     for (uint32_t i = 0; i < MAX_SESSIONS; i++) {
@@ -357,11 +410,11 @@ static int setup_socket_options(uv_tcp_t* handle) {
     return 0;
 }
 
-// 分配缓冲区回调 - 优化内存分配策略
+// 分配缓冲区回调
 static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* buf) {
     session_t* session = (session_t*)handle->data;
     if (!session || validate_session(session) != 0) {
-        buf->base = nullptr;
+        buf->base = NULL;
         buf->len = 0;
         return;
     }
@@ -392,7 +445,7 @@ static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* b
             available = new_capacity - buffer->size;
         } else {
             // 内存分配失败，关闭连接
-            buf->base = nullptr;
+            buf->base = NULL;
             buf->len = 0;
             return;
         }
@@ -402,12 +455,12 @@ static void alloc_buffer(uv_handle_t* handle, size_t suggested_size, uv_buf_t* b
         buf->base = (char*)(buffer->data + buffer->size);
         buf->len = (available > suggested_size) ? suggested_size : available;
     } else {
-        buf->base = nullptr;
+        buf->base = NULL;
         buf->len = 0;
     }
 }
 
-// 读取数据回调 - 增强错误处理和安全检查
+// 读取数据回调
 static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
     session_t* session = (session_t*)stream->data;
     if (!session || validate_session(session) != 0) {
@@ -442,12 +495,12 @@ static void on_read(uv_stream_t* stream, ssize_t nread, const uv_buf_t* buf) {
     }
 }
 
-// 写入完成回调 - 改进内存管理
+// 写入完成回调
 static void on_write(uv_write_t* req, int status) {
-    if (status < 0 ) {
+    if (status < 0) {
         fprintf(stderr, "Write error: %s\n", uv_strerror(status));
     }
-    if ( !req ) {
+    if (!req) {
         return;
     }
 
@@ -470,13 +523,13 @@ static void on_close(uv_handle_t* handle) {
     }
 }
 
-// 清理定时器回调 - 优化性能
+// 清理定时器回调
 static void on_cleanup_timer(uv_timer_t* timer) {
     cleanup_expired_sessions();
 }
 
-// 清理过期会话 - 独立函数提高可读性
-static void cleanup_expired_sessions() {
+// 清理过期会话
+static void cleanup_expired_sessions(void) {
     if (!g_netplug) return;
 
     uint64_t now = uv_now(g_netplug->loop);
@@ -529,15 +582,15 @@ static void reset_session(session_t* session) {
     session->last_activity = 0;
 }
 
-// 分配会话 - 增强线程安全
-static session_t* alloc_session() {
-    if (!g_netplug) return nullptr;
+// 分配会话
+static session_t* alloc_session(void) {
+    if (!g_netplug) return NULL;
 
     uv_mutex_lock(&g_netplug->pool_mutex);
 
     if (g_netplug->idle_count == 0) {
         uv_mutex_unlock(&g_netplug->pool_mutex);
-        return nullptr;
+        return NULL;
     }
 
     uint32_t index = g_netplug->idle_sessions[--g_netplug->idle_count];
@@ -554,7 +607,7 @@ static session_t* alloc_session() {
     return session;
 }
 
-// 释放会话 - 增强安全性
+// 释放会话
 static void free_session(session_t* session) {
     if (!session || !g_netplug) return;
 
@@ -578,7 +631,7 @@ static void free_session(session_t* session) {
     uv_mutex_unlock(&g_netplug->pool_mutex);
 }
 
-// 处理接收缓冲区 - 增强安全性和错误处理
+// 处理接收缓冲区
 static int process_buffer(session_t* session) {
     if (!session) return -1;
 
@@ -609,28 +662,28 @@ static int process_buffer(session_t* session) {
         }
 
         // 解包
-        str unpacked = unpacking(buffer->data + buffer->read_pos + start_index, packet_size);
-        if (unpacked.string && unpacked.len >= sizeof(uint32_t)) {
+        mstring unpacked = unpacking(buffer->data + buffer->read_pos + start_index, packet_size);
+        if (unpacked && mstrlen(unpacked) >= sizeof(uint32_t)) {
             uint32_t command_id;
-            memcpy(&command_id, unpacked.string, sizeof(uint32_t));
+            memcpy(&command_id, mstr_cstr(unpacked), sizeof(uint32_t));
 
             command_t* cmd = (command_t*)calloc(1, sizeof(command_t));
             if (cmd) {
                 cmd->session = session;
                 cmd->command_id = (CommandNumber)ntohl(command_id);
 
-                if (!command_queue.enqueue(cmd)) {
+                if (!netplug_queue_enqueue(&command_queue, cmd)) {
                     SAFE_FREE(cmd);
-                    SAFE_FREE(unpacked.string);
+                    mstr_free(unpacked);
                     fprintf(stderr, "Failed to enqueue command\n");
                     return -1;
                 }
             } else {
-                SAFE_FREE(unpacked.string);
+                mstr_free(unpacked);
                 return -1;
             }
 
-            SAFE_FREE(unpacked.string);
+            mstr_free(unpacked);
         }
 
         buffer->read_pos += start_index + packet_size;
@@ -650,7 +703,7 @@ static int process_buffer(session_t* session) {
     return 0;
 }
 
-// 认证会话 - 增强安全性
+// 认证会话
 int auth_session(SID session_id, UID uid) {
     if (!g_netplug || session_id == 0) return -1;
 
@@ -670,7 +723,7 @@ int auth_session(SID session_id, UID uid) {
     return -1;
 }
 
-// 添加回复处理线程函数：
+// 回复处理线程函数
 static void response_thread_func(void* arg) {
     response_t* resp;
 
@@ -682,24 +735,27 @@ static void response_thread_func(void* arg) {
 
         if (should_exit) break;
 
-        // 阻塞等待回复（BlockingReaderWriterQueue自带条件变量）
-        response_queue.wait_dequeue(resp);
-        if (resp && resp->session && validate_session(resp->session) == 0) {
-            send_response(resp);
-        } else {
-            // 清理无效回复
-            if (resp) {
-                if (resp->response_len > sizeof(resp->inline_data)) {
-                    SAFE_FREE(resp->data);
+        // 阻塞等待回复
+        if (netplug_queue_dequeue(&response_queue, (void**)&resp)) {
+            if (resp && resp->session && validate_session(resp->session) == 0) {
+                send_response(resp);
+            } else {
+                // 清理无效回复
+                if (resp) {
+                    if (resp->response_len > sizeof(resp->inline_data)) {
+                        SAFE_FREE(resp->data);
+                    }
+                    SAFE_FREE(resp);
                 }
-                SAFE_FREE(resp);
             }
         }
     }
 }
 
+// 发送响应
 static void send_response(response_t* resp) {
-    if (!resp)return;
+    if (!resp) return;
+
     uv_write_t* req = (uv_write_t*)malloc(sizeof(uv_write_t));
     if (!req) {
         if (resp->response_len > sizeof(resp->inline_data)) {
