@@ -76,7 +76,7 @@ static void set_lexer_error(Lexer *lexer, const char *msg) {
 }
 
 /* 检查关键字 */
-static TokenType check_keyword(const char *value) {
+static Logex_TokenType check_keyword(const char *value) {
     /* Logex 关键字 */
     if (strcmp(value, "let") == 0) return TOK_LET;
     if (strcmp(value, "static") == 0) return TOK_STATIC;
@@ -199,7 +199,7 @@ static TokenType check_keyword(const char *value) {
 }
 
 /* 读取标识符或关键字 */
-static TokenType read_identifier(Lexer *lexer) {
+static Logex_TokenType read_identifier(Lexer *lexer) {
     int start_pos = lexer->pos;
     int start_col = lexer->column;
     int val_pos = 0;
@@ -227,7 +227,7 @@ static TokenType read_identifier(Lexer *lexer) {
 }
 
 /* 读取数字 */
-static TokenType read_number(Lexer *lexer) {
+static Logex_TokenType read_number(Lexer *lexer) {
     int start_pos = lexer->pos;
     int start_col = lexer->column;
     int val_pos = 0;
@@ -256,7 +256,7 @@ static TokenType read_number(Lexer *lexer) {
 }
 
 /* 读取字符串 */
-static TokenType read_string(Lexer *lexer) {
+static Logex_TokenType read_string(Lexer *lexer) {
     int start_pos = lexer->pos;
     int start_col = lexer->column;
     int val_pos = 0;
@@ -300,7 +300,7 @@ static TokenType read_string(Lexer *lexer) {
 }
 
 /* 读取位图字面量 */
-static TokenType read_bitmap(Lexer *lexer) {
+static Logex_TokenType read_bitmap(Lexer *lexer) {
     int start_pos = lexer->pos;
     int start_col = lexer->column;
     int val_pos = 0;
@@ -326,7 +326,7 @@ static TokenType read_bitmap(Lexer *lexer) {
 }
 
 /* 创建单字符token */
-static TokenType make_single_char_token(Lexer *lexer, TokenType type) {
+static Logex_TokenType make_single_char_token(Lexer *lexer, Logex_TokenType type) {
     lexer->current_token.type = type;
     lexer->current_token.value[0] = lexer->input[lexer->pos];
     lexer->current_token.value[1] = '\0';
@@ -339,7 +339,7 @@ static TokenType make_single_char_token(Lexer *lexer, TokenType type) {
 }
 
 /* 创建双字符token */
-static TokenType make_double_char_token(Lexer *lexer, TokenType type, const char *value) {
+static Logex_TokenType make_double_char_token(Lexer *lexer, Logex_TokenType type, const char *value) {
     lexer->current_token.type = type;
     strncpy(lexer->current_token.value, value, sizeof(lexer->current_token.value) - 1);
     lexer->current_token.value[sizeof(lexer->current_token.value) - 1] = '\0';
@@ -353,7 +353,7 @@ static TokenType make_double_char_token(Lexer *lexer, TokenType type, const char
 }
 
 /* 获取下一个词法单元 */
-TokenType lexer_next(Lexer *lexer) {
+Logex_TokenType lexer_next(Lexer *lexer) {
     if (!lexer) return TOK_ERROR;
 
     lexer_skip_whitespace(lexer);
@@ -486,7 +486,7 @@ TokenType lexer_next(Lexer *lexer) {
 }
 
 /* 查看下一个词法单元（不消费） */
-TokenType lexer_peek(Lexer *lexer) {
+Logex_TokenType lexer_peek(Lexer *lexer) {
     /* 保存当前状态 */
     int saved_pos = lexer->pos;
     int saved_line = lexer->line;
@@ -494,7 +494,7 @@ TokenType lexer_peek(Lexer *lexer) {
     Token saved_token = lexer->current_token;
     
     /* 获取下一个token */
-    TokenType type = lexer_next(lexer);
+    Logex_TokenType type = lexer_next(lexer);
     
     /* 恢复状态 */
     lexer->pos = saved_pos;
@@ -516,7 +516,7 @@ int lexer_is_end(const Lexer *lexer) {
 }
 
 /* 获取词法单元类型的字符串表示 */
-const char* token_type_name(TokenType type) {
+const char* token_type_name(Logex_TokenType type) {
     switch (type) {
         case TOK_NUMBER: return "NUMBER";
         case TOK_STRING: return "STRING";

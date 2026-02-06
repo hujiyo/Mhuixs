@@ -4,6 +4,7 @@
 
 #include "vm.h"
 #include "builtin.h"
+#include "registry.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -175,11 +176,11 @@ int vm_step(VM *vm) {
             BHS *b = vm_pop(vm);
             BHS *a = vm_pop(vm);
             if (a && b) {
-                BHS result;
-                bignum_init(&result);
-                bignum_add(a, b, &result, 10);
-                vm_push(vm, &result);
-                bignum_free(&result);
+                BHS *result = bignum_add(a, b);
+                if (result) {
+                    vm_push(vm, result);
+                    free(result);
+                }
             }
             break;
         }
@@ -188,11 +189,11 @@ int vm_step(VM *vm) {
             BHS *b = vm_pop(vm);
             BHS *a = vm_pop(vm);
             if (a && b) {
-                BHS result;
-                bignum_init(&result);
-                bignum_subtract(a, b, &result, 10);
-                vm_push(vm, &result);
-                bignum_free(&result);
+                BHS *result = bignum_sub(a, b);
+                if (result) {
+                    vm_push(vm, result);
+                    free(result);
+                }
             }
             break;
         }
@@ -201,11 +202,11 @@ int vm_step(VM *vm) {
             BHS *b = vm_pop(vm);
             BHS *a = vm_pop(vm);
             if (a && b) {
-                BHS result;
-                bignum_init(&result);
-                bignum_multiply(a, b, &result, 10);
-                vm_push(vm, &result);
-                bignum_free(&result);
+                BHS *result = bignum_mul(a, b);
+                if (result) {
+                    vm_push(vm, result);
+                    free(result);
+                }
             }
             break;
         }
@@ -214,13 +215,13 @@ int vm_step(VM *vm) {
             BHS *b = vm_pop(vm);
             BHS *a = vm_pop(vm);
             if (a && b) {
-                BHS result;
-                bignum_init(&result);
-                if (bignum_divide(a, b, &result, 10) != 0) {
+                BHS *result = bignum_div(a, b, 10);
+                if (!result) {
                     vm_error(vm, "Division by zero");
+                } else {
+                    vm_push(vm, result);
+                    free(result);
                 }
-                vm_push(vm, &result);
-                bignum_free(&result);
             }
             break;
         }
@@ -238,12 +239,14 @@ int vm_step(VM *vm) {
         case OP_LOAD_VAR: {
             /* 加载变量 */
             Constant *c = &vm->program->const_pool[inst->operand.u32];
-            BHS *value = context_get(vm->context, c->value.str);
-            if (value) {
-                vm_push(vm, value);
+            BHS value;
+            bignum_init(&value);
+            if (context_get(vm->context, c->value.str, &value) == 0) {
+                vm_push(vm, &value);
             } else {
                 vm_error(vm, "Undefined variable");
             }
+            bignum_free(&value);
             break;
         }
         
@@ -254,8 +257,18 @@ int vm_step(VM *vm) {
         
         case OP_JMP_IF_FALSE: {
             BHS *cond = vm_pop(vm);
-            if (cond && !bignum_is_true(cond)) {
-                vm->pc = inst->operand.u32;
+            if (cond) {
+                /* 检查BHS是否为真(非零) */
+                int is_true = 0;
+                if (cond->type == BIGNUM_TYPE_NUMBER && cond->length > 0) {
+                    char *digits = cond->is_large ? cond->data.large_data : cond->data.small_data;
+                    for (size_t i = 0; i < cond->length; i++) {
+                        if (digits[i] != 0) { is_true = 1; break; }
+                    }
+                }
+                if (!is_true) {
+                    vm->pc = inst->operand.u32;
+                }
             }
             break;
         }
@@ -370,9 +383,21 @@ int vm_step(VM *vm) {
             Constant *c = &vm->program->const_pool[inst->operand.u32];
             BHS *value = vm_peek(vm);
             if (value) {
-                /* TODO: 调用 C 接口注册到 Mhuixs */
-                /* hook_set_bhs(current_hook, caller_uid, value); */
-                /* 暂时也存储到本地上下文 */
+                /* 调用注册表接口存储BHS */
+                HookHandle hook = reg_find(c->value.str);
+                if (!hook) {
+                    /* HOOK不存在,创建新HOOK */
+                    int ret = reg_register(0, c->value.str, &hook); /* 使用root M_UID=0 */
+                    if (ret != 0) {
+                        vm_error(vm, "Failed to register static variable");
+                        break;
+                    }
+                }
+                /* 存储BHS到HOOK */
+                if (hook_set_bhs(hook, 0, value) != 0) {
+                    vm_error(vm, "Failed to store static variable");
+                }
+                /* 也存储到本地上下文以保持兼容 */
                 context_set(vm->context, c->value.str, value);
             }
             break;
@@ -381,9 +406,25 @@ int vm_step(VM *vm) {
         case OP_LOAD_STATIC: {
             /* 加载持久化变量 */
             Constant *c = &vm->program->const_pool[inst->operand.u32];
-            /* TODO: 调用 C 接口从 Mhuixs 获取 */
-            /* BHS *value = hook_get_bhs(current_hook, caller_uid); */
-            BHS *value = context_get(vm->context, c->value.str);
+            
+            /* 从注册表加载BHS */
+            HookHandle hook = reg_find(c->value.str);
+            BHS *value = NULL;
+            
+            if (hook) {
+                /* 从注册表获取BHS */
+                value = (BHS*)hook_get_bhs(hook, 0); /* 使用root M_UID=0 */
+            }
+            
+            /* 如果注册表没有,尝试从本地上下文获取 */
+            if (!value) {
+                static BHS local_value;
+                bignum_init(&local_value);
+                if (context_get(vm->context, c->value.str, &local_value) == 0) {
+                    value = &local_value;
+                }
+            }
+            
             if (value) {
                 vm_push(vm, value);
             } else {

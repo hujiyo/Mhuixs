@@ -499,6 +499,26 @@ int hash_iterator_next(hash_iterator_t* it, const char** key_out, void** value_o
     return 0;
 }
 
+int hash_foreach(const hash_table_t* ht,
+                 int (*callback)(const char* key, void* value, void* user_data),
+                 void* user_data) {
+    if (!ht || !callback) return 0;
+    
+    int count = 0;
+    hash_iterator_t it = hash_iterator_init(ht);
+    const char* key;
+    void* value;
+    
+    while (hash_iterator_next(&it, &key, &value)) {
+        count++;
+        if (callback(key, value, user_data) != 0) {
+            break;
+        }
+    }
+    
+    return count;
+}
+
 void int_to_key(int value, char* buffer, size_t size) {
     snprintf(buffer, size, "%d", value);
 }

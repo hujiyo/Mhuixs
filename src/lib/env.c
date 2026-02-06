@@ -27,6 +27,11 @@
 
 #include "env.h"
 #include <ctype.h>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#undef WIN32_LEAN_AND_MEAN
+#endif
 
 struct ENV Env = {NULL, 0, 0, 1024, 0, 1, 18185};
 

@@ -40,8 +40,8 @@ typedef struct {
 } buffer_t;
 
 typedef struct {
-  SID session_id;
-  UID user_id;
+  M_SID session_id;
+  M_UID user_id;
   uv_tcp_t tcp_handle;
   buffer_t recv_buffer;
   session_state_t state;
@@ -91,7 +91,7 @@ extern netplug_queue_t response_queue;
 int netplug_init(uint16_t port);
 int netplug_start(void);
 void netplug_shutdown(void);
-int auth_session(SID session_id, UID uid);
+int auth_session(M_SID session_id, M_UID uid);
 
 #ifdef __cplusplus
 }

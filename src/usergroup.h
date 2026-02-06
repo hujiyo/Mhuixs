@@ -24,7 +24,7 @@ typedef struct HOOK HOOK;
 typedef enum Mode_type Mode_type;
 
 /* 声明 auth_session 函数 */
-int auth_session(SID session_id, UID uid);
+int auth_session(M_SID session_id, M_UID uid);
 
 #ifdef __cplusplus
 extern "C" {
@@ -55,10 +55,10 @@ typedef enum {
 
 /* 用户信息结构体 */
 typedef struct {
-    UID uid;                    /* 用户ID */
+    M_UID uid;                    /* 用户ID */
     char username[64];          /* 用户名 */
     char password[BCRYPT_HASHSIZE]; /* 密码(哈希后) */
-    GID *groups;                /* 所属组列表（第一个为主组，后续为附加组） */
+    M_GID *groups;                /* 所属组列表（第一个为主组，后续为附加组） */
     uint32_t num_groups;        /* 所属组数量 */
     uint32_t groups_capacity;   /* groups数组容量 */
     char main_hook[64];         /* 主钩子名 */
@@ -67,9 +67,9 @@ typedef struct {
 
 /* 组信息结构体 */
 typedef struct {
-    GID gid;                    /* 组ID */
+    M_GID gid;                    /* 组ID */
     char groupname[64];         /* 组名 */
-    UID *members;               /* 成员列表 */
+    M_UID *members;               /* 成员列表 */
     uint32_t num;               /* 成员数量 */
     uint32_t members_capacity;  /* members数组容量 */
 } group_info_t;
@@ -86,9 +86,9 @@ typedef struct {
     
     /* 哈希表索引 - O(1) 查找 */
     hash_table_t *username_to_idx;  /* username -> user index */
-    hash_table_t *uid_to_idx;       /* UID -> user index */
+    hash_table_t *uid_to_idx;       /* M_UID -> user index */
     hash_table_t *groupname_to_idx; /* groupname -> group index */
-    hash_table_t *gid_to_idx;       /* GID -> group index */
+    hash_table_t *gid_to_idx;       /* M_GID -> group index */
 } user_group_manager_t;
 
 /* 全局用户组管理器 */
@@ -116,23 +116,23 @@ int add_group(const char *groupname);
 int del_group(const char *groupname);
 
 /* 用户组关系管理 */
-int add_user_to_group(UID uid, GID gid);
-int del_user_from_group(UID uid, GID gid);
+int add_user_to_group(M_UID uid, M_GID gid);
+int del_user_from_group(M_UID uid, M_GID gid);
 
 /* 查询函数 */
-UID get_uid_by_username(const char *username);
-GID get_gid_by_groupname(const char *groupname);
-GID get_primary_gid_by_uid(UID uid);
-int get_gids_by_uid(UID uid, GID **gids, uint32_t *num_gids);
+M_UID get_uid_by_username(const char *username);
+M_GID get_gid_by_groupname(const char *groupname);
+M_GID get_primary_gid_by_uid(M_UID uid);
+int get_gids_by_uid(M_UID uid, M_GID **gids, uint32_t *num_gids);
 
 /* UID合法性检查 */
-int is_valid_uid(UID uid);
+int is_valid_uid(M_UID uid);
 
 /* 权限检查 */
-int is_entitled(HOOK *hook, UID applicant_uid, Mode_type mode);
+int is_entitled(HOOK *hook, M_UID applicant_uid, Mode_type mode);
 
 /* 认证 */
-int certification(SID session_id, const char *username_to_be_verified, 
+int certification(M_SID session_id, const char *username_to_be_verified, 
                   const char *passwd_to_be_verified);
 
 /*
@@ -141,7 +141,7 @@ int certification(SID session_id, const char *username_to_be_verified,
 [用户信息存储]
 文件路径：%MhuixsHomePath%/etc/user.config
 数据格式：每行一个用户，字段以冒号（:）分隔，共6个字段：
-username:UID:GID:description:main_hook:password
+username:M_UID:M_GID:description:main_hook:password
 
 username:用户名
 UID：用户ID
@@ -156,7 +156,7 @@ root:0:0:root user:root hook:1949
 [用户组信息存储]
 文件路径：%MhuixsHomePath%/etc/group.config
 数据格式：每行一个组，字段以冒号分隔，共2个字段：
-groupname:GID
+groupname:M_GID
 
 示例：
 developers:1001

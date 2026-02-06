@@ -29,9 +29,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <stdbool.h>
-#ifdef _WIN32
-#include <windows.h>
-#else
+#ifndef _WIN32
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/sysinfo.h>

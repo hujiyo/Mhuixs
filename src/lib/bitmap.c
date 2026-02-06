@@ -408,11 +408,11 @@ int bitmap_append(BHS* bm, BHS* other) {
     
     bitcpy(new_data, 0, 
            (uint8_t*)temp_data, 0, 
-           bm_size, dest_buffer_size, bm_buffer_size);
+           bm_size);
     
     bitcpy(new_data, bm_size, 
            other_data, 0, 
-           other_size, dest_buffer_size, other_buffer_size);
+           other_size);
     
     // 清理临时数据
     if (temp_is_large) {

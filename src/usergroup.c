@@ -23,8 +23,8 @@ const char* ug_strerror(int error_code) {
         case UG_ERR_NO_MEMORY: return "Out of memory";
         case UG_ERR_IO_ERROR: return "I/O error";
         case UG_ERR_PERMISSION_DENIED: return "Permission denied";
-        case UG_ERR_UID_EXHAUSTED: return "UID exhausted";
-        case UG_ERR_GID_EXHAUSTED: return "GID exhausted";
+        case UG_ERR_UID_EXHAUSTED: return "M_UID exhausted";
+        case UG_ERR_GID_EXHAUSTED: return "M_GID exhausted";
         case UG_ERR_INVALID_INPUT: return "Invalid input";
         case UG_ERR_SAVE_FAILED: return "Failed to save data";
         default: return "Unknown error";
@@ -111,7 +111,7 @@ static int validate_groupname(const char *groupname) {
 }
 
 /* 辅助函数：查找用户索引 */
-static int find_user_by_uid(UID uid) {
+static int find_user_by_uid(M_UID uid) {
     if (!Ugmanager.uid_to_idx) {
         /* 哈希表未初始化，使用线性查找 */
         for (uint32_t i = 0; i < Ugmanager.num_users; i++) {
@@ -154,7 +154,7 @@ static int find_user_by_username(const char *username) {
 }
 
 /* 辅助函数：查找组索引 */
-static int find_group_by_gid(GID gid) {
+static int find_group_by_gid(M_GID gid) {
     if (!Ugmanager.gid_to_idx) {
         /* 哈希表未初始化，使用线性查找 */
         for (uint32_t i = 0; i < Ugmanager.num_groups; i++) {
@@ -197,7 +197,7 @@ static int find_group_by_groupname(const char *groupname) {
 }
 
 /* 辅助函数：检查GID是否在用户的组列表中 */
-static int user_has_group(user_info_t *user, GID gid) {
+static int user_has_group(user_info_t *user, M_GID gid) {
     for (uint32_t i = 0; i < user->num_groups; i++) {
         if (user->groups[i] == gid) {
             return 1;
@@ -207,7 +207,7 @@ static int user_has_group(user_info_t *user, GID gid) {
 }
 
 /* 辅助函数：检查UID是否在组的成员列表中 */
-static int group_has_member(group_info_t *group, UID uid) {
+static int group_has_member(group_info_t *group, M_UID uid) {
     for (uint32_t i = 0; i < group->num; i++) {
         if (group->members[i] == uid) {
             return 1;
@@ -217,7 +217,7 @@ static int group_has_member(group_info_t *group, UID uid) {
 }
 
 /* 辅助函数：从用户的组列表中移除GID */
-static void remove_gid_from_user(user_info_t *user, GID gid) {
+static void remove_gid_from_user(user_info_t *user, M_GID gid) {
     for (uint32_t i = 0; i < user->num_groups; i++) {
         if (user->groups[i] == gid) {
             /* 移动后续元素 */
@@ -231,7 +231,7 @@ static void remove_gid_from_user(user_info_t *user, GID gid) {
 }
 
 /* 辅助函数：从组的成员列表中移除UID */
-static void remove_uid_from_group(group_info_t *group, UID uid) {
+static void remove_uid_from_group(group_info_t *group, M_UID uid) {
     for (uint32_t i = 0; i < group->num; i++) {
         if (group->members[i] == uid) {
             /* 移动后续元素 */
@@ -265,7 +265,7 @@ static int update_user_index(uint32_t idx) {
         return UG_ERR_NO_MEMORY;
     }
     
-    /* 更新 UID -> idx */
+    /* 更新 M_UID -> idx */
     char uid_key[32];
     int_to_key(u->uid, uid_key, sizeof(uid_key));
     
@@ -305,7 +305,7 @@ static int update_group_index(uint32_t idx) {
         return UG_ERR_NO_MEMORY;
     }
     
-    /* 更新 GID -> idx */
+    /* 更新 M_GID -> idx */
     char gid_key[32];
     int_to_key(g->gid, gid_key, sizeof(gid_key));
     
@@ -379,7 +379,7 @@ int add_user(const char *username, const char *passwd) {
     }
     
     /* 分配UID */
-    UID uid = get_uid(COMMON_UID);
+    M_UID uid = get_uid(COMMON_UID);
     if (uid == merr) return UG_ERR_UID_EXHAUSTED;
     
     /* 扩展用户数组 */
@@ -455,7 +455,7 @@ int del_user(const char *username) {
     if (idx < 0) return UG_ERR_USER_NOT_FOUND;
     
     user_info_t *user = &Ugmanager.users[idx];
-    UID uid = user->uid;
+    M_UID uid = user->uid;
     
     /* 从所有组移除该用户 */
     for (uint32_t i = 0; i < Ugmanager.num_groups; i++) {
@@ -543,7 +543,7 @@ int add_group(const char *groupname) {
     }
     
     /* 分配GID */
-    GID gid = get_gid(COMMON_GID);
+    M_GID gid = get_gid(COMMON_GID);
     if (gid == merr) return UG_ERR_GID_EXHAUSTED;
     
     /* 扩展组数组 */
@@ -605,7 +605,7 @@ int del_group(const char *groupname) {
     if (idx < 0) return UG_ERR_GROUP_NOT_FOUND;
     
     group_info_t *group = &Ugmanager.groups[idx];
-    GID gid = group->gid;
+    M_GID gid = group->gid;
     
     /* 从所有用户移除该组 */
     for (uint32_t i = 0; i < Ugmanager.num_users; i++) {
@@ -642,7 +642,7 @@ int del_group(const char *groupname) {
 }
 
 /* 添加用户到组 */
-int add_user_to_group(UID uid, GID gid) {
+int add_user_to_group(M_UID uid, M_GID gid) {
     int ret;
     
     int uidx = find_user_by_uid(uid);
@@ -659,7 +659,7 @@ int add_user_to_group(UID uid, GID gid) {
         /* 扩展用户的组列表 */
         if (user->num_groups >= user->groups_capacity) {
             uint32_t new_capacity = user->groups_capacity == 0 ? 4 : user->groups_capacity * 2;
-            GID *new_groups = (GID *)realloc(user->groups, new_capacity * sizeof(GID));
+            M_GID *new_groups = (M_GID *)realloc(user->groups, new_capacity * sizeof(M_GID));
             if (!new_groups) return UG_ERR_NO_MEMORY;
             user->groups = new_groups;
             user->groups_capacity = new_capacity;
@@ -679,7 +679,7 @@ int add_user_to_group(UID uid, GID gid) {
         /* 扩展组的成员列表 */
         if (group->num >= group->members_capacity) {
             uint32_t new_capacity = group->members_capacity == 0 ? 4 : group->members_capacity * 2;
-            UID *new_members = (UID *)realloc(group->members, new_capacity * sizeof(UID));
+            M_UID *new_members = (M_UID *)realloc(group->members, new_capacity * sizeof(M_UID));
             if (!new_members) return UG_ERR_NO_MEMORY;
             group->members = new_members;
             group->members_capacity = new_capacity;
@@ -699,7 +699,7 @@ int add_user_to_group(UID uid, GID gid) {
 }
 
 /* 从组中删除用户 */
-int del_user_from_group(UID uid, GID gid) {
+int del_user_from_group(M_UID uid, M_GID gid) {
     int ret;
     
     int uidx = find_user_by_uid(uid);
@@ -727,7 +727,7 @@ int del_user_from_group(UID uid, GID gid) {
 }
 
 /* 通过用户名获取UID */
-UID get_uid_by_username(const char *username) {
+M_UID get_uid_by_username(const char *username) {
     if (!username) return UG_ERR_INVALID_USERNAME;
     
     int idx = find_user_by_username(username);
@@ -737,7 +737,7 @@ UID get_uid_by_username(const char *username) {
 }
 
 /* 通过组名获取GID */
-GID get_gid_by_groupname(const char *groupname) {
+M_GID get_gid_by_groupname(const char *groupname) {
     if (!groupname) return UG_ERR_INVALID_INPUT;
     
     int idx = find_group_by_groupname(groupname);
@@ -747,7 +747,7 @@ GID get_gid_by_groupname(const char *groupname) {
 }
 
 /* 获取用户的主组GID */
-GID get_primary_gid_by_uid(UID uid) {
+M_GID get_primary_gid_by_uid(M_UID uid) {
     int idx = find_user_by_uid(uid);
     if (idx < 0) return UG_ERR_USER_NOT_FOUND;
     
@@ -758,7 +758,7 @@ GID get_primary_gid_by_uid(UID uid) {
 }
 
 /* 判断UID是否合法 */
-int is_valid_uid(UID uid) {
+int is_valid_uid(M_UID uid) {
     /* 检查UID是否为负数（错误码） */
     if (uid < 0) {
         return 0;
@@ -774,7 +774,7 @@ int is_valid_uid(UID uid) {
 }
 
 /* 获取用户的所有组GID列表 */
-int get_gids_by_uid(UID uid, GID **gids, uint32_t *num_gids) {
+int get_gids_by_uid(M_UID uid, M_GID **gids, uint32_t *num_gids) {
     if (!gids || !num_gids) {
         return UG_ERR_INVALID_INPUT;
     }
@@ -794,25 +794,25 @@ int get_gids_by_uid(UID uid, GID **gids, uint32_t *num_gids) {
     }
     
     /* 分配内存并复制GID列表 */
-    *gids = (GID *)malloc(user->num_groups * sizeof(GID));
+    *gids = (M_GID *)malloc(user->num_groups * sizeof(M_GID));
     if (!*gids) {
         return UG_ERR_NO_MEMORY;
     }
     
-    memcpy(*gids, user->groups, user->num_groups * sizeof(GID));
+    memcpy(*gids, user->groups, user->num_groups * sizeof(M_GID));
     *num_gids = user->num_groups;
     
     return UG_SUCCESS;
 }
 
 /* 认证 */
-int certification(SID session_id, const char *username_to_be_verified,
+int certification(M_SID session_id, const char *username_to_be_verified,
                   const char *passwd_to_be_verified) {
     if (!username_to_be_verified || !passwd_to_be_verified) {
         return certificate_failed;
     }
     
-    UID uid_to_be_verified = get_uid_by_username(username_to_be_verified);
+    M_UID uid_to_be_verified = get_uid_by_username(username_to_be_verified);
     if (uid_to_be_verified < 0) {
         return certificate_failed;
     }
@@ -832,7 +832,7 @@ int certification(SID session_id, const char *username_to_be_verified,
 }
 
 /* 权限检查实现 */
-int is_entitled(HOOK *hook, UID applicant_uid, Mode_type mode) {
+int is_entitled(HOOK *hook, M_UID applicant_uid, Mode_type mode) {
     if (!hook) return merr;
     
     /* 判断权限是否已经初始化 */
@@ -892,7 +892,7 @@ int save_User_group_manager(void) {
     for (uint32_t i = 0; i < Ugmanager.num_users; i++) {
         user_info_t *u = &Ugmanager.users[i];
         
-        /* 写入：username:UID:GID:description:main_hook:password */
+        /* 写入：username:M_UID:M_GID:description:main_hook:password */
         fprintf(fp, "%s:%d:", u->username, u->uid);
         
         /* 写入组列表（用逗号分隔） */
@@ -1067,7 +1067,7 @@ int init_User_group_manager(void) {
             return UG_ERR_IO_ERROR;
         }
         
-        GID gid = (GID)atoi(gidstr);
+        M_GID gid = (M_GID)atoi(gidstr);
         
         /* 检查GID和组名是否重复 */
         for (uint32_t i = 0; i < Ugmanager.num_groups; i++) {
@@ -1140,7 +1140,7 @@ int init_User_group_manager(void) {
             return UG_ERR_IO_ERROR;
         }
         
-        UID uid = (UID)atoi(uidstr);
+        M_UID uid = (M_UID)atoi(uidstr);
         
         /* 检查UID和用户名是否重复 */
         for (uint32_t i = 0; i < Ugmanager.num_users; i++) {
@@ -1193,7 +1193,7 @@ int init_User_group_manager(void) {
         for (int i = 0; i < gid_count; i++) {
             char *gid_item = trim_whitespace(gid_tokens[i]);
             if (strlen(gid_item) > 0) {
-                GID gid = (GID)atoi(gid_item);
+                M_GID gid = (M_GID)atoi(gid_item);
                 
                 /* 检查GID是否存在 */
                 int found = 0;
@@ -1213,7 +1213,7 @@ int init_User_group_manager(void) {
                 /* 扩展用户的组列表 */
                 if (u->num_groups >= u->groups_capacity) {
                     uint32_t new_capacity = u->groups_capacity == 0 ? 4 : u->groups_capacity * 2;
-                    GID *new_groups = (GID *)realloc(u->groups, new_capacity * sizeof(GID));
+                    M_GID *new_groups = (M_GID *)realloc(u->groups, new_capacity * sizeof(M_GID));
                     if (!new_groups) {
                         fclose(fp);
                         cleanup_User_group_manager();
@@ -1246,7 +1246,7 @@ int init_User_group_manager(void) {
                 /* 扩展组的成员列表 */
                 if (group->num >= group->members_capacity) {
                     uint32_t new_capacity = group->members_capacity == 0 ? 4 : group->members_capacity * 2;
-                    UID *new_members = (UID *)realloc(group->members, new_capacity * sizeof(UID));
+                    M_UID *new_members = (M_UID *)realloc(group->members, new_capacity * sizeof(M_UID));
                     if (!new_members) {
                         cleanup_User_group_manager();
                         return merr;

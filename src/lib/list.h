@@ -27,7 +27,7 @@ typedef struct Block {
     uint32_t start; // 块内数据起始下标（data[start]为第一个元素）
 } Block;
 
-typedef struct {
+typedef struct LIST {
     Block* head_block;
     Block* tail_block;
     size_t num; // 总元素数

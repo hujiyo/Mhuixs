@@ -161,7 +161,7 @@ typedef enum {
     /* NAQL 约束关键字 */
     TOK_PKEY,        /* PKEY (Primary Key) */
     TOK_FKEY,        /* FKEY (Foreign Key) */
-    TOK_UNIQUE,      /* UNIQUE */
+    /* TOK_UNIQUE 已在第108行定义 */
     TOK_NOTNULL,     /* NOTNULL */
     TOK_DEFAULT,     /* DEFAULT */
     TOK_AUTO_INCREMENT, /* AUTO_INCREMENT */
@@ -178,7 +178,7 @@ typedef enum {
     
     /* NAQL 对象类型 */
     TOK_LIST,        /* LIST */
-    TOK_BITMAP,      /* BITMAP */
+    /* TOK_BITMAP 已在第22行定义 */
     TOK_STREAM,      /* STREAM */
     
     /* 控制符号 */
@@ -186,11 +186,11 @@ typedef enum {
     TOK_NEWLINE,     /* 换行符（语句分隔符） */
     TOK_END,         /* 结束 */
     TOK_ERROR        /* 错误 */
-} TokenType;
+} Logex_TokenType;
 
 /* 增强的词法单元 */
 typedef struct {
-    TokenType type;                      /* 词法单元类型 */
+    Logex_TokenType type;                /* 词法单元类型 */
     char value[BIGNUM_MAX_DIGITS];       /* 词法单元值 */
     int line;                            /* 行号（1-based） */
     int column;                          /* 列号（1-based） */
@@ -225,7 +225,7 @@ void lexer_init(Lexer *lexer, const char *input, const char *filename, LogexErro
  * @param lexer 词法分析器
  * @return 词法单元类型，TOK_ERROR 表示出错
  */
-TokenType lexer_next(Lexer *lexer);
+Logex_TokenType lexer_next(Lexer *lexer);
 
 /**
  * 查看下一个词法单元（不消费）
@@ -233,7 +233,7 @@ TokenType lexer_next(Lexer *lexer);
  * @param lexer 词法分析器
  * @return 词法单元类型
  */
-TokenType lexer_peek(Lexer *lexer);
+Logex_TokenType lexer_peek(Lexer *lexer);
 
 /**
  * 获取当前词法单元
@@ -257,7 +257,7 @@ int lexer_is_end(const Lexer *lexer);
  * @param type 词法单元类型
  * @return 类型名称字符串
  */
-const char* token_type_name(TokenType type);
+const char* token_type_name(Logex_TokenType type);
 
 /* 词法分析器状态快照（用于回退） */
 typedef struct {
@@ -278,7 +278,7 @@ void lexer_save_state(const Lexer *lexer, LexerState *state);
 void lexer_restore(Lexer *lexer, const LexerState *state);
 
 /* 内联辅助函数，便于访问当前Token信息 */
-static inline TokenType lexer_token_type(const Lexer *lexer) {
+static inline Logex_TokenType lexer_token_type(const Lexer *lexer) {
     return lexer ? lexer->current_token.type : TOK_ERROR;
 }
 
@@ -299,7 +299,7 @@ static inline int lexer_token_length(const Lexer *lexer) {
 }
 
 /* 兼容旧接口的辅助函数 */
-static inline TokenType lexer_current_type(const Lexer *lexer) {
+static inline Logex_TokenType lexer_current_type(const Lexer *lexer) {
     return lexer_token_type(lexer);
 }
 

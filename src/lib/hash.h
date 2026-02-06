@@ -212,6 +212,17 @@ hash_iterator_t hash_iterator_init(const hash_table_t* ht);
  */
 int hash_iterator_next(hash_iterator_t* it, const char** key_out, void** value_out);
 
+/**
+ * 遍历哈希表中所有键值对（便捷函数）
+ * @param ht 哈希表
+ * @param callback 回调函数，参数为(键, 值, 用户数据)，返回0继续，非0停止
+ * @param user_data 传递给回调的用户数据
+ * @return 遍历的条目数量
+ */
+int hash_foreach(const hash_table_t* ht, 
+                 int (*callback)(const char* key, void* value, void* user_data),
+                 void* user_data);
+
 /* ========================================
  * 辅助函数
  * ======================================== */

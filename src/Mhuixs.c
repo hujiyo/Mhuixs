@@ -21,6 +21,7 @@ table需要增添表格恢复功能
 #include "getid.h"//ID分配器模块
 #include "hook.h"//HOOK模块
 #include "mstring.h"//字符串模块
+#include "registry.h"//注册表模块
 // #include "usergroup.h"//用户组管理模块(暂时注释)
 // #include "netplug.h"//网络模块(暂时注释)
 
@@ -107,7 +108,44 @@ int main(int argc, char *argv[])
         }
         printf("✓ ID allocator module initialized\n");
         
-        // HOOK注册模块(已通过hook.h包含)
+        // 注册表模块(管理HOOK和权限)
+        if (reg_init() != 0) {
+            printf("\nRegistry module failed!\n");
+            return 1;
+        }
+        printf("✓ Registry module initialized\n");
+        
+        // 加载持久化的HOOK数据
+        {
+            mstring home = Env.MhuixsHomePath;
+            mstring sep = mstr(
+#ifdef _WIN32
+                (char*)"\\"
+#else
+                (char*)"/"
+#endif
+            );
+            mstring fname = mstr((char*)"registry.dat");
+            mstring tmp = mstr_concat(home, sep);
+            mstring reg_path = mstr_concat(tmp, fname);
+            char *reg_path_cstr = mstr_to_cstr(reg_path);
+            
+            int loaded = reg_load_from_disk(reg_path_cstr);
+            if (loaded > 0) {
+                printf("✓ Loaded %d hooks from disk\n", loaded);
+            } else if (loaded == 0) {
+                printf("✓ No persisted hooks (first run or empty)\n");
+            } else {
+                printf("⚠ Failed to load registry from disk\n");
+            }
+            
+            free(reg_path_cstr);
+            mstr_free(sep);
+            mstr_free(fname);
+            mstr_free(tmp);
+            mstr_free(reg_path);
+        }
+        
         printf("✓ HOOK system ready\n");
         
         printf("\n[Core modules initialized, starting Logex]\n\n");

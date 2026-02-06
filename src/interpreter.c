@@ -244,7 +244,7 @@ int interpreter_execute(Interpreter *interp, const char *source, const char *fil
         lexer_init(&lexer, source, filename, &interp->error);
         
         /* 检查词法错误 */
-        TokenType first_token = lexer_next(&lexer);
+        Logex_TokenType first_token = lexer_next(&lexer);
         if (first_token == TOK_ERROR) {
             result->type = RESULT_ERROR;
             error_format(&interp->error, result->value, sizeof(result->value));

@@ -26,7 +26,9 @@
 
 #ifdef _WIN32
 #include <conio.h>
+#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#undef WIN32_LEAN_AND_MEAN
 #else
 #include <termios.h>
 #include <unistd.h>

@@ -1,10 +1,57 @@
 #include "hook.h"
+#include "registry.h"
 #include <stdlib.h>
 #include <string.h>
 
+/* 存根实现: 获取用户的主组ID
+ * TODO: 当usergroup模块完成整合后,替换为真实实现
+ */
+M_GID get_primary_gid_by_uid(M_UID uid) {
+    (void)uid;
+    return 0; /* 暂时返回root组 */
+}
+
+/* 权限检查函数:检查caller是否有权限对hook执行mode操作 */
+int is_entitled(HOOK* hook, M_UID caller, Mode_type mode) {
+    if (!hook) return 0;
+    if (!hook->pm_s.ifisinit) return 0;
+    
+    /* root用户(M_UID=0)拥有所有权限 */
+    if (caller == 0) return 1;
+    
+    /* 检查是否是owner */
+    if (caller == hook->owner) {
+        switch (mode) {
+            case HOOK_READ: return hook->pm_s.owner_read;
+            case HOOK_ADD: return hook->pm_s.owner_add;
+            case HOOK_CHANGE: return hook->pm_s.owner_change;
+            default: return 0;
+        }
+    }
+    
+    /* 检查是否在同一组 */
+    M_GID caller_gid = get_primary_gid_by_uid(caller);
+    if (caller_gid >= 0 && caller_gid == hook->group) {
+        switch (mode) {
+            case HOOK_READ: return hook->pm_s.group_read;
+            case HOOK_ADD: return hook->pm_s.group_add;
+            case HOOK_CHANGE: return hook->pm_s.group_change;
+            default: return 0;
+        }
+    }
+    
+    /* 其他用户权限 */
+    switch (mode) {
+        case HOOK_READ: return hook->pm_s.other_read;
+        case HOOK_ADD: return hook->pm_s.other_add;
+        case HOOK_CHANGE: return hook->pm_s.other_change;
+        default: return 0;
+    }
+}
+
 /* 创建并初始化 HOOK */
-HOOK* HOOK_login(UID owner, mstring name, Obj obj) {
-    GID main_gid = get_primary_gid_by_uid(owner);
+HOOK* HOOK_login(M_UID owner, mstring name, Obj obj) {
+    M_GID main_gid = get_primary_gid_by_uid(owner);
     if (main_gid < 0) {
         return NULL;
     }
@@ -61,7 +108,7 @@ int HOOK_logout(HOOK* hook) {
 }
 
 /* 用钩子建立一个新对象 */
-int hook_new_obj(HOOK* hook, UID caller, obj_type objtype, void *parameter1, void *parameter2, void *parameter3) {
+int hook_new_obj(HOOK* hook, M_UID caller, obj_type objtype, void *parameter1, void *parameter2, void *parameter3) {
     if (!hook) return -1;
     
     /* 用钩子建立一个新对象:先删除原有对象，再增加新对象。必须同时拥有add和change权限 */
@@ -96,7 +143,7 @@ int hook_new_obj(HOOK* hook, UID caller, obj_type objtype, void *parameter1, voi
 }
 
 /* 重置权限 */
-void hook_reset_pm(HOOK* hook, UID caller, const char* pm_str) {
+void hook_reset_pm(HOOK* hook, M_UID caller, const char* pm_str) {
     if (!hook) return;
     
     /* 仅允许root或owner修改权限 */
@@ -130,7 +177,7 @@ void hook_reset_pm(HOOK* hook, UID caller, const char* pm_str) {
                 case 2:
                     new_pm.other_read = (val & 4) ? 1 : 0;
                     new_pm.other_add  = (val & 2) ? 1 : 0;
-                    new_pm.other_change  = (val & 1) ? 0;
+                    new_pm.other_change  = (val & 1) ? 1 : 0;
                     break;
             }
         }

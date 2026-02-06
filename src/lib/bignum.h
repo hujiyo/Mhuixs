@@ -24,6 +24,9 @@
 #define BIGNUM_TYPE_HOOK    6         /* 钩子类型 */
 #define BIGNUM_TYPE_KEY     7         /* 键类型 */
 
+/* 前向声明 */
+typedef struct LIST LIST;
+
 /* BHS 结构体定义 - 固定64字节 */
 typedef struct {
     int type;                                 /* 类型标记（4字节） */
@@ -33,7 +36,7 @@ typedef struct {
         char small_data[BIGNUM_SMALL_SIZE];  /* 小数据内联存储（32字节） */
         char *large_data;                     /* 大数据动态分配指针（8字节） */
         /* 兼容 Mhuixs 类型的字段 */
-        struct LIST *list;                    /* LIST类型指针 */
+        LIST *list;                           /* LIST类型指针 */
         /* TABLE *table; */
         /* HOOK *hook; */
     } data;                                   /* 32字节（联合体取最大） */    

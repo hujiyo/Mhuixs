@@ -1,9 +1,27 @@
 #include "package.h"
 #include <stdio.h>
 #include <string.h>
+
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#undef WIN32_LEAN_AND_MEAN
+#define dlopen(path, mode) LoadLibrary(path)
+#define dlsym(handle, name) GetProcAddress((HMODULE)(handle), name)
+#define dlclose(handle) FreeLibrary((HMODULE)(handle))
+#define dlerror() "Windows DLL error"
+#define RTLD_LAZY 0
+#else
 #include <dlfcn.h>
+#endif
+
+#ifdef _WIN32
+#include <io.h>
+#include <direct.h>
+#else
 #include <dirent.h>
 #include <sys/stat.h>
+#endif
 
 /* 包注册函数类型 */
 typedef int (*PackageRegisterFunc)(FunctionRegistry *registry);
@@ -172,41 +190,66 @@ void package_manager_cleanup(PackageManager *manager) {
 int package_scan_available(PackageManager *manager, char *output, size_t max_len) {
     if (manager == NULL || output == NULL || max_len == 0) return 0;
     
+    int count = 0;
+    int offset = 0;
+    offset += snprintf(output + offset, max_len - offset, "可用的包：\n");
+    
+#ifdef _WIN32
+    /* Windows平台使用FindFirstFile/FindNextFile */
+    char search_path[512];
+    snprintf(search_path, sizeof(search_path), "%s\\*.dll", manager->package_dir);
+    
+    WIN32_FIND_DATAA find_data;
+    HANDLE hFind = FindFirstFileA(search_path, &find_data);
+    
+    if (hFind == INVALID_HANDLE_VALUE) {
+        snprintf(output, max_len, "无法打开包目录: %s", manager->package_dir);
+        return 0;
+    }
+    
+    do {
+        size_t name_len = strlen(find_data.cFileName);
+        if (name_len > 4 && strcmp(find_data.cFileName + name_len - 4, ".dll") == 0) {
+            char package_name[MAX_PACKAGE_NAME_LEN];
+            strncpy(package_name, find_data.cFileName, name_len - 4);
+            package_name[name_len - 4] = '\0';
+            
+            int is_loaded = package_is_loaded(manager, package_name);
+            offset += snprintf(output + offset, max_len - offset,
+                             "  %s%s\n", package_name, is_loaded ? " (已加载)" : "");
+            count++;
+        }
+    } while (FindNextFileA(hFind, &find_data) != 0 && offset < (int)max_len - 1);
+    
+    FindClose(hFind);
+#else
+    /* POSIX平台使用opendir/readdir */
     DIR *dir = opendir(manager->package_dir);
     if (dir == NULL) {
         snprintf(output, max_len, "无法打开包目录: %s", manager->package_dir);
         return 0;
     }
     
-    int count = 0;
-    int offset = 0;
-    offset += snprintf(output + offset, max_len - offset, "可用的包：\n");
-    
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL && offset < (int)max_len - 1) {
-        /* 检查是否是 .so 文件 */
         size_t name_len = strlen(entry->d_name);
         if (name_len > 6 && 
             strncmp(entry->d_name, "lib", 3) == 0 &&
             strcmp(entry->d_name + name_len - 3, ".so") == 0) {
             
-            /* 提取包名（去掉 lib 前缀和 .so 后缀） */
             char package_name[MAX_PACKAGE_NAME_LEN];
             strncpy(package_name, entry->d_name + 3, name_len - 6);
             package_name[name_len - 6] = '\0';
             
-            /* 检查是否已加载 */
             int is_loaded = package_is_loaded(manager, package_name);
-            
             offset += snprintf(output + offset, max_len - offset,
-                             "  %s%s\n", 
-                             package_name,
-                             is_loaded ? " (已加载)" : "");
+                             "  %s%s\n", package_name, is_loaded ? " (已加载)" : "");
             count++;
         }
     }
     
     closedir(dir);
+#endif
     
     if (count == 0) {
         snprintf(output, max_len, "包目录 '%s' 中没有可用的包", manager->package_dir);

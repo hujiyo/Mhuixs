@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "mstring.h"  /* 提供 mstring 类型定义 */
 #include "bignum.h"  /* 提供 BHS/Obj 类型定义 */
 
 /*

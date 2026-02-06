@@ -12,9 +12,9 @@ Email:hj18914255909@outlook.com
 #define merr -1
 
 /* 全局位图 */
-static BITMAP sid_bitmap;
-static BITMAP uid_bitmap;
-static BITMAP gid_bitmap;
+static BHS sid_bitmap;
+static BHS uid_bitmap;
+static BHS gid_bitmap;
 
 /* 互斥锁 */
 static pthread_mutex_t sid_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -30,16 +30,20 @@ int idalloc_init(void) {
         return 0; /* 已经初始化 */
     }
     
-    sid_bitmap = *bitmap_create_with_size(65536);
-    uid_bitmap = *bitmap_create_with_size(65536);
-    gid_bitmap = *bitmap_create_with_size(65536);
+    BHS* sid_ptr = bitmap_create_with_size(65536);
+    BHS* uid_ptr = bitmap_create_with_size(65536);
+    BHS* gid_ptr = bitmap_create_with_size(65536);
     
-    if (bitmap_iserr(&sid_bitmap) || bitmap_iserr(&uid_bitmap) || bitmap_iserr(&gid_bitmap)) {
-        free_bitmap(&sid_bitmap);
-        free_bitmap(&uid_bitmap);
-        free_bitmap(&gid_bitmap);
+    if (bitmap_iserr(sid_ptr) || bitmap_iserr(uid_ptr) || bitmap_iserr(gid_ptr)) {
+        free_bitmap(sid_ptr);
+        free_bitmap(uid_ptr);
+        free_bitmap(gid_ptr);
         return init_failed;
     }
+    
+    sid_bitmap = *sid_ptr;
+    uid_bitmap = *uid_ptr;
+    gid_bitmap = *gid_ptr;
     
     if_init = 1;
     return 0;
@@ -59,7 +63,7 @@ int idalloc_close(void) {
 
 /* ==================== 会话ID分配 ==================== */
 
-SID get_sid(void) {
+M_SID get_sid(void) {
     pthread_mutex_lock(&sid_mutex);
     
     int64_t idx = bitmap_find(&sid_bitmap, 0, 0, 65535);
@@ -70,10 +74,10 @@ SID get_sid(void) {
     
     bitmap_set(&sid_bitmap, (uint32_t)idx, 1);
     pthread_mutex_unlock(&sid_mutex);
-    return (SID)idx;
+    return (M_SID)idx;
 }
 
-SID del_sid(SID sid) {
+M_SID del_sid(M_SID sid) {
     if (sid < 0 || sid > 65535) {
         return merr;
     }
@@ -86,13 +90,13 @@ SID del_sid(SID sid) {
 
 /* ==================== 用户ID分配 ==================== */
 
-UID get_uid(UID_t type) {
+M_UID get_uid(M_UID_t type) {
     uint32_t start = 0, end = 0;
     
     switch (type) {
-        case ROOT_UID:    start = 0; end = 0; break;
-        case SYSTEM_UID:  start = 1; end = 99; break;
-        case COMMON_UID:  start = 100; end = 65535; break;
+        case ROOT_UID_TYPE:    start = 0; end = 0; break;
+        case SYSTEM_UID_TYPE:  start = 1; end = 99; break;
+        case COMMON_UID_TYPE:  start = 100; end = 65535; break;
         default: return merr;
     }
     
@@ -106,16 +110,16 @@ UID get_uid(UID_t type) {
     
     bitmap_set(&uid_bitmap, (uint32_t)idx, 1);
     pthread_mutex_unlock(&uid_mutex);
-    return (UID)idx;
+    return (M_UID)idx;
 }
 
-UID del_uid(UID_t type, UID uid) {
+M_UID del_uid(M_UID_t type, M_UID uid) {
     uint32_t start = 0, end = 0;
     
     switch (type) {
-        case ROOT_UID:    start = 0; end = 0; break;
-        case SYSTEM_UID:  start = 1; end = 99; break;
-        case COMMON_UID:  start = 100; end = 65535; break;
+        case ROOT_UID_TYPE:    start = 0; end = 0; break;
+        case SYSTEM_UID_TYPE:  start = 1; end = 99; break;
+        case COMMON_UID_TYPE:  start = 100; end = 65535; break;
         default: return merr;
     }
     
@@ -131,12 +135,12 @@ UID del_uid(UID_t type, UID uid) {
 
 /* ==================== 组ID分配 ==================== */
 
-GID get_gid(GID_t type) {
+M_GID get_gid(M_GID_t type) {
     int start = 0, end = 0;
     
     switch (type) {
-        case SYSTEM_GID:  start = 0; end = 0; break;
-        case COMMON_GID:  start = 1; end = 65535; break;
+        case SYSTEM_GID_TYPE:  start = 0; end = 0; break;
+        case COMMON_GID_TYPE:  start = 1; end = 65535; break;
         default: return merr;
     }
     
@@ -150,15 +154,15 @@ GID get_gid(GID_t type) {
     
     bitmap_set(&gid_bitmap, (uint32_t)idx, 1);
     pthread_mutex_unlock(&gid_mutex);
-    return (GID)idx;
+    return (M_GID)idx;
 }
 
-GID del_gid(GID_t type, GID gid) {
+M_GID del_gid(M_GID_t type, M_GID gid) {
     int start = 0, end = 0;
     
     switch (type) {
-        case SYSTEM_GID:  start = 0; end = 0; break;
-        case COMMON_GID:  start = 1; end = 65535; break;
+        case SYSTEM_GID_TYPE:  start = 0; end = 0; break;
+        case COMMON_GID_TYPE:  start = 1; end = 65535; break;
         default: return merr;
     }
     

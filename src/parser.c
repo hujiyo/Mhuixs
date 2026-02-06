@@ -12,7 +12,7 @@ static void parser_set_error(Parser *parser, const char *msg) {
 }
 
 /* 辅助函数：期望特定token */
-static int parser_expect(Parser *parser, TokenType expected) {
+static int parser_expect(Parser *parser, Logex_TokenType expected) {
     if (lexer_current_type(parser->lexer) != expected) {
         char msg[256];
         snprintf(msg, sizeof(msg), "Expected token type %d, got %d", expected, lexer_current_type(parser->lexer));
@@ -621,7 +621,7 @@ ASTNode* parser_parse_hook(Parser *parser) {
         return NULL;
     }
     
-    TokenType current = lexer_current_type(parser->lexer);
+    Logex_TokenType current = lexer_current_type(parser->lexer);
     char *operation = NULL;
     char *obj_type = NULL;
     char *obj_name = NULL;
@@ -705,7 +705,7 @@ ASTNode* parser_parse_field(Parser *parser) {
         return NULL;
     }
     
-    TokenType op_type = lexer_current_type(parser->lexer);
+    Logex_TokenType op_type = lexer_current_type(parser->lexer);
     
     if (op_type == TOK_ADD) {
         lexer_next(parser->lexer);
@@ -795,7 +795,7 @@ ASTNode* parser_parse_table_op(Parser *parser) {
     /* SET 0 1 'Bob'; */
     /* DEL 0; */
     
-    TokenType op_type = lexer_current_type(parser->lexer);
+    Logex_TokenType op_type = lexer_current_type(parser->lexer);
     
     if (op_type == TOK_ADD) {
         lexer_next(parser->lexer);
@@ -914,7 +914,7 @@ ASTNode* parser_parse_kvalot_op(Parser *parser) {
     /* DEL key; */
     /* EXISTS key; */
     
-    TokenType op_type = lexer_current_type(parser->lexer);
+    Logex_TokenType op_type = lexer_current_type(parser->lexer);
     lexer_next(parser->lexer);
     
     if (lexer_current_type(parser->lexer) != TOK_IDENTIFIER && 
@@ -987,7 +987,7 @@ ASTNode* parser_parse_list_op(Parser *parser) {
     /* RPOP; */
     /* GET index; */
     
-    TokenType op_type = lexer_current_type(parser->lexer);
+    Logex_TokenType op_type = lexer_current_type(parser->lexer);
     
     if (op_type == TOK_LPUSH || op_type == TOK_RPUSH) {
         char *operation = (op_type == TOK_LPUSH) ? "LPUSH" : "RPUSH";
@@ -1045,7 +1045,7 @@ ASTNode* parser_parse_bitmap_op(Parser *parser) {
     /* COUNT; */
     /* FLIP offset; */
     
-    TokenType op_type = lexer_current_type(parser->lexer);
+    Logex_TokenType op_type = lexer_current_type(parser->lexer);
     
     if (op_type == TOK_SET) {
         lexer_next(parser->lexer);

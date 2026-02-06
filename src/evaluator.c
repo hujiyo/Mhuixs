@@ -344,7 +344,7 @@ static int parse_term(Lexer *lex, BHS *result, Context *ctx, FunctionRegistry *f
     if (ret != EVAL_SUCCESS) return ret;
     
     while (lexer_token_type(lex) == TOK_MULTIPLY || lexer_token_type(lex) == TOK_DIVIDE || lexer_token_type(lex) == TOK_MOD) {
-        TokenType op = lexer_token_type(lex);
+        Logex_TokenType op = lexer_token_type(lex);
         lexer_next(lex);
         
         BHS right;
@@ -398,7 +398,7 @@ static int parse_add_sub(Lexer *lex, BHS *result, Context *ctx, FunctionRegistry
     if (ret != EVAL_SUCCESS) return ret;
     
     while (lexer_token_type(lex) == TOK_PLUS || lexer_token_type(lex) == TOK_MINUS) {
-        TokenType op = lexer_token_type(lex);
+        Logex_TokenType op = lexer_token_type(lex);
         lexer_next(lex);
         
         BHS right;
@@ -450,7 +450,7 @@ static int parse_shift(Lexer *lex, BHS *result, Context *ctx, FunctionRegistry *
     if (ret != EVAL_SUCCESS) return ret;
     
     while (lexer_token_type(lex) == TOK_BITSHL || lexer_token_type(lex) == TOK_BITSHR) {
-        TokenType op = lexer_token_type(lex);
+        Logex_TokenType op = lexer_token_type(lex);
         lexer_next(lex);
         
         BHS right;
@@ -498,7 +498,7 @@ static int parse_comparison(Lexer *lex, BHS *result, Context *ctx, FunctionRegis
     while (lexer_token_type(lex) == TOK_EQ || lexer_token_type(lex) == TOK_NE ||
            lexer_token_type(lex) == TOK_LT || lexer_token_type(lex) == TOK_LE ||
            lexer_token_type(lex) == TOK_GT || lexer_token_type(lex) == TOK_GE) {
-        TokenType op = lexer_token_type(lex);
+        Logex_TokenType op = lexer_token_type(lex);
         lexer_next(lex);
         
         BHS right;
@@ -826,7 +826,7 @@ int eval_expression(const char *expr, BHS *result, void *ctx, int precision) {
     if (precision < 0) precision = BIGNUM_DEFAULT_PRECISION;
     
     Lexer lex;
-    lexer_init_compat(&lex, expr);
+    lexer_init(&lex, expr, NULL, NULL);
     
     if (lexer_next(&lex) == TOK_ERROR) {
         return EVAL_ERROR;
@@ -874,7 +874,7 @@ int eval_statement(const char *stmt, char *result_str, size_t max_len, void *ctx
     if (precision < 0) precision = BIGNUM_DEFAULT_PRECISION;
     
     Lexer lex;
-    lexer_init_compat(&lex, stmt);
+    lexer_init(&lex, stmt, NULL, NULL);
     
     if (lexer_next(&lex) == TOK_ERROR) {
         return EVAL_ERROR;
@@ -956,7 +956,7 @@ int eval_statement(const char *stmt, char *result_str, size_t max_len, void *ctx
         
         /* 先保存当前位置，以便回退 */
         int saved_pos = lex.pos;
-        TokenType saved_type = lexer_current_type(&lex);
+        Logex_TokenType saved_type = lexer_current_type(&lex);
         char saved_value[BIGNUM_MAX_DIGITS];
         strncpy(saved_value, lexer_current_value(&lex), BIGNUM_MAX_DIGITS - 1);
         saved_value[BIGNUM_MAX_DIGITS - 1] = '\0';
@@ -1018,8 +1018,9 @@ int eval_statement(const char *stmt, char *result_str, size_t max_len, void *ctx
         } else {
             /* 不是赋值语句，回退并当作表达式处理 */
             lex.pos = saved_pos;
-            lexer_set_current_type(&lex, saved_type);
-            lexer_set_current_value(&lex, saved_value);
+            lex.current_token.type = saved_type;
+            strncpy(lex.current_token.value, saved_value, sizeof(lex.current_token.value) - 1);
+            lex.current_token.value[sizeof(lex.current_token.value) - 1] = '\0';
         }
     } else if (has_let) {
         /* let 后面必须跟标识符 */

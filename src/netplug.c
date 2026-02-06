@@ -704,7 +704,7 @@ static int process_buffer(session_t* session) {
 }
 
 // 认证会话
-int auth_session(SID session_id, UID uid) {
+int auth_session(M_SID session_id, M_UID uid) {
     if (!g_netplug || session_id == 0) return -1;
 
     uv_mutex_lock(&g_netplug->pool_mutex);

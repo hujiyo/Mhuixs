@@ -58,8 +58,8 @@ typedef struct permission_struct {
 /* HOOK 结构体 */
 typedef struct HOOK {
     Obj obj;              /* 操作对象 */
-    UID owner;            /* 所有者ID */
-    GID group;            /* 组ID */
+    M_UID owner;            /* 所有者ID */
+    M_GID group;            /* 组ID */
     mstring name;         /* 钩子名 */
     permission_struct pm_s; /* 权限结构体 */
 } HOOK;
@@ -78,9 +78,10 @@ typedef enum {
 } obj_type;
 
 /* HOOK 函数声明 */
-HOOK* HOOK_login(UID owner, mstring name, Obj obj); /* bhs必须是堆分配的！或者为NULL */
+HOOK* HOOK_login(M_UID owner, mstring name, Obj obj); /* bhs必须是堆分配的！或者为NULL */
 int HOOK_logout(HOOK* hook);
-int hook_new_obj(HOOK* hook, UID caller, obj_type objtype, void *parameter1, void *parameter2, void *parameter3); /* 用钩子建立一个新对象 */
-void hook_reset_pm(HOOK* hook, UID caller, const char* pm_str); /* 设置组和权限 */
+int hook_new_obj(HOOK* hook, M_UID caller, obj_type objtype, void *parameter1, void *parameter2, void *parameter3); /* 用钩子建立一个新对象 */
+void hook_reset_pm(HOOK* hook, M_UID caller, const char* pm_str); /* 设置组和权限 */
+int is_entitled(HOOK* hook, M_UID caller, Mode_type mode); /* 权限检查 */
 
 #endif
