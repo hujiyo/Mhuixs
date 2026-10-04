@@ -89,25 +89,35 @@ LIST* list_copy(const LIST* other) {
     if (!other) return NULL;
     LIST* lst = list_create();
     if (!lst) return NULL;
-    
+
+    /*
+     * 逐元素深拷贝。
+     * 这里原来是按 Block 整块 memcpy(..., sizeof(Obj) * UINTDEQUE_BLOCK_SIZE)，
+     * 那是浅拷贝：只复制了 Obj（BHS*）指针，两个 LIST 会共享同一批对象。
+     * 一旦其中一方被释放，另一方就持有一批野指针 —— double free。
+     * 改成每个元素都真正复制一份。
+     */
     Block* cur = other->head_block;
     while (cur) {
-        Block* blk = (Block*)calloc(1, sizeof(Block));
-        if (!blk) {
-            free_list(lst);
-            return NULL;
+        for (uint32_t i = 0; i < cur->size; i++) {
+            Obj src = cur->data[cur->start + i];
+            if (!src) continue;                 /* 不变式下不该出现，防御性跳过 */
+
+            Obj copy = bignum_create();
+            if (!copy) { free_list(lst); return NULL; }
+            if (bignum_copy(src, copy) != 0) {
+                bignum_destroy(copy);
+                free_list(lst);
+                return NULL;
+            }
+            if (list_rpush(lst, copy) != 0) {
+                bignum_destroy(copy);
+                free_list(lst);
+                return NULL;
+            }
         }
-        blk->size = cur->size;
-        blk->start = cur->start;
-        memcpy(&blk->data[0], &cur->data[0], sizeof(Obj) * UINTDEQUE_BLOCK_SIZE);
-        blk->prev = lst->tail_block;
-        blk->next = NULL;
-        if (lst->tail_block) lst->tail_block->next = blk;
-        else lst->head_block = blk;
-        lst->tail_block = blk;
         cur = cur->next;
     }
-    lst->num = other->num;
     return lst;
 }
 
@@ -121,6 +131,11 @@ void list_clear(LIST* lst) {
     if (!lst) return;
     Block* cur = lst->head_block;
     while (cur) {
+        /* LIST 拥有元素的所有权：清空时必须销毁它们，否则泄漏 */
+        for (uint32_t i = 0; i < cur->size; i++) {
+            Obj v = cur->data[cur->start + i];
+            if (v) bignum_destroy(v);
+        }
         Block* nxt = cur->next;
         free(cur);
         cur = nxt;
@@ -135,7 +150,9 @@ size_t list_size(const LIST* lst) {
 }
 
 int list_lpush(LIST* lst, Obj value) {
-    if (!lst) return merr;
+    /* 元素必须是有效对象：LIST 拥有元素所有权，NULL 无法释放也无意义。
+     * 需要"空值"请用 BIGNUM_TYPE_NULL 类型的 BHS，而不是空指针。 */
+    if (!lst || !value) return merr;
     // 如果没有头块或头块左边没有空间，创建新块
     if (!lst->head_block || block_left_space(lst->head_block) == 0) {
         Block* blk = (Block*)calloc(1, sizeof(Block));
@@ -165,7 +182,7 @@ int list_lpush(LIST* lst, Obj value) {
 }
 
 int list_rpush(LIST* lst, Obj value) {
-    if (!lst) return merr;
+    if (!lst || !value) return merr;
     // 如果没有尾块或尾块右边没有空间，创建新块
     if (!lst->tail_block || block_right_space(lst->tail_block) == 0) {
         Block* blk = (Block*)calloc(1, sizeof(Block));
@@ -229,7 +246,7 @@ Obj list_rpop(LIST* lst) {
 }
 
 int list_insert(LIST* lst, size_t pos, Obj value) {
-    if (!lst || pos > lst->num) return merr;
+    if (!lst || !value || pos > lst->num) return merr;
     if (pos == 0) return list_lpush(lst, value);
     if (pos == lst->num) return list_rpush(lst, value);
     Block* blk;
@@ -261,12 +278,17 @@ int list_insert(LIST* lst, size_t pos, Obj value) {
     return 0;
 }
 
-int list_rm_index(LIST* lst, size_t pos) {
-    if (!lst || pos >= lst->num) return merr;
+Obj list_rm_index(LIST* lst, size_t pos) {
+    if (!lst || pos >= lst->num) return (Obj)(intptr_t)merr;
     Block* blk;
     size_t offset;
     locate(lst, pos, &blk, &offset);
-    if (!blk) return merr;
+    if (!blk) return (Obj)(intptr_t)merr;
+
+    /* 先把被移除的元素取出来：所有权交给调用方，由调用方负责销毁。
+     * 若改为在函数内销毁，调用方就再也拿不到这个值了。 */
+    Obj removed = blk->data[blk->start + offset];
+
     if (offset < blk->size / 2) {
         memmove(&blk->data[blk->start + 1], &blk->data[blk->start], offset * sizeof(Obj));
         blk->start++;
@@ -284,7 +306,7 @@ int list_rm_index(LIST* lst, size_t pos) {
     } else if (blk->size < MIN_BLOCK_SIZE && blk->next) {
         merge_block(lst, blk);
     }
-    return 0;
+    return removed;
 }
 
 Obj list_get_index(const LIST* lst, size_t pos) {
@@ -297,12 +319,15 @@ Obj list_get_index(const LIST* lst, size_t pos) {
 }
 
 int list_set_index(LIST* lst, size_t pos, Obj value) {
-    if (!lst || pos >= lst->num) return merr;
+    if (!lst || !value || pos >= lst->num) return merr;
     Block* blk;
     size_t offset;
     locate(lst, pos, &blk, &offset);
     if (!blk) return merr;
-    blk->data[blk->start + offset] = value;
+    Obj* slot = &blk->data[blk->start + offset];
+    /* LIST 拥有旧值，覆盖前必须销毁，否则泄漏 */
+    if (*slot) bignum_destroy(*slot);
+    *slot = value;   /* 所有权转移 */
     return 0;
 }
 

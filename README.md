@@ -116,7 +116,7 @@ KVALOT 的键一律按字符串处理。
 cd src
 make          # 编译
 ./mhuixs      # 运行：模块初始化 + 主链路自检 + 命令层演示
-make test     # 回归测试：TABLE / KVALOT 落盘-恢复往返
+make test     # 回归测试（两个）：基础库所有权与深拷贝 / 持久化往返
 ```
 
 预期输出（节选）：
@@ -173,21 +173,41 @@ Mhuixs/
 │       ├── pkg.c/h       # MUIX 打包协议（暂挂起，待网络层回归）
 │       └── logo.c/h      # 启动标识
 ├── doc/                  # 哈希表相关的设计文档
-└── test/                 # test_persist_roundtrip.c（回归测试）
+└── test/
+    ├── test_lib_status.c            # LIST 所有权与深拷贝 / BITMAP / TABLE（make test）
+    ├── test_persist_roundtrip.c     # TABLE / KVALOT 落盘-恢复往返（make test）
+    ├── test_list_memory.c           # LIST 内存回收检查（手动，仅 Windows）
+    └── test_hash_performance.c      # 哈希表性能（手动）
 ```
 
 ---
 
-## 6. 已知限制
+## 6. 内存与所有权模型
 
-- **组权限当前对所有人生效**：用户组模块剥离后，`get_primary_gid_by_uid()` 恒返回 0，`HOOK_login()` 也把 `hook->group` 设为 0，于是任何 caller 都被判定为"同组"。在用户组模块回归前，**不要依赖组权限做隔离**。详见 `src/lib/hook.c`。
-- **LIST 的元素没有析构器**：`list_clear` 只释放块，不释放块里存的 `Obj`。`drop` 一个 LIST 时其元素会泄漏。`bignum_copy` 对 LIST 也是浅拷贝（复制指针而非对象）——这两点需要一起解决（给 LIST 加元素析构器 + 深拷贝）。
-- `lib/pkg.c` 依赖网络字节序（`arpa/inet.h`），暂未纳入构建。
-- 注册表落盘不是原子操作：直接写 `registry.dat`，中途失败会留下截断的文件。建议改为写临时文件再重命名。
+容器（LIST / TABLE / KVALOT）**拥有**它们存放的元素。规则在 `src/lib/list.h` 里写死了：
+
+- **存入即交出所有权**：`list_rpush` / `tadd` / `kset` 之后，不要再释放那个对象
+- **取出即拿回所有权**：`list_lpop` / `list_rpop` / `list_rm_index` 的返回值归调用方，用完要 `bignum_destroy`
+- **只看不拿（借用）**：`list_get_index` / `tget` / `kget` 返回内部指针，不要释放
+- **复制是深拷贝**：`list_copy` / `table_copy` / `kvalot_copy` 产出的新结构完全独立
+
+要验证回收是否正常，跑 `test/test_list_memory.c`（见文件头部的编译命令）。
+实测 80 万次分配，工作集变化 +0.1 MB 以内。
 
 ---
 
-## 7. 设计边界（重要）
+## 7. 已知限制
+
+- **组权限当前对所有人生效**：用户组模块剥离后，`get_primary_gid_by_uid()` 恒返回 0，`HOOK_login()` 也把 `hook->group` 设为 0，于是任何 caller 都被判定为"同组"。在用户组模块回归前，**不要依赖组权限做隔离**。详见 `src/lib/hook.c`。
+- **`mstr_cstr()` 返回的指针不带 `\0`**：不能直接配 `printf("%s")` / `strcmp` 用，会读到相邻未初始化内存（症状是字符串后面多出乱码，且时有时无）。要用 `mstr_to_cstr()`（需 free）或 `%.*s` + `mstrlen()`。详见 `src/lib/mstring.h`。
+- **`drop` 只从注册表摘除 HOOK，不释放 HOOK 对象与它持有的数据**：`reg_unregister_hook` 只做 `hash_remove`。反复 drop / 重建同名钩子会持续增长内存。
+- `lib/pkg.c` 依赖网络字节序（`arpa/inet.h`），暂未纳入构建。
+- 注册表落盘不是原子操作：直接写 `registry.dat`，中途失败会留下截断的文件。建议改为写临时文件再重命名。
+- 深拷贝没有环检测：若数据里出现自引用（结构套自己），`bignum_copy` 会无限递归。当前没有产生这种结构的路径。
+
+---
+
+## 8. 设计边界（重要）
 
 Mhuixs 不实现自己的编程语言。操作以命令形式提供，语言层面的循环、判断、函数交给调用方。
 这样做的理由是：命令可白名单、可审计、非图灵完备；而造一门语言意味着与 Lua / Python 竞争，
@@ -195,7 +215,7 @@ Mhuixs 不实现自己的编程语言。操作以命令形式提供，语言层�
 
 ---
 
-## 8. 参与与交流
+## 9. 参与与交流
 
 - **Email**: Mhuxis@outlook.com | Mhuxis.db@gmail.com
 - **GitHub**: [hujiyo/Mhuixs](https://github.com/hujiyo/Mhuixs)

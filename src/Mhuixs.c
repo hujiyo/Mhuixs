@@ -90,7 +90,14 @@ static void demo_commands(void)
     run_command("lget fruits 1");
     run_command("lget fruits 2");
     run_command("lget fruits 9");      /* 越界，应报错 */
+    run_command("lset fruits 1 777");  /* 覆盖已有值 */
+    run_command("lget fruits 1");
+    run_command("lrem fruits 0");      /* 移除并返回该值 */
+    run_command("llen fruits");
     run_command("rpop fruits");
+    run_command("llen fruits");
+    run_command("rpush fruits kiwi");  /* 补回一个，使后面的计数保持为 2 */
+    run_command("llen fruits");
 
     /* BITMAP：一个位图 */
     run_command("create bitmap flags");
@@ -184,8 +191,10 @@ static int self_check(void)
     /* 3. 按名字查找 HOOK */
     HOOK *found = reg_find_hook(SELFCHECK_HOOK_NAME);
     if (found) {
-        printf("  [3] HOOK 查找        '%s' 找到，名字=%s\n",
-               SELFCHECK_HOOK_NAME, mstr_cstr(found->name));
+        /* mstr_cstr 不带 \0，配 %s 会读到相邻未初始化内存，故用 %.*s */
+        printf("  [3] HOOK 查找        '%s' 找到，名字=%.*s\n",
+               SELFCHECK_HOOK_NAME,
+               (int)mstrlen(found->name), mstr_cstr(found->name));
     } else {
         printf("  [3] HOOK 查找        失败\n");
         failures++;

@@ -125,7 +125,18 @@ static inline int mstr_equals(mstring a, mstring b){
     return memcmp(a + MSTR_HDR_SIZE, b + MSTR_HDR_SIZE, len_a) == 0;
 }
 
-/* 获取 C 字符串指针（无需拷贝，不带 \0） */
+/*
+ * 获取 C 字符串指针（无需拷贝）
+ *
+ * ***** 危险 *****
+ * 返回的指针 **不带结尾的 \0**，字符串长度以 mstrlen() 为准。
+ * 绝对不能直接喂给 printf("%s") / strcmp / fopen 等按 \0 判断结尾的函数，
+ * 否则会读到相邻的未初始化内存（表现为字符串后面多出一串乱码，
+ * 且时好时坏、换一次运行就变样）。
+ *
+ * 需要真正的 C 字符串时，用 mstr_to_cstr()（会拷贝并补 \0，用完要 free），
+ * 或者显式带上长度：printf("%.*s", (int)mstrlen(s), mstr_cstr(s))。
+ */
 static inline const char* mstr_cstr(mstring str){
     return str ? (str + MSTR_HDR_SIZE) : NULL;
 }

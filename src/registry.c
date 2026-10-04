@@ -618,7 +618,12 @@ BHS* bhs_deserialize(FILE *fp) {
                 bignum_destroy(result);
                 return NULL;
             }
-            list_rpush(list, elem);
+            /* list_rpush 接管 elem 的所有权；失败必须自己销毁，否则泄漏 */
+            if (list_rpush(list, elem) != 0) {
+                bignum_destroy(elem);
+                bignum_destroy(result);
+                return NULL;
+            }
         }
         
         result->length = length;

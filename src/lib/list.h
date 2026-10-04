@@ -33,6 +33,28 @@ typedef struct LIST {
     size_t num; // 总元素数
 } LIST;
 
+/*
+ * ============================ 所有权规则 ============================
+ *
+ * LIST **拥有**它存放的每一个元素（Obj，即堆分配的 BHS*）。
+ *
+ *   存入即交出所有权：list_lpush / list_rpush / list_insert / list_set_index
+ *       调用方把 Obj 交出去之后，不要再对它调用 bignum_destroy。
+ *
+ *   取出即拿回所有权：list_lpop / list_rpop / list_rm_index
+ *       返回值归调用方所有，用完必须 bignum_destroy。
+ *
+ *   只看不拿（借用）：list_get_index
+ *       返回的是内部指针，**不要释放、不要修改**；
+ *       它只在对应元素被移除或 list 被清空之前有效。
+ *
+ *   复制：list_copy 是**深拷贝**，新表与原表完全独立。
+ *
+ * 元素不可为 NULL —— 需要"空值"请用 BIGNUM_TYPE_NULL 类型的 BHS。
+ * 这条不变式是持久化格式依赖的前提（LIST 序列化不带空值标志位）。
+ * ===================================================================
+ */
+
 // LIST 函数（对外接口使用 BHS*）
 LIST* list_create(void);
 LIST* list_copy(const LIST* other);
@@ -44,8 +66,8 @@ int list_rpush(LIST* lst, Obj value);
 Obj list_lpop(LIST* lst);
 Obj list_rpop(LIST* lst);
 int list_insert(LIST* lst, size_t pos, Obj value);
-int list_rm_index(LIST* lst, size_t pos);
-Obj list_get_index(const LIST* lst, size_t pos);
+Obj list_rm_index(LIST* lst, size_t pos);       /* 返回被移除的元素，归调用方 */
+Obj list_get_index(const LIST* lst, size_t pos); /* 借用，勿释放 */
 int list_set_index(LIST* lst, size_t pos, Obj value);
 int list_swap(LIST* lst, size_t idx1, size_t idx2);
 

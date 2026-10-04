@@ -86,8 +86,7 @@ TABLE* create_table(int* types, mstring* field_names, size_t field_num, mstring 
 深拷贝一张表：表名、字段（名字/类型/数据区）、索引数组，以及每个单元格的值。
 
 注意：单元格值是深拷贝的（每个非 NULL 的 Obj 都会复制成新的）。
-但若单元格里装的是 LIST，BHS 层的 list_copy 只复制块、不复制元素，
-嵌套 LIST 仍会共享元素指针 —— 这是 bignum_copy 的既有行为，非本函数引入。
+单元格里若装的是 LIST，BHS 层的 list_copy 也是深拷贝，整棵结构独立。
 
 已知限制：若表内出现自引用（表套自己），深拷贝会无限递归。
 当前没有产生这种结构的路径，先记录在此。

@@ -34,6 +34,7 @@ execute.c —— Mhuixs 命令执行层
     llen  <name>                  LIST 长度
     lget  <name> <i>              LIST 读取下标 i
     lset  <name> <i> <v>          LIST 改写下标 i
+    lrem  <name> <i>              LIST 移除下标 i，返回被移除的值
 
     bset   <name> <off> <0|1>     BITMAP 设置某位
     bget   <name> <off>           BITMAP 读取某位
@@ -338,6 +339,35 @@ static int cmd_lset(token_t *t, int argc, char *out, size_t outlen)
         return -1;
     }
     snprintf(out, outlen, "OK lset %s[%ld]", t[1].text, i);
+    return 0;
+}
+
+static int cmd_lrem(token_t *t, int argc, char *out, size_t outlen)
+{
+    if (argc != 3) { snprintf(out, outlen, "ERR usage: lrem <name> <i>"); return -1; }
+    BHS *obj = get_obj(t[1].text, BIGNUM_TYPE_LIST, out, outlen);
+    if (!obj) return -1;
+
+    LIST *lst = bignum_get_list(obj);
+    if (!lst) { snprintf(out, outlen, "ERR not a list"); return -1; }
+
+    long i = strtol(t[2].text, NULL, 10);
+    if (i < 0 || (size_t)i >= list_size(lst)) {
+        snprintf(out, outlen, "ERR index %ld out of range (len=%zu)", i, list_size(lst));
+        return -1;
+    }
+
+    /* list_rm_index 把被移除元素的所有权交回调用方 */
+    Obj v = list_rm_index(lst, (size_t)i);
+    if (IS_MERR_OBJ(v)) { snprintf(out, outlen, "ERR remove failed"); return -1; }
+
+    char buf[512];
+    buf[0] = '\0';
+    bignum_to_string(v, buf, sizeof(buf), 0);
+    bignum_destroy(v);
+
+    obj->length = list_size(lst);
+    snprintf(out, outlen, "OK removed %s, len=%zu", buf, list_size(lst));
     return 0;
 }
 
@@ -865,8 +895,17 @@ static int cmd_tfields(token_t *t, int argc, char *out, size_t outlen)
     out[0] = '\0';
     append(out, outlen, "OK %zu field(s):\n", get_field_count(tb));
     for (size_t i = 0; i < get_field_count(tb); i++) {
-        const char *fname = "?";
-        if (tb->field[i].name) fname = mstr_cstr(tb->field[i].name);
+        /* 注意：mstr_cstr 返回的指针**不带 \0**（见 mstring.h），
+         * 不能直接配 %s 用，否则会读到相邻的未初始化内存。
+         * 这里按长度拷进本地缓冲再补 \0。 */
+        char fname[64];
+        fname[0] = '\0';
+        if (tb->field[i].name) {
+            size_t n = mstrlen(tb->field[i].name);
+            if (n > sizeof(fname) - 1) n = sizeof(fname) - 1;
+            memcpy(fname, mstr_cstr(tb->field[i].name), n);
+            fname[n] = '\0';
+        }
         append(out, outlen, "%-16s %s\n", fname, type_name(tb->field[i].type));
     }
     return 0;
@@ -897,6 +936,7 @@ int mhx_execute(const char *line, char *out, size_t outlen)
     if (!strcmp(cmd, "llen"))   return cmd_llen (toks, argc, out, outlen);
     if (!strcmp(cmd, "lget"))   return cmd_lget (toks, argc, out, outlen);
     if (!strcmp(cmd, "lset"))   return cmd_lset (toks, argc, out, outlen);
+    if (!strcmp(cmd, "lrem"))   return cmd_lrem (toks, argc, out, outlen);
 
     if (!strcmp(cmd, "bset"))   return cmd_bset  (toks, argc, out, outlen);
     if (!strcmp(cmd, "bget"))   return cmd_bget  (toks, argc, out, outlen);
