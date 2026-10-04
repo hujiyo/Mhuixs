@@ -12,7 +12,6 @@ Email:hj18914255909@outlook.com
 #include "merr.h"
 #include "getid.h"
 #include "mstring.h"
-#include "usergroup.h"
 #include "bignum.h"
 
 /* 前向声明，避免循环包含 */

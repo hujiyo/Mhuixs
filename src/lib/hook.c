@@ -4,11 +4,21 @@
 #include <string.h>
 
 /* 存根实现: 获取用户的主组ID
- * TODO: 当usergroup模块完成整合后,替换为真实实现
+ *
+ * 已知限制（重要，勿忽略）：
+ *   用户组模块（usergroup）已在本次减重中剥离，本函数恒返回 0；
+ *   而 HOOK_login() 会把 hook->group 同样设为 0，
+ *   于是 is_entitled() 会认为"任何 caller 都与 hook 同组"，
+ *   组权限（group_read / group_add / group_change）实际上对所有人放行。
+ *
+ *   当前内核无网络接入、无多用户，尚不构成实际风险；
+ *   但在用户组模块回归之前，请不要依赖组权限做任何隔离。
+ *
+ * TODO: 用户组模块回归后，替换为真实实现。
  */
 M_GID get_primary_gid_by_uid(M_UID uid) {
     (void)uid;
-    return 0; /* 暂时返回root组 */
+    return 0; /* 恒为 root 组 —— 见上方限制说明 */
 }
 
 /* 权限检查函数:检查caller是否有权限对hook执行mode操作 */

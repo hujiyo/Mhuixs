@@ -79,39 +79,52 @@ static inline void reg_unlock(void) {
 int reg_register_hook(M_UID owner, const char* name, HOOK** hook_return) {
     if (!hook_return) return -2; /* 空HOOK指针，注册失败 */
     if (!name || strlen(name) == 0) return -1; /* 空名字，注册失败 */
-    
+
+    /* 先查重名：这一步必须在创建 HOOK 之前。
+     * 否则重名时若调用 HOOK_logout()，它会按 hook->name 去注册表里注销，
+     * 而新建的同名 HOOK 与已存在的那个同名 —— 结果是"重名保护"把原数据删掉。
+     */
+    reg_lock();
+    if (hash_contains(Reg.hook_map, name)) {
+        reg_unlock();
+        return 1; /* 已有同名HOOK，注册失败 */
+    }
+    reg_unlock();
+
     /* 创建 mstring */
     mstring mname = mstr(name);
     if (!mname) return -1;
-    
+
     /* 创建 HOOK */
     HOOK* hook = HOOK_login(owner, mname, NULL);
     if (!hook) {
         mstr_free(mname);
         return -1;
     }
-    
+
     /* 注册HOOK */
     reg_lock();
-    
-    /* 检查是否已存在同名HOOK */
+
+    /* 双检：并发情况下同名 HOOK 仍可能在这中间被插入 */
     if (hash_contains(Reg.hook_map, name)) {
         reg_unlock();
-        HOOK_logout(hook);
+        /* 此处不能调用 HOOK_logout（它会按名字注销掉别人），
+         * 只需释放这个尚未入表的 HOOK 自身。 */
+        mstr_free(hook->name);
         free(hook);
-        return 1; /* 已有同名HOOK，注册失败 */
+        return 1;
     }
-    
+
     /* 添加到哈希表 */
     if (hash_put(Reg.hook_map, name, hook) != 0) {
         reg_unlock();
-        HOOK_logout(hook);
+        mstr_free(hook->name);
         free(hook);
         return -1;
     }
-    
+
     reg_unlock();
-    
+
     *hook_return = hook;
     return 0;
 }

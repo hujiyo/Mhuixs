@@ -3,6 +3,8 @@ output/
 
 .cache/
 
+.workbuddy/
+
 .vscode/
 
 cmake-build-debug/

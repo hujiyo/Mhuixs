@@ -1,435 +1,126 @@
 <img src=".logo/Mhuixs-logo.png" height="130px" />
 
-# Mhuixs 数据库
+# Mhuixs
 
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/hujiyo/Mhuixs)
+> 内存数据结构库 · HOOK 统一引用
 
-> Hook Engine • Mhuixs Database
+## 1. 这是什么
 
-## 1. 介绍
+Mhuixs 是一个**基于内存的数据库**，核心只有两个概念：
 
-Mhuixs 是一个**基于内存的数据库**，将数据库引擎与脚本语言深度融合。Hook是Mhuixs的核心接口程序。
+- **数据结构**：LIST、TABLE、BITMAP、KVALOT —— 都是纯粹的内存结构，一个文件一个文件打磨出来的
+- **HOOK**：指向数据结构的统一引用。**任何能被 HOOK 引用的东西，才叫数据结构**
 
-**核心理念**：
-- **HOOK 注册系统**：数据库核心，数据持久化管理
-- **Logex 原生操作语言**：内置脚本解释器，直接操作数据结构
-- **BHS 统一数据类型**：任意精度数值、字符串、LIST、TABLE、BITMAP 的统一封装
+设计原点（2024.11）：
 
-**当前状态** (2026.01.19):
-- ✅ **Logex 内置化完成**：13 个核心函数已内置
-- ✅ **数据结构完善**：LIST/TABLE/BITMAP/KVALOT 已实现并集成
-- ✅ **客户端 muixclt**：支持完整的 NAQL 语法解析和网络通信
-- 📋 **MCP 协议支持**：规划中
+> 数据是一片蓝海，HOOK 是鱼钩，各种数据结构是不同类型的鱼。
+> 只要通过 HOOK 就能引用数据并操作它；
+> 数据结构之间也能通过索引（同样是 HOOK）互相引用。
+
+HOOK 同时承担三件事：**防止数据失联**（有名可查）、**权限控制收口**、**压缩与落盘的基本单位**。
 
 ---
 
-## 2. 核心架构
+## 2. 当前状态（2026-10）
 
-### 架构层次
+项目正处于**重建期**，当前聚焦回最初的内核。上一轮减重剥离了后来叠加、且相互冲突的部分：
 
-```
-Mhuixs 数据库核心
-  ├── HOOK 注册系统
-  │   ├── 权限管理（owner/group/other）
-  │   ├── 对象注册/注销/查找
-  │   └── 生命周期管理
-  │
-  ├── 原生数据结构
-  │   ├── LIST（双端队列）
-  │   ├── TABLE（关系型表）
-  │   ├── BITMAP（位图）
-  │   ├── KVALOT（键值对池）
-  │   └── STREAM（流数据）
-  │
-  ├── BHS 统一类型（bhs/basic_handle_struct）
-  │   ├── NUMBER（任意精度数值）
-  │   ├── STRING（字符串）
-  │   ├── LIST（列表指针）
-  │   ├── TABLE（表指针）
-  │   └── BITMAP（位图指针）
-  │
-  └── Logex 解释器（执行模块）
-       ├── 内置函数
-       │   ├── LIST 操作：list, lpush, rpush, lpop, rpop, lget, llen
-       │   ├── TYPE 转换：num, str, bmp
-       │   └── BITMAP 操作：bset, bget, bcount
-       │
-       └── 外部包
-           └── math：sin, cos, sqrt, π, e 等
-```
+**已剥离**
 
-## 3. Logex 脚本语言
+| 层 | 内容 | 原因 |
+|---|---|---|
+| 语言层 | lexer / parser / ast / evaluator / compiler / bytecode / vm | 后加的，且内部存在两套互斥的解释器后端 |
+| 网络层 | netplug、queue | 依赖未链接的 libuv，且从未跑通 |
+| 用户组 | usergroup、bcrypt、crypt、iami | 与前两者冲突，且初始化早已被注释掉 |
 
-### 核心特性
+**已保留（内核）**
 
-Logex 是 Mhuixs 的操作语言：
+| 模块 | 文件 |
+|---|---|
+| 数据结构 | `lib/list.c`、`lib/tblh.c`、`lib/bitmap.c`、`lib/kvalh.c`、`lib/bignum.c` |
+| HOOK 与注册表 | `lib/hook.c`、`registry.c` |
+| 基础设施 | `lib/env.c`、`lib/getid.c`、`lib/merr.c`、`lib/hash.c`、`lib/mstring.h`、`lib/bitcpy.c` |
 
-- ✅ **任意精度数值计算**（BHS 实现）
-- ✅ **完整的布尔逻辑运算**
-- ✅ **变量机制和表达式求值**
-- ✅ **内置 13 个核心函数**（LIST/TYPE/BITMAP）
-- ✅ **包管理系统**（动态加载 .so 扩展）
-- ✅ **递归下降解析器**
-- ✅ **交互式 REPL**
-
-> **名称由来**: Logex = Logic + Expression
-
-### 内置函数
-
-#### LIST 操作 (7个)
-```javascript
-let mylist = list()              // 创建空列表
-let mylist = rpush(mylist, 100)  // 右侧插入
-let mylist = lpush(mylist, 50)   // 左侧插入
-let val = lpop(mylist)           // 左侧弹出
-let val = rpop(mylist)           // 右侧弹出
-let item = lget(mylist, 0)       // 获取元素
-let size = llen(mylist)          // 列表长度
-```
-
-#### TYPE 转换 (3个)
-```javascript
-let n = num("123.456")   // 字符串 → 数字
-let s = str(789)         // 数字 → 字符串
-let b = bmp(255)         // 数字 → 位图
-```
-
-#### BITMAP 操作 (3个)
-```javascript
-let bm = bmp(0)
-let bm = bset(bm, 10, 1)        // 设置位
-let bit = bget(bm, 10)          // 获取位
-let count = bcount(bm, 0, 100)  // 统计位数
-```
-
-### 外部包（需要 import）
-
-```javascript
-// 数学函数包
-import math
-let result = math.sin(math.pi / 2)  // 1
-let root = math.sqrt(16)            // 4
-```
-
-### 完整示例
-
-```javascript
-# 示例 1：LIST 操作
-let mylist = list()
-let mylist = rpush(mylist, 100)
-let mylist = rpush(mylist, 200)
-let mylist = rpush(mylist, 300)
-
-let size = llen(mylist)      # size = 3
-let first = lget(mylist, 0)  # first = 100
-let val = lpop(mylist)       # val = 100
-
-# 示例 2：类型转换
-let n = num("123.456")
-let result = n + 100         # result = 223.456
-let s = str(result)          # s = "223.456"
-
-# 示例 3：BITMAP 操作
-let bm = bmp(0)
-let bm = bset(bm, 0, 1)
-let bm = bset(bm, 5, 1)
-let bm = bset(bm, 10, 1)
-let count = bcount(bm, 0, 20)  # count = 3
-
-# 示例 4：数学运算（需要 import）
-import math
-let angle = math.pi / 4
-let sin_val = math.sin(angle)
-let cos_val = math.cos(angle)
-```
-
-**详细文档**: [BUILTIN_FUNCTIONS.md](doc/BUILTIN_FUNCTIONS.md)
+当前内核可编译、可运行，并通过 5 项主链路自检，支持 HOOK 落盘与恢复。
 
 ---
 
-## 4. 项目文件结构
-
-```
-Mhuixs-root/
-├── src/                       # 核心数据库代码
-│   ├── lib/                   # 基础库
-│   │   ├── list.c/h          # LIST 数据结构
-│   │   ├── tblh.c/h          # TABLE 数据结构
-│   │   ├── bitmap.c/h        # BITMAP 数据结构
-│   │   ├── kvalh.cpp/hpp     # KVALOT 数据结构
-│   │   └── mstring.h         # 字符串工具
-│   │
-│   ├── share/                 # 共享模块
-│   │   └── obj.h             # BHS/bhs 定义
-│   │
-│   ├── hub/                   # 服务端核心（开发中）
-│   │   ├── hook.cpp/hpp      # HOOK 注册系统
-│   │   ├── registry.cpp/hpp  # 注册表管理
-│   │   └── usergroup.cpp/hpp # 用户权限管理
-│   │
-│   ├── bhs.c/h            # BHS 核心实现
-│   ├── builtin.c/h           # 内置函数
-│   ├── evaluator.c/h         # Logex 解释器
-│   ├── lexer.c/h             # 词法分析器
-│   ├── parser.c/h            # 语法分析器
-│   ├── context.c/h           # 变量上下文
-│   ├── function.c/h          # 外部包注册系统
-│   ├── package.c/h           # 包管理器
-│   └── package/              # 外部包目录
-│       └── math_package.c    # 数学函数包
-│
-├── test/                      # 测试文件
-│   ├── test_builtin.c        # 内置函数测试
-│   ├── test_builtin_simple.c # 简化测试
-│   └── test_builtin.logex    # Logex 测试脚本
-│
-├── doc/                       # 文档目录
-│   ├── BUILTIN_FUNCTIONS.md  # 内置函数文档
-│   ├── NAQL.txt              # NAQL 语法文档
-│   ├── PACKAGE_GUIDE.md      # 包开发指南
-│   └── README_old.md         # 旧版 README
-│
-└── muixclt/                   # 客户端（已完成）
-    ├── muixclt.c             # 主程序
-    ├── lexer.c               # NAQL 词法分析器
-    ├── pkg.c                 # MUIX 包协议
-    └── netlink.c             # 网络通信
-```
-
-### 开发进度
-
-- ✅ **核心数据结构**: LIST, TABLE, BITMAP, KVALOT, STREAM 已实现
-- ✅ **BHS 统一类型**: 已完成，支持所有数据类型
-- ✅ **Logex 内置化**: 13 个核心函数已内置，测试通过
-- ✅ **包管理系统**: 支持动态加载 .so 扩展
-- ✅ **muixclt 客户端**: NAQL 解析器、网络通信已完成
-- 🚧 **HOOK 注册系统**: 基础框架已有，待完善
-- 🚧 **服务端 hub**: 正在开发
-- 📋 **TABLE 操作函数**: 待内置化
-- 📋 **MCP 协议支持**: 规划中
-
----
-
-## 5. 目标与特色
-
-Mhuixs 定位为 **AI Agent 数据库**，具备以下核心特色：
-
-### 数据库特性
-- ✅ **混合数据模型**：同时支持关系型（TABLE）和非关系型（KVALOT）
-- ✅ **多种数据结构**：LIST、TABLE、BITMAP、KVALOT、STREAM
-- ✅ **基于内存**：使用索引、哈希表快速定位数据
-- ✅ **HOOK 注册系统**：统一的对象管理和权限控制
-- 🚧 **数据压缩策略**：lv0-lv5 分级压缩（规划中）
-
-### 脚本语言特性
-- ✅ **内置核心函数**：LIST/TYPE/BITMAP 操作
-- ✅ **任意精度计算**：BHS 支持超大数值和高精度小数
-- ✅ **包扩展系统**：通过 .so 动态加载扩展功能
-- ✅ **简洁语法**：接近自然语言，易于 AI 理解和生成
-
-### AI Agent 友好
-- 📋 **MCP 协议支持**（规划中）：全面兼容 AI Agent
-- ✅ **NAQL 查询语言**：接近自然语言的查询语法
-- ✅ **权限分级管理**：owner/group/other 三级权限
-- ✅ **脚本化操作**：AI 可直接生成 Logex 脚本操作数据库
-
-### 性能与安全
-- ✅ **内存优先**：极速数据访问
-- ✅ **权限隔离**：基于 HOOK 的权限系统
-- 🚧 **TLS 加密**：客户端支持 TLS 连接
-- 📋 **持久化**：数据持久化到磁盘（规划中）
-
----
-
-## 6. NAQL 查询语言
-
-**NAQL**: NAture-language Query Language
-
-旨在设计一种最接近口语的、最简单、给 AI 可以直接现场学会的数据查询语言。
-
-### 语法特点
-- ✅ 接近自然语言的语法设计
-- ✅ 简洁明了的命令结构
-- ✅ 支持复杂的数据查询和操作
-- ✅ 专为 AI 优化的语法规则
-
-### 示例
-
-```sql
-# TABLE 操作
-HOOK TABLE users;
-FIELD ADD id i4 PKEY;
-FIELD ADD name str NOTNULL;
-ADD 1 'Alice' 25;
-GET WHERE id == 1;
-
-# KVALOT 操作
-HOOK KVALOT cache;
-SET user:1 'Alice';
-GET user:1;
-
-# 控制语句（客户端本地执行）
-$counter = 0;
-FOR i 1 10 1;
-    ADD $i 'user$i';
-    $counter = $counter + 1;
-END;
-```
-
-**详细文档**: [NAQL 基础语法](doc/NAQL.txt)
-
----
-
-## 7. 快速开始
-
-### 编译 Logex 解释器
+## 3. 编译与运行
 
 ```bash
 cd src
-gcc -o logex main.c evaluator.c lexer.c bhs.c builtin.c context.c \
-    function.c lib/list.c lib/bitmap.c lib/tblh.c -I. -Ilib -Ishare -lm
+make
+./mhuixs
 ```
 
-### 运行示例
+预期输出：
 
-```bash
-# 交互式 REPL
-./logex
+```
+==== Mhuixs 内核启动 ====
+  ENV 模块就绪
+  Logger 模块就绪
+  ID 分配器就绪
+  注册表就绪
 
-# 执行脚本
-./logex script.logex
+---- 主链路自检 ----
+  [1] 任意精度数值     100 + 200 = 300
+  [2] HOOK 注册        'mhuixs_selfcheck' 注册成功（当前 HOOK 数=1）
+  [3] HOOK 查找        'mhuixs_selfcheck' 找到，名字=mhuixs_selfcheck
+  [4] 重名保护         重复注册被拒绝 (ret=1)
+  [5] 权限检查         root 可读=1，其他用户可读=1
+
+  已保存 1 个 HOOK 到磁盘
+
+==== 自检结果：全部通过 ====
 ```
 
-### 测试内置函数
+数据目录由 `src/Mhuixs.config` 的 `MhuixsHomePath` 指定，HOOK 注册表落盘为 `<MhuixsHomePath>/registry.dat`。
 
-```bash
-# 编译测试程序
-gcc -o test_builtin test_builtin_simple.c builtin.c bhs.c \
-    lib/list.c lib/bitmap.c lib/tblh.c -I. -Ilib -Ishare -lm
+---
 
-# 运行测试
-./test_builtin
+## 4. 目录结构
+
+```
+Mhuixs/
+├── src/
+│   ├── Mhuixs.c          # 内核入口：模块初始化 + 主链路自检
+│   ├── registry.c/h      # 注册表：统一管理 HOOK 与权限
+│   ├── Makefile
+│   ├── Mhuixs.config     # 运行配置
+│   └── lib/              # 基础库
+│       ├── list.c/h      # LIST 列表
+│       ├── tblh.c/h      # TABLE 表
+│       ├── bitmap.c/h    # BITMAP 位图
+│       ├── kvalh.c/h     # KVALOT 键值对
+│       ├── bignum.c/h    # BHS 统一类型 + 任意精度数值
+│       ├── hook.c/h      # HOOK
+│       ├── hash.c/h      # Robin Hood 哈希表
+│       ├── mstring.h     # 字符串
+│       ├── getid.c/h     # ID 分配器
+│       ├── env.c/h       # 环境配置
+│       ├── merr.c/h      # 错误码与日志
+│       ├── bitcpy.c/h    # 位级拷贝
+│       ├── pkg.c/h       # MUIX 打包协议（暂挂起，待网络层回归）
+│       └── logo.c/h      # 启动标识
+├── doc/                  # 设计文档（部分内容对应已剥离的模块，待整理）
+└── test/                 # 测试代码（同上）
 ```
 
 ---
 
-## 8. 参与与交流
+## 5. 已知限制
 
-欢迎对数据库、AI Agent、编程语言方向感兴趣的朋友加入，一起完成 Mhuixs！
+- **组权限当前对所有人生效**：用户组模块剥离后，`get_primary_gid_by_uid()` 恒返回 0，`HOOK_login()` 也把 `hook->group` 设为 0，于是任何 caller 都被判定为"同组"。在用户组模块回归前，**不要依赖组权限做隔离**。详见 `src/lib/hook.c`。
+- `lib/pkg.c` 依赖网络字节序（`arpa/inet.h`），暂未纳入构建。
+- `doc/` 与 `test/` 中部分内容对应已剥离的模块，需要后续清理。
 
-- **Email**: Mhuxis@outlook.com | Mhuxis.db@gmail.com | Mhuxis.db@outlook.com
-- **WeChat**: wx17601516389
+---
+
+## 6. 参与与交流
+
+- **Email**: Mhuxis@outlook.com | Mhuxis.db@gmail.com
 - **GitHub**: [hujiyo/Mhuixs](https://github.com/hujiyo/Mhuixs)
 
 ---
 
-## 9. 重要里程碑
-
-- **2024.10.17**: 项目启动
-- **2024.12.20**: muixclt 客户端完成
-- **2025.10.07**: Logex 整合规划
-- **2026.01.19**: Logex 内置化完成，13 个核心函数已集成
-- **本次更新**: 2026.01.19
-
----
-
-## 10. NAQL 协议详解
-
-### MUIX 包协议
-
-用于客户端与服务器间的可靠数据传输：
-
-```
-包结构: [MUIX(4字节)] + [长度(4字节)] + [$(1字节)] + [用户数据]
-- 魔数: 'M''U''I''X'
-- 长度: 大端字节序，表示用户数据长度
-- 结束符: '$'
-- 最大包大小: 4KB
-```
-
-### HUJI 命令协议
-
-NAQL 语句转换为二进制命令格式：
-
-```
-命令格式: [HUJI(4字节)] + [编号(4字节)] + [参数流]
-参数流: [参数数目(1字节)] + [@] + [参数1长度] + [@] + [参数1] + [@] + ...
-```
-
-**命令编号体系**:
-- 1-50: 基础语法（GET, HOOK, DESC 等）
-- 51-70: 事务控制（MULTI, EXEC, ASYNC）
-- 71-90: 控制语句（IF, WHILE, FOR - 本地处理）
-- 101-150: TABLE 操作（FIELD, ADD, SET 等）
-- 151-200: KVALOT 操作（EXISTS, SET, GET 等）
-- 201-280: STREAM/LIST 操作
-- 281-330: BITMAP 操作
-- 361-370: 变量管理（本地处理）
-
----
-
-## 11. 致谢
-
-### 致敬开源社区
-
-```
-感谢开源社区的无私奉献和优秀工作，让 Mhuixs 能够站在巨人的肩膀上发展。
-我在这里祝你们心想事成、事业有成、阖家幸福、幸福安康。
-
-————HuJiYo 2026
-
-Thanks to the open-source community. It is their selfless dedication and 
-excellent work that have enabled Mhuixs to develop by standing on the 
-shoulders of giants. Here, I wish you all the best in your endeavors, 
-success in your careers, happiness for your families, and health and well-being.
-
-————HuJiYo 2026
-```
-
-### 特别感谢
-
-1. **AI 助手**: Claude、GPT、Qwen、Deepseek、DouBao 系列模型（~QvQ~）
-2. **开发者**: 感谢坚持不放弃的自己（doge）！
-3. **社区**: 所有关注和支持 Mhuixs 的朋友们
-
----
-
-## 12. 重要说明
-
-### 架构说明
-
-**请注意以下关键点，避免误判**：
-
-1. **HOOK 是核心，BHS 是别名**
-   - `HOOK` 注册系统是 Mhuixs 数据库的核心
-   - `BHS`/`bhs`/`basic_handle_struct` 是同一个结构体的不同名称
-   - HOOK 体现"大海捞针"的数据库理念
-
-2. **Logex 是 Mhuixs 的一部分**
-   - Logex 不是独立项目，是 Mhuixs 的原生操作语言
-   - 核心函数已内置化，无需 `import list` 或 `import type`
-   - 只有 `math` 等非数据库功能才需要 import
-
-3. **内置函数 vs 外部包**
-   - **内置函数**（13个）：`list()`, `lpush()`, `num()`, `str()`, `bmp()` 等，直接可用
-   - **外部包**：`import math` 后才能使用 `sin()`, `cos()` 等
-
-4. **已完成 vs 规划中**
-   - ✅ **已完成**: LIST/BITMAP/TYPE 内置函数、BHS 统一类型、包管理系统
-   - 🚧 **开发中**: HOOK 注册系统完善、服务端 hub
-   - 📋 **规划中**: TABLE 操作内置化、MCP 协议、数据持久化
-
-### 文档索引
-
-- **内置函数文档**: [BUILTIN_FUNCTIONS.md](doc/BUILTIN_FUNCTIONS.md)
-- **NAQL 语法**: [NAQL.txt](doc/NAQL.txt)
-- **包开发指南**: [PACKAGE_GUIDE.md](doc/PACKAGE_GUIDE.md)
-- **客户端文档**: [muixclt README](muixclt/README.md)
-
----
-
-**本 README 最后更新**: 2026.01.19  
-**当前版本**: Logex 内置化完成版
-
----
-
+**本 README 最后更新**: 2026.10.05（重建期）

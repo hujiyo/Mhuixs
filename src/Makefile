@@ -1,173 +1,95 @@
-# Makefile for Logex
-# Logex的编译与Mhuixs独立
+# Makefile for Mhuixs
+#
+# 内核骨架：数据结构库 + HOOK 注册系统
+# 已剥离：Logex 语言层、网络层、用户组/加密层
+#
+# 这是 2024.11 最初设计的最小还原：
+#   内存数据结构 + HOOK 统一引用 + 权限
 
-CC = gcc
-CFLAGS = -Wall -Wextra -g -O0 -std=c99 -DLOGEX_BUILD -I. -Ilib -Ishare
-LDFLAGS = -lm -ldl
+CC      = gcc
+CFLAGS  = -Wall -Wextra -g -O2 -std=c99 -I. -Ilib
+LDFLAGS = -lm -lpthread
 
-# 旧版 Logex（直接解释器）
-TARGET_OLD = logex
-OBJS_OLD = calculator.o evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o lib/bitmap.o lib/list.o
+TARGET = mhuixs
 
-# 新版 Logex REPL（多行编辑 + VM）
-TARGET_REPL = logex
-OBJS_REPL = logex.o interpreter.o evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o \
-            vm.o compiler.o bytecode.o builtin.o lib/bitmap.o lib/list.o lib/tblh.o
+OBJS = Mhuixs.o \
+       registry.o \
+       lib/env.o \
+       lib/getid.o \
+       lib/merr.o \
+       lib/logo.o \
+       lib/hook.o \
+       lib/bitmap.o \
+       lib/bitcpy.o \
+       lib/hash.o \
+       lib/bignum.o \
+       lib/list.o \
+       lib/tblh.o \
+       lib/kvalh.o
 
-# VM 工具
-TARGET_GLL = gll
+# lib/pkg.o 暂时挂起：
+#   pkg 是客户端/服务端之间的打包协议（htonl/ntohl 网络字节序），
+#   依赖 arpa/inet.h，在 Windows 上不可编译。
+#   网络层剥离期间无任何模块引用它，等网络层回归时再启用。
+#   （文件保留在 lib/pkg.c lib/pkg.h）
 
-# 默认目标：编译新版 Logex
-all: $(TARGET_REPL)
+all: $(TARGET)
 
-# 编译新版 REPL（多行编辑 + VM）
-$(TARGET_REPL): $(OBJS_REPL)
-	$(CC) $(CFLAGS) -rdynamic -o $(TARGET_REPL) $(OBJS_REPL) $(LDFLAGS)
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
+	@echo "Mhuixs 编译完成 -> $(TARGET)"
 
-# 编译旧版 Logex（兼容）
-$(TARGET_OLD): $(OBJS_OLD)
-	$(CC) $(CFLAGS) -rdynamic -o $(TARGET_OLD) $(OBJS_OLD) $(LDFLAGS)
+Mhuixs.o: Mhuixs.c lib/merr.h lib/env.h lib/getid.h lib/hook.h lib/mstring.h registry.h
+	$(CC) $(CFLAGS) -c Mhuixs.c
 
-# 编译 VM 工具
-vm_tools: $(TARGET_GLL)
+registry.o: registry.c registry.h lib/merr.h lib/env.h lib/mstring.h lib/hash.h lib/hook.h lib/bignum.h
+	$(CC) $(CFLAGS) -c registry.c
 
-$(TARGET_GLL): gll.o compiler.o bytecode.o lexer.o parser.o ast.o bignum.o context.o function.o package.o error.o builtin.o lib/bitmap.o lib/list.o lib/tblh.o
-	$(CC) $(CFLAGS) -o $(TARGET_GLL) $^ $(LDFLAGS)
+lib/env.o: lib/env.c lib/env.h lib/mstring.h
+	$(CC) $(CFLAGS) -c lib/env.c -o lib/env.o
 
-# 编译 calculator.c
-calculator.o: calculator.c evaluator.h context.h function.h package.h
-	$(CC) $(CFLAGS) -c calculator.c
+lib/getid.o: lib/getid.c lib/getid.h lib/bitmap.h lib/merr.h
+	$(CC) $(CFLAGS) -c lib/getid.c -o lib/getid.o
 
-# 编译 evaluator.c
-evaluator.o: evaluator.c evaluator.h lexer.h bignum.h context.h function.h package.h parser.h ast.h
-	$(CC) $(CFLAGS) -c evaluator.c
+lib/merr.o: lib/merr.c lib/merr.h
+	$(CC) $(CFLAGS) -c lib/merr.c -o lib/merr.o
 
-# 编译 lexer.c
-lexer.o: lexer.c lexer.h bignum.h error.h
-	$(CC) $(CFLAGS) -c lexer.c
+lib/logo.o: lib/logo.c lib/logo.h
+	$(CC) $(CFLAGS) -c lib/logo.c -o lib/logo.o
 
-# 编译 error.c
-error.o: error.c error.h
-	$(CC) $(CFLAGS) -c error.c
+lib/hook.o: lib/hook.c lib/hook.h lib/merr.h lib/getid.h lib/mstring.h lib/bignum.h registry.h
+	$(CC) $(CFLAGS) -c lib/hook.c -o lib/hook.o
 
-# 编译 bignum.c
-bignum.o: bignum.c bignum.h
-	$(CC) $(CFLAGS) -c bignum.c
-
-# 编译 context.c
-context.o: context.c context.h bignum.h
-	$(CC) $(CFLAGS) -c context.c
-
-# 编译 function.c
-function.o: function.c function.h bignum.h
-	$(CC) $(CFLAGS) -c function.c
-
-# 编译 package.c
-package.o: package.c package.h function.h
-	$(CC) $(CFLAGS) -c package.c
-
-# 编译 parser.c
-parser.o: parser.c parser.h ast.h lexer.h
-	$(CC) $(CFLAGS) -c parser.c
-
-# 编译 ast.c
-ast.o: ast.c ast.h evaluator.h context.h function.h package.h
-	$(CC) $(CFLAGS) -c ast.c
-
-# 编译 lib/bitmap.c
-lib/bitmap.o: lib/bitmap.c lib/bitmap.h
+lib/bitmap.o: lib/bitmap.c lib/bitmap.h lib/bitcpy.h lib/bignum.h
 	$(CC) $(CFLAGS) -c lib/bitmap.c -o lib/bitmap.o
 
-# 编译 lib/list.c
-lib/list.o: lib/list.c lib/list.h
+lib/bitcpy.o: lib/bitcpy.c lib/bitcpy.h
+	$(CC) $(CFLAGS) -c lib/bitcpy.c -o lib/bitcpy.o
+
+lib/hash.o: lib/hash.c lib/hash.h
+	$(CC) $(CFLAGS) -c lib/hash.c -o lib/hash.o
+
+lib/bignum.o: lib/bignum.c lib/bignum.h lib/list.h
+	$(CC) $(CFLAGS) -c lib/bignum.c -o lib/bignum.o
+
+lib/list.o: lib/list.c lib/list.h lib/bignum.h
 	$(CC) $(CFLAGS) -c lib/list.c -o lib/list.o
 
-# 编译 lib/tblh.c
-lib/tblh.o: lib/tblh.c lib/tblh.h
+lib/tblh.o: lib/tblh.c lib/tblh.h lib/bignum.h lib/mstring.h
 	$(CC) $(CFLAGS) -c lib/tblh.c -o lib/tblh.o
 
-# 编译 logex.c
-logex.o: logex.c interpreter.h compiler.h bytecode.h
-	$(CC) $(CFLAGS) -c logex.c
+lib/kvalh.o: lib/kvalh.c lib/kvalh.h lib/bignum.h lib/mstring.h lib/hash.h
+	$(CC) $(CFLAGS) -c lib/kvalh.c -o lib/kvalh.o
 
-# 编译 interpreter.c
-interpreter.o: interpreter.c interpreter.h vm.h compiler.h
-	$(CC) $(CFLAGS) -c interpreter.c
+lib/pkg.o: lib/pkg.c lib/pkg.h
+	$(CC) $(CFLAGS) -c lib/pkg.c -o lib/pkg.o
 
-# 编译 vm.c
-vm.o: vm.c vm.h bytecode.h builtin.h
-	$(CC) $(CFLAGS) -c vm.c
+run: $(TARGET)
+	./$(TARGET)
 
-# 编译 compiler.c
-compiler.o: compiler.c compiler.h bytecode.h parser.h
-	$(CC) $(CFLAGS) -c compiler.c
-
-# 编译 bytecode.c
-bytecode.o: bytecode.c bytecode.h
-	$(CC) $(CFLAGS) -c bytecode.c
-
-# 编译 builtin.c
-builtin.o: builtin.c builtin.h bignum.h
-	$(CC) $(CFLAGS) -c builtin.c
-
-# 编译 gll.c
-gll.o: gll.c compiler.h
-	$(CC) $(CFLAGS) -c gll.c
-
-# 运行新版 Logex
-run: $(TARGET_REPL)
-	./$(TARGET_REPL)
-
-# 运行旧版 Logex
-run_old: $(TARGET_OLD)
-	./$(TARGET_OLD)
-
-# 编译测试程序（不包含calculator.o以避免main函数冲突）
-TEST_OBJS = evaluator.o lexer.o bignum.o context.o function.o package.o parser.o ast.o error.o lib/bitmap.o lib/list.o
-test_control_flow: test_control_flow.o $(TEST_OBJS)
-	$(CC) $(CFLAGS) -rdynamic -o test_control_flow test_control_flow.o $(TEST_OBJS) $(LDFLAGS)
-
-test_control_flow.o: test_control_flow.c evaluator.h context.h function.h package.h
-	$(CC) $(CFLAGS) -c test_control_flow.c
-
-# 运行测试
-test: test_control_flow
-	./test_control_flow
-
-# 编译调试程序
-debug_control_flow: debug_control_flow.o $(TEST_OBJS)
-	$(CC) $(CFLAGS) -rdynamic -o debug_control_flow debug_control_flow.o $(TEST_OBJS) $(LDFLAGS)
-
-debug_control_flow.o: debug_control_flow.c evaluator.h context.h function.h package.h
-	$(CC) $(CFLAGS) -c debug_control_flow.c
-
-# 运行调试
-debug: debug_control_flow
-	./debug_control_flow
-
-# 编译do-while调试程序
-debug_do_while: debug_do_while.o $(TEST_OBJS)
-	$(CC) $(CFLAGS) -rdynamic -o debug_do_while debug_do_while.o $(TEST_OBJS) $(LDFLAGS)
-
-debug_do_while.o: debug_do_while.c evaluator.h context.h function.h package.h lexer.h
-	$(CC) $(CFLAGS) -c debug_do_while.c
-
-# 运行do-while调试
-debug_do: debug_do_while
-	./debug_do_while
-
-# 清理编译生成的文件
 clean:
-	rm -f *.o lib/*.o $(TARGET_OLD) $(TARGET_REPL) $(TARGET_GLL) test_control_flow debug_control_flow debug_do_while
+	rm -f $(OBJS) $(TARGET)
 
-# 重新编译
 rebuild: clean all
 
-# 安装到系统（可选）
-install: $(TARGET_REPL) $(TARGET_GLL)
-	cp $(TARGET_REPL) /usr/local/bin/logex
-	cp $(TARGET_GLL) /usr/local/bin/gll
-	@echo "✓ 安装完成: logex (统一解释器) 和 gll (编译器)"
-	@echo "  logex_vm 功能已合并到 logex 中"
-
-.PHONY: all run run_old clean rebuild install test debug debug_do vm_tools
+.PHONY: all run clean rebuild
