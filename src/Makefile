@@ -38,7 +38,7 @@ all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
-	@echo "Mhuixs 编译完成 -> $(TARGET)"
+	@echo "Mhuixs 编译完成 -> $(TARGET)  [目标平台: $(shell $(CC) -dumpmachine)]"
 
 Mhuixs.o: Mhuixs.c lib/merr.h lib/env.h lib/getid.h lib/hook.h lib/mstring.h registry.h execute.h
 	$(CC) $(CFLAGS) -c Mhuixs.c

@@ -175,7 +175,36 @@ mhuixs> :quit
 
 ---
 
-## 5. 目录结构
+## 5. 平台支持
+
+**已验证的平台：Windows（MSYS2 / MinGW-w64，gcc）。Linux 上从未验证过。**
+
+本文档中所有"实测""验证"的数字，都来自 Windows + MSYS2 MinGW-w64
+（`uname` → `MINGW64_NT`，`gcc -dumpmachine` → `x86_64-w64-mingw32`）。
+开发机上跑不了 Linux（WSL 被安全策略禁用，也没有 docker），
+所以没有 Linux 的实测数据。
+
+代码的跨平台情况分三类：
+
+| 类别 | 文件 | 说明 |
+|---|---|---|
+| 已写平台分支 | `registry.c`、`lib/env.c`、`lib/env.h`、`Mhuixs.c` | 互斥锁、路径分隔符、取可执行文件路径都有 `_WIN32` 分支 |
+| 依赖 POSIX 兼容层 | `lib/getid.c` | 无条件 `#include <pthread.h>`。Linux 原生可用；MSYS2 下由 mingw 提供；但**用 MSVC 或原生 MinGW 会编译失败** |
+| 未纳入构建 | `lib/pkg.c/h` | 依赖 `arpa/inet.h`（Linux 专有）。网络层回归时再处理 |
+
+要注意的细节：MinGW 会定义 `_WIN32`，所以**在 Windows 上跑测到的是 `_WIN32` 分支**；
+`#else` 里的 Linux 分支（`readlink("/proc/self/exe")`、`pthread_mutex_*`）
+从未被执行过。换个平台等于换了一半代码路径，需要重新验证。
+
+在 Linux 上验证只需要：
+
+```bash
+cd src && make && make test
+```
+
+---
+
+## 6. 目录结构
 
 ```
 Mhuixs/
@@ -211,7 +240,7 @@ Mhuixs/
 
 ---
 
-## 6. 内存与所有权模型
+## 7. 内存与所有权模型
 
 容器（LIST / TABLE / KVALOT）**拥有**它们存放的元素。规则在 `src/lib/list.h` 里写死了：
 
@@ -228,7 +257,7 @@ Mhuixs/
 
 ---
 
-## 7. 已知限制
+## 8. 已知限制
 
 - **组权限当前对所有人生效**：用户组模块剥离后，`get_primary_gid_by_uid()` 恒返回 0，`HOOK_login()` 也把 `hook->group` 设为 0，于是任何 caller 都被判定为"同组"。在用户组模块回归前，**不要依赖组权限做隔离**。详见 `src/lib/hook.c`。
 - **`mstr_cstr()` 返回的指针不带 `\0`**：不能直接配 `printf("%s")` / `strcmp` 用，会读到相邻未初始化内存（症状是字符串后面多出乱码，且时有时无）。要用 `mstr_to_cstr()`（需 free）或 `%.*s` + `mstrlen()`。详见 `src/lib/mstring.h`。
@@ -242,7 +271,7 @@ Mhuixs/
 
 ---
 
-## 8. 设计边界（重要）
+## 9. 设计边界（重要）
 
 Mhuixs 不实现自己的编程语言。操作以命令形式提供，语言层面的循环、判断、函数交给调用方。
 这样做的理由是：命令可白名单、可审计、非图灵完备；而造一门语言意味着与 Lua / Python 竞争，
@@ -250,7 +279,7 @@ Mhuixs 不实现自己的编程语言。操作以命令形式提供，语言层�
 
 ---
 
-## 9. 里程碑
+## 10. 里程碑
 
 - **2024.10** 项目启动，最初设想：内存数据结构 + HOOK 统一引用
 - **2024.12** 初版服务端骨架（run_queue / ret_queue + 命令格式）
@@ -263,7 +292,7 @@ Mhuixs 不实现自己的编程语言。操作以命令形式提供，语言层�
 
 ---
 
-## 10. 参与与交流
+## 11. 参与与交流
 
 - **Email**: Mhuxis@outlook.com | Mhuxis.db@gmail.com
 - **GitHub**: [hujiyo/Mhuixs](https://github.com/hujiyo/Mhuixs)
