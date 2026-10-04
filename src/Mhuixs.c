@@ -35,6 +35,7 @@ Mhuixs 内核入口
 #include "hook.h"      /* HOOK 模块 */
 #include "mstring.h"   /* 字符串模块 */
 #include "registry.h"  /* 注册表模块 */
+#include "execute.h"   /* 命令执行层 */
 
 /*
 存储在 Mhuixs 数据库的所有数据结构都需要使用钩子进行引用：
@@ -46,6 +47,71 @@ Mhuixs 内核入口
 */
 
 #define SELFCHECK_HOOK_NAME "mhuixs_selfcheck"
+
+/* ------------------------------------------------------------------ */
+/* 命令层演示：一行命令，一个动作，不需要语言                            */
+/* ------------------------------------------------------------------ */
+static void run_command(const char *line)
+{
+    char out[4096];
+    int rc = mhx_execute(line, out, sizeof(out));
+
+    printf("  mhuixs> %s\n", line);
+
+    if (out[0] == '\0') return;
+
+    /* 多行输出逐行缩进，失败行加 !! 标记 */
+    const char *prefix = (rc == 0) ? "         " : "      !! ";
+    char *p = out;
+    while (*p) {
+        char *nl = strchr(p, '\n');
+        if (nl) *nl = '\0';
+        printf("%s%s\n", prefix, p);
+        if (!nl) break;
+        p = nl + 1;
+    }
+}
+
+static void demo_commands(void)
+{
+    /* 保证演示可重复：先摘除上次运行留下的同名钩子 */
+    run_command("drop fruits");
+    run_command("drop flags");
+
+    /* LIST：一个普通列表 */
+    run_command("create list fruits");
+    run_command("rpush fruits apple");
+    run_command("rpush fruits 100");
+    run_command("lpush fruits \"a quoted string\"");
+    run_command("llen fruits");
+    run_command("lget fruits 0");
+    run_command("lget fruits 1");
+    run_command("lget fruits 2");
+    run_command("lget fruits 9");      /* 越界，应报错 */
+    run_command("rpop fruits");
+
+    /* BITMAP：一个位图 */
+    run_command("create bitmap flags");
+    run_command("bset flags 3 1");
+    run_command("bset flags 10 1");
+    run_command("bset flags 63 1");
+    run_command("bcount flags 0 63");
+    run_command("bcount flags 0 64");   /* 越界，应给出明确报错而不是一个巨大数字 */
+    run_command("bget flags 3");
+    run_command("bget flags 4");
+    run_command("bsize flags");
+
+    /* 类型检查与重名保护 */
+    run_command("type fruits");
+    run_command("create list fruits");     /* 重名，应被拒绝 */
+    run_command("llen fruits");            /* 且原数据必须还在 */
+
+    /* 这两条是故意留的：HOOK 的承诺还没兑现到这里 */
+    run_command("create kvalot cache");
+    run_command("create table users");
+
+    run_command("hooks");
+}
 
 /* ------------------------------------------------------------------ */
 /* 自检：把"数据结构 -> HOOK -> 注册表 -> 查找"这条主链路跑一遍           */
@@ -111,6 +177,9 @@ static int self_check(void)
                is_entitled(found, 0, HOOK_READ),
                is_entitled(found, 12345, HOOK_READ));
     }
+
+    /* 自检产物不留在数据目录里 */
+    reg_unregister_hook(SELFCHECK_HOOK_NAME);
 
     return failures;
 }
@@ -195,6 +264,10 @@ int main(int argc, char *argv[])
     /* 主链路自检 */
     printf("\n---- 主链路自检 ----\n");
     int failures = self_check();
+
+    /* 命令层演示 */
+    printf("\n---- 命令层演示 ----\n");
+    demo_commands();
 
     /* 保存 HOOK 到磁盘 */
     {

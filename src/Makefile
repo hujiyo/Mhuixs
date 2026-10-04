@@ -13,6 +13,7 @@ LDFLAGS = -lm -lpthread
 TARGET = mhuixs
 
 OBJS = Mhuixs.o \
+       execute.o \
        registry.o \
        lib/env.o \
        lib/getid.o \
@@ -39,8 +40,11 @@ $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
 	@echo "Mhuixs 编译完成 -> $(TARGET)"
 
-Mhuixs.o: Mhuixs.c lib/merr.h lib/env.h lib/getid.h lib/hook.h lib/mstring.h registry.h
+Mhuixs.o: Mhuixs.c lib/merr.h lib/env.h lib/getid.h lib/hook.h lib/mstring.h registry.h execute.h
 	$(CC) $(CFLAGS) -c Mhuixs.c
+
+execute.o: execute.c execute.h registry.h lib/hook.h lib/bignum.h lib/list.h lib/bitmap.h
+	$(CC) $(CFLAGS) -c execute.c
 
 registry.o: registry.c registry.h lib/merr.h lib/env.h lib/mstring.h lib/hash.h lib/hook.h lib/bignum.h
 	$(CC) $(CFLAGS) -c registry.c
