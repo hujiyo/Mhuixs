@@ -194,6 +194,9 @@ Mhuixs/
 要验证回收是否正常，跑 `test/test_list_memory.c`（见文件头部的编译命令）。
 实测 80 万次分配，工作集变化 +0.1 MB 以内。
 
+**为什么不用引用计数**、HOOK 与 BHS 的分工、以及将来若要支持"引用共享"该怎么走，
+见 [`doc/reference-model.md`](doc/reference-model.md)。
+
 ---
 
 ## 7. 已知限制
