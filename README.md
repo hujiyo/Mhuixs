@@ -41,19 +41,85 @@ HOOK 同时承担三件事：**防止数据失联**（有名可查）、**权限
 | HOOK 与注册表 | `lib/hook.c`、`registry.c` |
 | 基础设施 | `lib/env.c`、`lib/getid.c`、`lib/merr.c`、`lib/hash.c`、`lib/mstring.h`、`lib/bitcpy.c` |
 
-当前内核可编译、可运行，并通过 5 项主链路自检，支持 HOOK 落盘与恢复。
+当前内核可编译、可运行，并通过 5 项主链路自检。**六种数据结构全部可以被 HOOK 引用**：
+
+| 数据结构 | BHS 原生支持 | 能挂到 HOOK |
+|---|---|---|
+| NUMBER / STRING | ✅ | ✅ |
+| LIST | ✅ | ✅ |
+| BITMAP | ✅ | ✅ |
+| TABLE | ✅ | ✅ |
+| KVALOT | ✅ | ✅ |
+
+支持 HOOK 落盘与恢复（含 TABLE / KVALOT 的完整内容）。
 
 ---
 
-## 3. 编译与运行
+## 3. 命令层
+
+Mhuixs **不做自己的编程语言**。操作方式是**一行一条命令**，空格分隔。
+
+这是刻意的边界：没有变量、没有 `if`/`while`/`for`、没有函数定义、没有表达式求值。
+需要循环和判断的调用方，用 C / Python / 或 AI 现场生成的代码来写。
+好处是命令可白名单、可审计、天然不是图灵完备——对 AI 调用方尤其重要。
+
+```
+create <list|bitmap|kvalot> <name>      创建数据结构并挂钩
+create table <name> <field:type> [...]  创建表，如 id:int name:str
+drop <name>                             摘除钩子
+hooks                                   列出所有钩子
+type <name>                             查看钩子指向的类型
+
+rpush/lpush/lpop/rpop <name> [<v>...]   LIST 操作
+llen/lget/lset <name> ...               LIST 操作
+
+bset/bget/bcount/bsize <name> ...       BITMAP 操作
+
+kset <name> <key> <value>               KVALOT 写入（键已存在则覆盖）
+kget/kdel/kexists/klen <name> ...       KVALOT 操作
+
+tadd <name> [<v>...]                    TABLE 追加一行
+tget/tset <name> <row> <col> [...]      TABLE 读写单元格，col 可用列名
+tdel <name> <row>                       TABLE 删除一行
+trows/tfields <name>                    TABLE 行数 / 字段列表
+```
+
+值语法：`123` → NUMBER，`"hello"` → STRING（引号强制），`hello` → STRING（自动回退）。
+KVALOT 的键一律按字符串处理。
+
+运行效果：
+
+```
+  mhuixs> create table users id:int name:str age:int
+         OK created table 'users' with 3 field(s)
+  mhuixs> tadd users 1 alice 25
+         OK tadd users, rows=1
+  mhuixs> tget users 0 name
+         OK "alice"
+  mhuixs> kset cache user:1 bob
+         OK kset cache, keys=1
+  mhuixs> kget cache user:1
+         OK "bob"
+  mhuixs> hooks
+         OK 4 hook(s):
+         fruits           list
+         flags            bitmap
+         cache            kvalot
+         users            table
+```
+
+---
+
+## 4. 编译与运行
 
 ```bash
 cd src
-make
-./mhuixs
+make          # 编译
+./mhuixs      # 运行：模块初始化 + 主链路自检 + 命令层演示
+make test     # 回归测试：TABLE / KVALOT 落盘-恢复往返
 ```
 
-预期输出：
+预期输出（节选）：
 
 ```
 ==== Mhuixs 内核启动 ====
@@ -69,7 +135,10 @@ make
   [4] 重名保护         重复注册被拒绝 (ret=1)
   [5] 权限检查         root 可读=1，其他用户可读=1
 
-  已保存 1 个 HOOK 到磁盘
+---- 命令层演示 ----
+  mhuixs> create list fruits
+         OK created list 'fruits'
+  ...
 
 ==== 自检结果：全部通过 ====
 ```
@@ -78,13 +147,14 @@ make
 
 ---
 
-## 4. 目录结构
+## 5. 目录结构
 
 ```
 Mhuixs/
 ├── src/
-│   ├── Mhuixs.c          # 内核入口：模块初始化 + 主链路自检
-│   ├── registry.c/h      # 注册表：统一管理 HOOK 与权限
+│   ├── Mhuixs.c          # 内核入口：模块初始化 + 自检 + 命令层演示
+│   ├── execute.c/h       # 命令执行层：一行一条命令
+│   ├── registry.c/h      # 注册表：统一管理 HOOK、权限、落盘
 │   ├── Makefile
 │   ├── Mhuixs.config     # 运行配置
 │   └── lib/              # 基础库
@@ -92,7 +162,7 @@ Mhuixs/
 │       ├── tblh.c/h      # TABLE 表
 │       ├── bitmap.c/h    # BITMAP 位图
 │       ├── kvalh.c/h     # KVALOT 键值对
-│       ├── bignum.c/h    # BHS 统一类型 + 任意精度数值
+│       ├── bignum.c/h    # BHS 统一类型 + 任意精度数值（含各类型的桥接）
 │       ├── hook.c/h      # HOOK
 │       ├── hash.c/h      # Robin Hood 哈希表
 │       ├── mstring.h     # 字符串
@@ -102,21 +172,30 @@ Mhuixs/
 │       ├── bitcpy.c/h    # 位级拷贝
 │       ├── pkg.c/h       # MUIX 打包协议（暂挂起，待网络层回归）
 │       └── logo.c/h      # 启动标识
-├── doc/                  # 设计文档（部分内容对应已剥离的模块，待整理）
-└── test/                 # 测试代码（同上）
+├── doc/                  # 哈希表相关的设计文档
+└── test/                 # test_persist_roundtrip.c（回归测试）
 ```
 
 ---
 
-## 5. 已知限制
+## 6. 已知限制
 
 - **组权限当前对所有人生效**：用户组模块剥离后，`get_primary_gid_by_uid()` 恒返回 0，`HOOK_login()` 也把 `hook->group` 设为 0，于是任何 caller 都被判定为"同组"。在用户组模块回归前，**不要依赖组权限做隔离**。详见 `src/lib/hook.c`。
+- **LIST 的元素没有析构器**：`list_clear` 只释放块，不释放块里存的 `Obj`。`drop` 一个 LIST 时其元素会泄漏。`bignum_copy` 对 LIST 也是浅拷贝（复制指针而非对象）——这两点需要一起解决（给 LIST 加元素析构器 + 深拷贝）。
 - `lib/pkg.c` 依赖网络字节序（`arpa/inet.h`），暂未纳入构建。
-- `doc/` 与 `test/` 中部分内容对应已剥离的模块，需要后续清理。
+- 注册表落盘不是原子操作：直接写 `registry.dat`，中途失败会留下截断的文件。建议改为写临时文件再重命名。
 
 ---
 
-## 6. 参与与交流
+## 7. 设计边界（重要）
+
+Mhuixs 不实现自己的编程语言。操作以命令形式提供，语言层面的循环、判断、函数交给调用方。
+这样做的理由是：命令可白名单、可审计、非图灵完备；而造一门语言意味着与 Lua / Python 竞争，
+投入巨大且价值有限。详见 `src/execute.c` 顶部注释。
+
+---
+
+## 8. 参与与交流
 
 - **Email**: Mhuxis@outlook.com | Mhuxis.db@gmail.com
 - **GitHub**: [hujiyo/Mhuixs](https://github.com/hujiyo/Mhuixs)

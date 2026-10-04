@@ -6,6 +6,8 @@
 #include <stdint.h>  /* for SIZE_MAX */
 
 #include "lib/list.h"
+#include "lib/tblh.h"    /* TABLE：桥接进 BHS */
+#include "lib/kvalh.h"   /* KVALOT：桥接进 BHS */
 
 /* 内部辅助函数声明 */
 static int bignum_add_internal(const BHS *a, const BHS *b, BHS *result);
@@ -42,6 +44,16 @@ void bignum_destroy(BHS *num) {
             free_list(num->data.list);
             num->data.list = NULL;
         }
+    } else if (num->type == BIGNUM_TYPE_TABLE) {
+        if (num->data.table != NULL) {
+            free_table(num->data.table);
+            num->data.table = NULL;
+        }
+    } else if (num->type == BIGNUM_TYPE_KVALOT) {
+        if (num->data.kvalot != NULL) {
+            kvalot_destroy(num->data.kvalot);
+            num->data.kvalot = NULL;
+        }
     } else {
         /* 释放其他类型的数据（数字、字符串、位图） */
         if (num->is_large && num->data.large_data != NULL) {
@@ -75,6 +87,16 @@ void bignum_free(BHS *num) {
         if (num->data.list != NULL) {
             free_list(num->data.list);
             num->data.list = NULL;
+        }
+    } else if (num->type == BIGNUM_TYPE_TABLE) {
+        if (num->data.table != NULL) {
+            free_table(num->data.table);
+            num->data.table = NULL;
+        }
+    } else if (num->type == BIGNUM_TYPE_KVALOT) {
+        if (num->data.kvalot != NULL) {
+            kvalot_destroy(num->data.kvalot);
+            num->data.kvalot = NULL;
         }
     } else {
         /* 其他类型：释放数据内存 */
@@ -176,6 +198,32 @@ int bignum_copy(const BHS *src, BHS *dst) {
             dst->data.list = NULL;
         }
         dst->is_large = 0;  /* 列表类型不使用large_data */
+        dst->capacity = 0;
+    } else if (src->type == BIGNUM_TYPE_TABLE) {
+        /* 表类型：复制整张表（含每个单元格的值） */
+        if (src->data.table != NULL) {
+            TABLE *new_table = table_copy(src->data.table);
+            if (new_table == NULL) {
+                return BIGNUM_ERROR;
+            }
+            dst->data.table = new_table;
+        } else {
+            dst->data.table = NULL;
+        }
+        dst->is_large = 0;
+        dst->capacity = 0;
+    } else if (src->type == BIGNUM_TYPE_KVALOT) {
+        /* 键值对类型：复制整个 KVALOT（含键与值） */
+        if (src->data.kvalot != NULL) {
+            KVALOT *new_kv = kvalot_copy(src->data.kvalot);
+            if (new_kv == NULL) {
+                return BIGNUM_ERROR;
+            }
+            dst->data.kvalot = new_kv;
+        } else {
+            dst->data.kvalot = NULL;
+        }
+        dst->is_large = 0;
         dst->capacity = 0;
     } else {
         /* 其他类型：复制数据内容 */
@@ -534,7 +582,53 @@ int bignum_to_string(const BHS *num, char *str, size_t max_len, int precision) {
         if (written >= (int)max_len) return BIGNUM_ERROR;
         return BIGNUM_SUCCESS;
     }
-    
+
+    /* 如果是表类型，输出 <table 名字 rows=N fields=M> 摘要 */
+    if (num->type == BIGNUM_TYPE_TABLE) {
+        TABLE *t = num->data.table;
+        if (t == NULL) {
+            if (max_len < 8) return BIGNUM_ERROR;
+            strcpy(str, "<table>");
+            return BIGNUM_SUCCESS;
+        }
+        char namebuf[64];
+        namebuf[0] = '\0';
+        if (t->name != NULL) {
+            size_t nlen = mstrlen(t->name);
+            if (nlen > sizeof(namebuf) - 1) nlen = sizeof(namebuf) - 1;
+            memcpy(namebuf, mstr_cstr(t->name), nlen);
+            namebuf[nlen] = '\0';
+        }
+        int written = snprintf(str, max_len, "<table %s rows=%zu fields=%zu>",
+                               namebuf, t->line_num, t->field_num);
+        if (written < 0 || written >= (int)max_len) return BIGNUM_ERROR;
+        return BIGNUM_SUCCESS;
+    }
+
+    /* 如果是键值对类型，输出 <kvalot 名字 keys=N> 摘要 */
+    if (num->type == BIGNUM_TYPE_KVALOT) {
+        KVALOT *kv = num->data.kvalot;
+        if (kv == NULL) {
+            if (max_len < 9) return BIGNUM_ERROR;
+            strcpy(str, "<kvalot>");
+            return BIGNUM_SUCCESS;
+        }
+        char namebuf[64];
+        namebuf[0] = '\0';
+        if (kv->name != NULL && kv->name->type == BIGNUM_TYPE_STRING) {
+            size_t nlen = kv->name->length;
+            const char *ndata = kv->name->is_large ? kv->name->data.large_data
+                                                   : kv->name->data.small_data;
+            if (nlen > sizeof(namebuf) - 1) nlen = sizeof(namebuf) - 1;
+            memcpy(namebuf, ndata, nlen);
+            namebuf[nlen] = '\0';
+        }
+        int written = snprintf(str, max_len, "<kvalot %s keys=%u>",
+                               namebuf, kv->num_keys);
+        if (written < 0 || written >= (int)max_len) return BIGNUM_ERROR;
+        return BIGNUM_SUCCESS;
+    }
+
     if (precision < 0) precision = BIGNUM_DEFAULT_PRECISION;
     
     int pos = 0;
@@ -1575,6 +1669,69 @@ BHS* bignum_from_list(struct LIST *list) {
 struct LIST* bignum_get_list(const BHS *num) {
     if (num == NULL || num->type != BIGNUM_TYPE_LIST) return NULL;
     return num->data.list;
+}
+
+/* ========================================
+ * TABLE / KVALOT 桥接
+ *
+ * 这两个类型原先只有类型标记（BIGNUM_TYPE_TABLE / BIGNUM_TYPE_KVALOT），
+ * 没有实现，所以"任何数据都能被 HOOK 引用"这句承诺只兑现了 4/6。
+ * 下面把它补齐。
+ *
+ * 语义与 bignum_from_list 保持一致：**复制**。
+ * 调用方保留传入对象的所有权，需要自行 free_table / kvalot_destroy。
+ * ======================================== */
+
+BHS* bignum_from_table(const TABLE *table) {
+    if (table == NULL) return NULL;
+
+    BHS *num = bignum_create();
+    if (num == NULL) return NULL;
+
+    TABLE *copy = table_copy(table);
+    if (copy == NULL) {
+        bignum_destroy(num);
+        return NULL;
+    }
+
+    num->type = BIGNUM_TYPE_TABLE;
+    num->data.table = copy;
+    num->is_large = 0;
+    num->capacity = 0;
+    num->length = get_record_count(copy);
+
+    return num;
+}
+
+TABLE* bignum_get_table(const BHS *num) {
+    if (num == NULL || num->type != BIGNUM_TYPE_TABLE) return NULL;
+    return num->data.table;
+}
+
+BHS* bignum_from_kvalot(const KVALOT *kv) {
+    if (kv == NULL) return NULL;
+
+    BHS *num = bignum_create();
+    if (num == NULL) return NULL;
+
+    KVALOT *copy = kvalot_copy(kv);
+    if (copy == NULL) {
+        bignum_destroy(num);
+        return NULL;
+    }
+
+    num->type = BIGNUM_TYPE_KVALOT;
+    num->data.kvalot = copy;
+    num->is_large = 0;
+    num->capacity = 0;
+    num->length = kvalot_size(copy);
+
+    return num;
+}
+
+KVALOT* bignum_get_kvalot(const BHS *num) {
+    if (num == NULL || num->type != BIGNUM_TYPE_KVALOT) return NULL;
+    return num->data.kvalot;
 }
 
 double bignum_to_double(const BHS *num) {

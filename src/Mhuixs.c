@@ -77,6 +77,8 @@ static void demo_commands(void)
     /* 保证演示可重复：先摘除上次运行留下的同名钩子 */
     run_command("drop fruits");
     run_command("drop flags");
+    run_command("drop cache");
+    run_command("drop users");
 
     /* LIST：一个普通列表 */
     run_command("create list fruits");
@@ -106,9 +108,37 @@ static void demo_commands(void)
     run_command("create list fruits");     /* 重名，应被拒绝 */
     run_command("llen fruits");            /* 且原数据必须还在 */
 
-    /* 这两条是故意留的：HOOK 的承诺还没兑现到这里 */
+    /* KVALOT：键值对。注意键一律按字符串处理 */
     run_command("create kvalot cache");
-    run_command("create table users");
+    run_command("kset cache user:1 alice");
+    run_command("kset cache user:2 200");
+    run_command("kset cache user:1 bob");      /* 同键覆盖 */
+    run_command("klen cache");
+    run_command("kget cache user:1");
+    run_command("kget cache user:2");
+    run_command("kexists cache user:3");
+    run_command("kdel cache user:2");
+    run_command("klen cache");
+
+    /* TABLE：关系表，字段用 <名字>:<类型> 声明 */
+    run_command("create table users id:int name:str age:int");
+    run_command("tfields users");
+    run_command("tadd users 1 alice 25");
+    run_command("tadd users 2 bob 30");
+    run_command("tadd users 3 carol");         /* 少给一列，age 为空 */
+    run_command("trows users");
+    run_command("tget users 0 id");
+    run_command("tget users 1 name");
+    run_command("tget users 2 age");           /* 空单元格 */
+    run_command("tset users 0 age 26");        /* 覆盖已有值 */
+    run_command("tget users 0 age");
+    run_command("tdel users 1");               /* 删中间行 */
+    run_command("trows users");
+    run_command("tget users 1 name");          /* 删行后第 1 行变成 carol */
+
+    /* 复合对象同样能被 hook 引用 —— 这就是最初那句承诺 */
+    run_command("type cache");
+    run_command("type users");
 
     run_command("hooks");
 }

@@ -25,6 +25,9 @@ build_server/
 
 logs/
 
+# 日志模块（logger_init）产生的日志文件
+*.log.inf
+
 *.o
 
 *.a

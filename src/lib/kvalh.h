@@ -44,7 +44,7 @@ typedef struct {
 } KVPAIR;
 
 /* KVALOT 结构 */
-typedef struct {
+typedef struct KVALOT {
     HASH_BUCKET* hash_table;  // 哈希桶表
     uint32_t num_buckets;     // 哈希桶数量
     

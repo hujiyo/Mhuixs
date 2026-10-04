@@ -398,6 +398,13 @@ void kvalot_clear(KVALOT* kv) {
         for (uint32_t i = 0; i < kv->num_keys; i++) {
             if (kv->keypool[i].key) {
                 mstr_free(kv->keypool[i].key);
+                kv->keypool[i].key = NULL;
+            }
+            /* 值同样归 KVALOT 所有。原来只放键不放值，
+             * 导致 clear 泄漏所有值（而 kvalot_destroy 是放值的，两者不一致） */
+            if (kv->keypool[i].value) {
+                bignum_destroy(kv->keypool[i].value);
+                kv->keypool[i].value = NULL;
             }
         }
         free(kv->keypool);
@@ -512,10 +519,13 @@ int kvalot_remove(KVALOT* kv, Obj key) {
     
     if (key_idx == UINT32_MAX) return merr; // 未找到
     
-    // 释放键
+    // 释放键与值（值同样归 KVALOT 所有，原来只放键不放值会泄漏）
     mstr_free(kv->keypool[key_idx].key);
     kv->keypool[key_idx].key = NULL;
-    kv->keypool[key_idx].value = NULL;
+    if (kv->keypool[key_idx].value != NULL) {
+        bignum_destroy(kv->keypool[key_idx].value);
+        kv->keypool[key_idx].value = NULL;
+    }
     
     // 从桶中移除（将最后一个元素移到当前位置）
     bucket->key_indices[bucket_pos] = bucket->key_indices[bucket->num_keys - 1];

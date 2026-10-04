@@ -26,6 +26,8 @@
 
 /* 前向声明 */
 typedef struct LIST LIST;
+typedef struct TABLE TABLE;
+typedef struct KVALOT KVALOT;
 
 /* BHS 结构体定义 - 固定64字节 */
 typedef struct {
@@ -37,7 +39,8 @@ typedef struct {
         char *large_data;                     /* 大数据动态分配指针（8字节） */
         /* 兼容 Mhuixs 类型的字段 */
         LIST *list;                           /* LIST类型指针 */
-        /* TABLE *table; */
+        TABLE *table;                         /* TABLE类型指针 */
+        KVALOT *kvalot;                       /* KVALOT类型指针 */
         /* HOOK *hook; */
     } data;                                   /* 32字节（联合体取最大） */    
     size_t capacity;                          /* 分配的容量（4字节） */    
@@ -364,6 +367,46 @@ BHS* bignum_from_list(struct LIST *list);
  * @return LIST 指针，失败返回 NULL
  */
 struct LIST* bignum_get_list(const BHS *num);
+
+/* TABLE 类型相关函数 */
+/**
+ * 从现有 TABLE 创建表类型 BHS
+ *
+ * 语义与 bignum_from_list 一致：**复制**，调用方仍拥有传入的 TABLE，
+ * 需要自行 free_table。失败返回 NULL。
+ *
+ * @param table 现有的 TABLE 指针
+ * @return 新的表类型 BHS 指针
+ */
+BHS* bignum_from_table(const TABLE *table);
+
+/**
+ * 获取表类型 BHS 的底层 TABLE 指针（借用，不要释放）
+ *
+ * @param num 表类型的 BHS
+ * @return TABLE 指针，类型不符或失败返回 NULL
+ */
+TABLE* bignum_get_table(const BHS *num);
+
+/* KVALOT 类型相关函数 */
+/**
+ * 从现有 KVALOT 创建键值对类型 BHS
+ *
+ * 语义与 bignum_from_list 一致：**复制**，调用方仍拥有传入的 KVALOT，
+ * 需要自行 kvalot_destroy。失败返回 NULL。
+ *
+ * @param kv 现有的 KVALOT 指针
+ * @return 新的键值对类型 BHS 指针
+ */
+BHS* bignum_from_kvalot(const KVALOT *kv);
+
+/**
+ * 获取键值对类型 BHS 的底层 KVALOT 指针（借用，不要释放）
+ *
+ * @param num 键值对类型的 BHS
+ * @return KVALOT 指针，类型不符或失败返回 NULL
+ */
+KVALOT* bignum_get_kvalot(const BHS *num);
 
 /**
  * 将 BHS 转换为 double（用于数值计算）

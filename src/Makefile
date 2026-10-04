@@ -91,9 +91,20 @@ lib/pkg.o: lib/pkg.c lib/pkg.h
 run: $(TARGET)
 	./$(TARGET)
 
+# 回归测试：验证 TABLE / KVALOT 挂到 HOOK 之后能正确落盘并恢复
+# 复用已编译的对象（去掉 Mhuixs.o，因为测试自带 main）
+TEST_OBJS = $(filter-out Mhuixs.o,$(OBJS))
+ROUNDTRIP_SRC = ../test/test_persist_roundtrip.c
+
+test: run_roundtrip
+	./run_roundtrip
+
+run_roundtrip: $(TEST_OBJS) $(ROUNDTRIP_SRC)
+	$(CC) $(CFLAGS) -o run_roundtrip $(ROUNDTRIP_SRC) $(TEST_OBJS) $(LDFLAGS)
+
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(TARGET) run_roundtrip rt_test.dat
 
 rebuild: clean all
 
-.PHONY: all run clean rebuild
+.PHONY: all run test clean rebuild

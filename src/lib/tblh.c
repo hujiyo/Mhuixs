@@ -53,7 +53,10 @@ TABLE* create_table(int* types, mstring* field_names, size_t field_num, mstring 
         table->field[i].column_index = i;
         
         //分配内存
-        void* ptr = malloc(sizeof(Obj) * INCREASE_LINES_NUM);
+        /* 必须清零：单元格要么是有效 Obj 要么是 NULL。
+         * 用 malloc 会让未使用的行留下野指针，
+         * 而 free_table / table_copy 会遍历整个 capacity 区域。 */
+        void* ptr = calloc(INCREASE_LINES_NUM, sizeof(Obj));
         if(ptr == NULL){
             //如果分配失败，释放之前已分配的内存
             for(size_t j=0; j<i; j++){
@@ -76,6 +79,97 @@ TABLE* create_table(int* types, mstring* field_names, size_t field_num, mstring 
         table->memory_index[i] = i;
     }
     return table;
+}
+
+
+/*
+深拷贝一张表：表名、字段（名字/类型/数据区）、索引数组，以及每个单元格的值。
+
+注意：单元格值是深拷贝的（每个非 NULL 的 Obj 都会复制成新的）。
+但若单元格里装的是 LIST，BHS 层的 list_copy 只复制块、不复制元素，
+嵌套 LIST 仍会共享元素指针 —— 这是 bignum_copy 的既有行为，非本函数引入。
+
+已知限制：若表内出现自引用（表套自己），深拷贝会无限递归。
+当前没有产生这种结构的路径，先记录在此。
+
+失败返回 NULL，且不泄漏已分配的部分。
+*/
+TABLE* table_copy(const TABLE* other){
+    if(other == NULL) return NULL;
+
+    TABLE* table = (TABLE*)malloc(sizeof(TABLE));
+    if(table == NULL) return NULL;
+
+    /* 全部置空，失败时统一走 free_table 清理，不会碰到野指针 */
+    table->name = NULL;
+    table->field = NULL;
+    table->field_num = 0;
+    table->line_num = 0;
+    table->capacity = 0;
+    table->logic_index = NULL;
+    table->memory_index = NULL;
+
+    if(other->name != NULL){
+        table->name = mstr_copy(other->name);
+        if(table->name == NULL) goto fail;
+    }
+
+    table->field_num = other->field_num;
+    table->capacity = other->capacity;
+    table->line_num = other->line_num;
+
+    if(other->field_num > 0){
+        table->field = (FIELD*)calloc(other->field_num, sizeof(FIELD));
+        if(table->field == NULL) goto fail;
+    }
+
+    for(size_t i=0; i<other->field_num; i++){
+        const FIELD* src = &other->field[i];
+        FIELD* dst = &table->field[i];
+
+        dst->column_index = src->column_index;
+        dst->type = src->type;
+        dst->name = NULL;
+        dst->data = NULL;
+
+        if(src->name != NULL){
+            dst->name = mstr_copy(src->name);
+            if(dst->name == NULL) goto fail;
+        }
+
+        /* 数据区按 capacity 分配，逐格深拷贝 */
+        dst->data = (Obj*)calloc(other->capacity, sizeof(Obj));
+        if(dst->data == NULL) goto fail;
+
+        for(size_t r=0; r<other->capacity; r++){
+            Obj v = (src->data != NULL) ? src->data[r] : NULL;
+            if(v == NULL) continue;
+
+            Obj copy = bignum_create();
+            if(copy == NULL) goto fail;
+            if(bignum_copy(v, copy) != 0){
+                bignum_destroy(copy);
+                goto fail;
+            }
+            dst->data[r] = copy;
+        }
+    }
+
+    if(other->capacity > 0){
+        table->logic_index = (size_t*)malloc(sizeof(size_t) * other->capacity);
+        if(table->logic_index == NULL) goto fail;
+        table->memory_index = (size_t*)malloc(sizeof(size_t) * other->capacity);
+        if(table->memory_index == NULL) goto fail;
+
+        memcpy(table->logic_index, other->logic_index, sizeof(size_t) * other->capacity);
+        memcpy(table->memory_index, other->memory_index, sizeof(size_t) * other->capacity);
+    }
+
+    return table;
+
+fail:
+    free_table(table);
+    return NULL;
 }
 
 
@@ -119,6 +213,10 @@ int add_record(TABLE* table, Obj* values, size_t num){
             }            
             //根据类型赋值给对应的union成员
             table->field[i].data = (Obj*)temp;
+            /* 扩容出来的新区域必须清零，否则这些行是野指针，
+             * free_table / table_copy 遍历到会崩溃 */
+            memset(table->field[i].data + table->capacity, 0,
+                   sizeof(Obj) * (new_capacity - table->capacity));
         }
         table->capacity = new_capacity;
     }
@@ -152,12 +250,24 @@ int rm_record(TABLE* table, size_t logic_index){
     //获取要删除的物理行号和最后一个物理行号进行替换
     size_t physical_to_delete = table->logic_index[logic_index];
     size_t last_physical = table->logic_index[table->line_num - 1];
-    
+
+    /* 表拥有单元格的值，删除行时必须释放它们。
+     * 若待删行就是最后一行，直接销毁即可；
+     * 否则随后会把最后一行的值搬进这个槽位，所以也要先销毁。 */
+    for(size_t i=0; i<table->field_num; i++){
+        Obj* slot = &table->field[i].data[physical_to_delete];
+        if(*slot != NULL){
+            bignum_destroy(*slot);
+            *slot = NULL;
+        }
+    }
+
     //如果删除的不是最后一行，用最后一行的数据覆盖被删除行
     if(physical_to_delete != last_physical){
         //复制数据
         for(size_t i=0; i<table->field_num; i++){
             table->field[i].data[physical_to_delete] = table->field[i].data[last_physical];
+            table->field[i].data[last_physical] = NULL;  /* 避免同一指针存在两份 */
         }
         //更新原本指向last_physical的逻辑行，让它指向physical_to_delete
         size_t logic_of_last = table->memory_index[last_physical];
@@ -183,8 +293,18 @@ int rm_field(TABLE* table, size_t field_index){
     }
     
     //释放要删除字段的内存
+    /* 先释放该字段所有单元格里的值（表拥有它们） */
+    if(table->field[field_index].data != NULL){
+        for(size_t r=0; r<table->capacity; r++){
+            if(table->field[field_index].data[r] != NULL){
+                bignum_destroy(table->field[field_index].data[r]);
+            }
+        }
+    }
     free(table->field[field_index].data);
+    table->field[field_index].data = NULL;
     free(table->field[field_index].name);//所有权转移，需要释放
+    table->field[field_index].name = NULL;
     
     //将后面的字段前移，覆盖被删除的字段
     for(size_t i=field_index; i<table->field_num-1; i++){
@@ -230,7 +350,8 @@ int add_field(TABLE* table, int type, mstring field_name){
     table->field[new_index].column_index = new_index;
     
     //为新字段分配数据区内存
-    void* ptr = malloc(sizeof(Obj) * table->capacity);
+    /* 同样必须清零：新字段的所有行初始都是"空单元格" */
+    void* ptr = calloc(table->capacity, sizeof(Obj));
     if(ptr == NULL){
         //分配失败，恢复field_num（field数组已扩展但可以不用）
         return -1;
@@ -288,7 +409,12 @@ int set_value(TABLE* table, size_t idx_x, size_t idx_y, Obj content){
     if(table == NULL || idx_x >= table->line_num || idx_y >= table->field_num){
         return -1;
     }
-    table->field[idx_y].data[table->logic_index[idx_x]] = content;
+    Obj* slot = &table->field[idx_y].data[table->logic_index[idx_x]];
+    /* 表拥有旧值，覆盖前先销毁，否则泄漏 */
+    if(*slot != NULL){
+        bignum_destroy(*slot);
+    }
+    *slot = content;  /* 所有权转移 */
     return 0;
 }
 
@@ -298,8 +424,12 @@ size_t get_field_index(TABLE* table, char* field_name, size_t len){
     }
     for(size_t i=0; i<table->field_num; i++){
         mstring name = table->field[i].name;
-        if(*(size_t*)name != len) continue;
-        if(memcmp(name + sizeof(size_t), field_name, len) == 0){
+        if(name == NULL) continue;
+        /* 原来这里写的是 *(size_t*)name != len，
+         * 但 mstring 头是 [uint32 len][uint32 cap8]，按 size_t 读会变成
+         * (uint64_t)(len | cap8<<32)，永远不等于 len，导致字段永远找不到。 */
+        if(mstrlen(name) != len) continue;
+        if(memcmp(mstr_cstr(name), field_name, len) == 0){
             return i;
         }
     }
@@ -312,8 +442,13 @@ void free_table(TABLE* table){
     //释放所有字段的内存
     if(table->field != NULL){
         for(size_t i=0; i<table->field_num; i++){
-            //释放字段数据区
+            //释放字段数据区里的每个单元格值（表拥有它们的所有权）
             if(table->field[i].data != NULL){
+                for(size_t r=0; r<table->capacity; r++){
+                    if(table->field[i].data[r] != NULL){
+                        bignum_destroy(table->field[i].data[r]);
+                    }
+                }
                 free(table->field[i].data);
             }
             //释放字段名（所有权转移）
@@ -363,9 +498,14 @@ void clear_table(TABLE* table){
     }
     
     //初始化所有数据为NULL
+    /* 先释放原有单元格的值，否则直接置 NULL 会泄漏 */
     for(size_t i=0; i<table->field_num; i++){
+        if(table->field[i].data == NULL) continue;
         for(size_t j=0; j<table->capacity; j++){
-            table->field[i].data[j] = NULL;
+            if(table->field[i].data[j] != NULL){
+                bignum_destroy(table->field[i].data[j]);
+                table->field[i].data[j] = NULL;
+            }
         }
     }
     table->line_num = 0;
@@ -394,7 +534,11 @@ int update_record(TABLE* table, size_t logic_index, Obj* values, size_t num){
     for(size_t i=0; i<table->field_num; i++){
         if(i < num){
             //使用用户提供的值（所有权转移）
-            table->field[i].data[physical_line] = values[i];
+            Obj* slot = &table->field[i].data[physical_line];
+            if(*slot != NULL){
+                bignum_destroy(*slot);  /* 覆盖前销毁旧值 */
+            }
+            *slot = values[i];
         }
     }
     return 0;//成功

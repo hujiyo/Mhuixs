@@ -31,7 +31,7 @@ typedef struct {
     int type;//字段类型(由外部设置、定义)
 }FIELD;
 
-typedef struct {
+typedef struct TABLE {
     mstring name;//表名
     FIELD* field;//字段区
     size_t field_num;//字段数
@@ -43,6 +43,7 @@ typedef struct {
 
 //函数声明（对外接口使用 BHS*）
 TABLE* create_table(int* types, mstring* field_names, size_t field_num, mstring table_name);
+TABLE* table_copy(const TABLE* other);
 int add_record(TABLE* table, Obj* values, size_t num);
 int rm_record(TABLE* table, size_t logic_index);
 int rm_field(TABLE* table, size_t field_index);

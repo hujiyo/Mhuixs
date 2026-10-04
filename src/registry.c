@@ -1,4 +1,6 @@
 #include "registry.h"
+#include "tblh.h"
+#include "kvalh.h"
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -286,6 +288,230 @@ int reg_get_hook_count(void) {
  * [elements:   N * BHS]  递归序列化每个元素
  */
 
+/* ==================== 序列化辅助 ==================== */
+
+/* 写一个带 uint32 长度前缀的字节串 */
+static int write_bytes32(const char *data, uint32_t len, FILE *fp) {
+    if (fwrite(&len, sizeof(uint32_t), 1, fp) != 1) return -1;
+    if (len > 0) {
+        if (!data) return -1;
+        if (fwrite(data, 1, len, fp) != len) return -1;
+    }
+    return 0;
+}
+
+/* 读一个带 uint32 长度前缀的字节串；成功返回 0 并把 malloc 的缓冲区放到 *out */
+static int read_bytes32(char **out, FILE *fp) {
+    uint32_t len = 0;
+    *out = NULL;
+    if (fread(&len, sizeof(uint32_t), 1, fp) != 1) return -1;
+    if (len > (64u * 1024u * 1024u)) return -1;   /* 上限，防损坏文件撑爆内存 */
+    if (len == 0) return 0;
+    char *buf = (char*)malloc((size_t)len + 1);
+    if (!buf) return -1;
+    if (fread(buf, 1, len, fp) != len) { free(buf); return -1; }
+    buf[len] = '\0';
+    *out = buf;
+    return 0;
+}
+
+/*
+单元格读写：先写 1 字节 has_value，再写 BHS。
+bhs_deserialize 对"空 BHS"和"读取失败"都返回 NULL，无法区分，
+所以这里额外加一个标志字节，把"空单元格"和"文件损坏"分开。
+*/
+static int write_cell(const BHS *v, FILE *fp) {
+    uint8_t has = (v != NULL) ? 1 : 0;
+    if (fwrite(&has, 1, 1, fp) != 1) return -1;
+    if (!has) return 0;
+    return bhs_serialize(v, fp);
+}
+
+static BHS* read_cell(FILE *fp, int *err) {
+    uint8_t has = 0;
+    *err = 0;
+    if (fread(&has, 1, 1, fp) != 1) { *err = 1; return NULL; }
+    if (!has) return NULL;              /* 空单元格，不是错误 */
+    BHS *v = bhs_deserialize(fp);
+    if (!v) *err = 1;                   /* 说好了有值却读不出来 = 损坏 */
+    return v;
+}
+
+/* ---- TABLE ---- */
+
+static int table_serialize(const TABLE *t, FILE *fp) {
+    if (!t) return -1;
+
+    if (t->name) {
+        if (write_bytes32(mstr_cstr(t->name), (uint32_t)mstrlen(t->name), fp) != 0) return -1;
+    } else {
+        if (write_bytes32(NULL, 0, fp) != 0) return -1;
+    }
+
+    uint32_t fn = (uint32_t)t->field_num;
+    if (fwrite(&fn, sizeof(uint32_t), 1, fp) != 1) return -1;
+
+    for (uint32_t i = 0; i < fn; i++) {
+        const FIELD *f = &t->field[i];
+        if (f->name) {
+            if (write_bytes32(mstr_cstr(f->name), (uint32_t)mstrlen(f->name), fp) != 0) return -1;
+        } else {
+            if (write_bytes32(NULL, 0, fp) != 0) return -1;
+        }
+        int32_t ty = (int32_t)f->type;
+        if (fwrite(&ty, sizeof(int32_t), 1, fp) != 1) return -1;
+    }
+
+    /* 只保存逻辑行（按逻辑顺序）；容量在重建时由 create_table 决定 */
+    uint32_t rows = (uint32_t)get_record_count((TABLE*)t);
+    if (fwrite(&rows, sizeof(uint32_t), 1, fp) != 1) return -1;
+
+    for (uint32_t r = 0; r < rows; r++) {
+        for (uint32_t c = 0; c < fn; c++) {
+            if (write_cell(get_value((TABLE*)t, r, c), fp) != 0) return -1;
+        }
+    }
+    return 0;
+}
+
+static TABLE* table_deserialize(FILE *fp) {
+    char *tname_buf = NULL;
+    if (read_bytes32(&tname_buf, fp) != 0) return NULL;
+
+    uint32_t fn = 0;
+    if (fread(&fn, sizeof(uint32_t), 1, fp) != 1) { free(tname_buf); return NULL; }
+    if (fn == 0 || fn > 100000u) { free(tname_buf); return NULL; }
+
+    int     *types = (int*)calloc(fn, sizeof(int));
+    mstring *names = (mstring*)calloc(fn, sizeof(mstring));
+    if (!types || !names) { free(tname_buf); free(types); free(names); return NULL; }
+
+    int ok = 1;
+    for (uint32_t i = 0; i < fn && ok; i++) {
+        char *nb = NULL;
+        if (read_bytes32(&nb, fp) != 0) { ok = 0; break; }
+        int32_t ty = 0;
+        if (fread(&ty, sizeof(int32_t), 1, fp) != 1) { free(nb); ok = 0; break; }
+        names[i] = mstr(nb ? nb : (char*)"");
+        free(nb);                    /* mstr 已复制内容 */
+        if (!names[i]) { ok = 0; break; }
+        types[i] = ty;
+    }
+    if (!ok) {
+        for (uint32_t i = 0; i < fn; i++) if (names[i]) mstr_free(names[i]);
+        free(types); free(names); free(tname_buf);
+        return NULL;
+    }
+
+    mstring tname = mstr(tname_buf ? tname_buf : (char*)"");
+    free(tname_buf);
+    if (!tname) {
+        for (uint32_t i = 0; i < fn; i++) mstr_free(names[i]);
+        free(types); free(names);
+        return NULL;
+    }
+
+    /* create_table 接管 names[i] 与 tname 的所有权 */
+    TABLE *t = create_table(types, names, fn, tname);
+    free(types); free(names);
+    if (!t) return NULL;
+
+    uint32_t rows = 0;
+    if (fread(&rows, sizeof(uint32_t), 1, fp) != 1) { free_table(t); return NULL; }
+    if (rows > 100000000u) { free_table(t); return NULL; }
+
+    for (uint32_t r = 0; r < rows; r++) {
+        Obj *vals = (Obj*)calloc(fn, sizeof(Obj));
+        if (!vals) { free_table(t); return NULL; }
+
+        int err = 0;
+        for (uint32_t c = 0; c < fn; c++) {
+            vals[c] = read_cell(fp, &err);
+            if (err) {
+                for (uint32_t j = 0; j < c; j++) if (vals[j]) bignum_destroy(vals[j]);
+                free(vals); free_table(t);
+                return NULL;
+            }
+        }
+        /* add_record 接管 vals 里每个非 NULL 元素的所有权 */
+        if (add_record(t, vals, fn) != 0) {
+            for (uint32_t c = 0; c < fn; c++) if (vals[c]) bignum_destroy(vals[c]);
+            free(vals); free_table(t);
+            return NULL;
+        }
+        free(vals);
+    }
+    return t;
+}
+
+/* ---- KVALOT ---- */
+
+static int kvalot_serialize(const KVALOT *kv, FILE *fp) {
+    if (!kv) return -1;
+
+    /* 名字本身是一个 BHS（字符串类型） */
+    if (bhs_serialize(kv->name, fp) != 0) return -1;
+
+    uint32_t n = kv->num_keys;
+    if (fwrite(&n, sizeof(uint32_t), 1, fp) != 1) return -1;
+
+    for (uint32_t i = 0; i < n; i++) {
+        const KVPAIR *p = &kv->keypool[i];
+        if (p->key) {
+            if (write_bytes32(mstr_cstr(p->key), (uint32_t)mstrlen(p->key), fp) != 0) return -1;
+        } else {
+            if (write_bytes32(NULL, 0, fp) != 0) return -1;
+        }
+        if (write_cell(p->value, fp) != 0) return -1;
+    }
+    return 0;
+}
+
+static KVALOT* kvalot_deserialize(FILE *fp) {
+    BHS *name = bhs_deserialize(fp);
+    if (!name) return NULL;
+    if (name->type != BIGNUM_TYPE_STRING) { bignum_destroy(name); return NULL; }
+
+    KVALOT *kv = kvalot_create(name);
+    bignum_destroy(name);              /* kvalot_create 内部已复制名字 */
+    if (!kv) return NULL;
+
+    uint32_t n = 0;
+    if (fread(&n, sizeof(uint32_t), 1, fp) != 1) { kvalot_destroy(kv); return NULL; }
+    if (n > 100000000u) { kvalot_destroy(kv); return NULL; }
+
+    for (uint32_t i = 0; i < n; i++) {
+        char *kb = NULL;
+        if (read_bytes32(&kb, fp) != 0 || kb == NULL) {
+            free(kb); kvalot_destroy(kv); return NULL;
+        }
+
+        BHS *key = bignum_from_raw_string(kb);
+        free(kb);
+        if (!key) { kvalot_destroy(kv); return NULL; }
+
+        int err = 0;
+        BHS *val = read_cell(fp, &err);
+        if (err || val == NULL) {
+            bignum_destroy(key);
+            if (val) bignum_destroy(val);
+            kvalot_destroy(kv);
+            return NULL;
+        }
+
+        if (kvalot_add(kv, key, val) != 0) {
+            bignum_destroy(key);
+            bignum_destroy(val);
+            kvalot_destroy(kv);
+            return NULL;
+        }
+        bignum_destroy(key);           /* 键不被接管，值被接管 */
+    }
+    return kv;
+}
+
+/* ==================== BHS 序列化 ==================== */
+
 int bhs_serialize(const BHS *bhs, FILE *fp) {
     if (!fp) return -1;
     
@@ -317,10 +543,17 @@ int bhs_serialize(const BHS *bhs, FILE *fp) {
                 return -1;
             }
         }
+    } else if (type == BIGNUM_TYPE_TABLE) {
+        /* 表类型：整张表（字段 + 逻辑行 + 每个单元格） */
+        if (table_serialize(bhs->data.table, fp) != 0) return -1;
+    } else if (type == BIGNUM_TYPE_KVALOT) {
+        /* 键值对类型：名字 + 所有键值对 */
+        if (kvalot_serialize(bhs->data.kvalot, fp) != 0) return -1;
     } else if (type == BIGNUM_TYPE_NULL) {
         /* NULL 类型无数据 */
-    } else {
-        /* NUMBER / STRING / BITMAP 等：序列化原始数据 */
+    } else if (type == BIGNUM_TYPE_NUMBER || type == BIGNUM_TYPE_STRING ||
+               type == BIGNUM_TYPE_BITMAP) {
+        /* NUMBER / STRING / BITMAP：序列化原始数据 */
         const char *data_ptr = BIGNUM_DIGITS(bhs);
         uint32_t data_size = (uint32_t)bhs->length;
         
@@ -333,6 +566,15 @@ int bhs_serialize(const BHS *bhs, FILE *fp) {
         if (data_size > 0 && data_ptr) {
             fwrite(data_ptr, 1, data_size, fp);
         }
+    } else {
+        /*
+         * 未知类型：宁可失败，也不要继续。
+         * 旧实现这里是个兜底 else，对 TABLE/KVALOT 会把联合体里
+         * 指针的字节当成数据写进磁盘 —— 读回来就是一个
+         * "声称是 TABLE、实际指针是垃圾"的 BHS，一碰就崩。
+         */
+        report(error, "Registry", "bhs_serialize: unsupported BHS type");
+        return -1;
     }
     
     return 0;
@@ -383,6 +625,37 @@ BHS* bhs_deserialize(FILE *fp) {
         memcpy(&result->type_data, type_data_buf, 8);
         return result;
         
+    } else if (type == BIGNUM_TYPE_TABLE) {
+        /* 表类型：直接接管反序列化出来的 TABLE，避免多一次深拷贝 */
+        TABLE *t = table_deserialize(fp);
+        if (!t) return NULL;
+
+        BHS *result = bignum_create();
+        if (!result) { free_table(t); return NULL; }
+
+        result->type = BIGNUM_TYPE_TABLE;
+        result->data.table = t;
+        result->is_large = 0;
+        result->capacity = 0;
+        result->length = length;
+        memcpy(&result->type_data, type_data_buf, 8);
+        return result;
+
+    } else if (type == BIGNUM_TYPE_KVALOT) {
+        KVALOT *kv = kvalot_deserialize(fp);
+        if (!kv) return NULL;
+
+        BHS *result = bignum_create();
+        if (!result) { kvalot_destroy(kv); return NULL; }
+
+        result->type = BIGNUM_TYPE_KVALOT;
+        result->data.kvalot = kv;
+        result->is_large = 0;
+        result->capacity = 0;
+        result->length = length;
+        memcpy(&result->type_data, type_data_buf, 8);
+        return result;
+
     } else if (type == BIGNUM_TYPE_NULL) {
         /* NULL 类型 */
         BHS *result = bignum_create();
@@ -392,8 +665,9 @@ BHS* bhs_deserialize(FILE *fp) {
         memcpy(&result->type_data, type_data_buf, 8);
         return result;
         
-    } else {
-        /* NUMBER / STRING / BITMAP 等 */
+    } else if (type == BIGNUM_TYPE_NUMBER || type == BIGNUM_TYPE_STRING ||
+               type == BIGNUM_TYPE_BITMAP) {
+        /* NUMBER / STRING / BITMAP */
         uint32_t data_size;
         if (fread(&data_size, sizeof(uint32_t), 1, fp) != 1) return NULL;
         
@@ -429,6 +703,10 @@ BHS* bhs_deserialize(FILE *fp) {
         
         return result;
     }
+
+    /* 未知类型：明确失败，不要返回一个 type 与实际数据不匹配的 BHS */
+    report(error, "Registry", "bhs_deserialize: unsupported BHS type");
+    return NULL;
 }
 
 /* ==================== HOOK 序列化/反序列化 ==================== */
@@ -685,7 +963,11 @@ int reg_load_from_disk(const char *path) {
         /* 检查是否已存在同名HOOK（避免重复） */
         if (hash_contains(Reg.hook_map, name)) {
             free(name);
-            HOOK_logout(hook);
+            /* 不能调用 HOOK_logout：它按 hook->name 去注册表注销，
+             * 同名就会把已存在的那一条删掉（与 reg_register_hook 里同一种错）。
+             * 这里只释放这个尚未入表的新对象自身。 */
+            if (hook->obj) bignum_destroy(hook->obj);
+            if (hook->name) mstr_free(hook->name);
             free(hook);
             continue;
         }
