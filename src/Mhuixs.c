@@ -48,6 +48,30 @@ Mhuixs 内核入口
 
 #define SELFCHECK_HOOK_NAME "mhuixs_selfcheck"
 
+#define MHUIXS_VERSION "0.1.0"
+
+static char *make_registry_path(void);   /* 定义在后面 */
+
+static void print_usage(void)
+{
+    printf("Mhuixs %s —— 内存数据结构库\n\n", MHUIXS_VERSION);
+    printf("用法:\n");
+    printf("  mhuixs              进入交互模式（REPL）\n");
+    printf("  mhuixs demo         运行主链路自检与命令层演示后退出\n");
+    printf("  mhuixs -h|--help    显示本说明\n");
+    printf("\n交互模式下输入 :help 查看命令列表，:quit 退出。\n");
+}
+
+/* 保存注册表；成功返回保存的 HOOK 数，失败返回 -1 */
+static int save_registry(void)
+{
+    char *path = make_registry_path();
+    int rc = reg_save_to_disk(path);
+    free(path);
+    if (rc != 0) return -1;
+    return reg_get_hook_count();
+}
+
 /* ------------------------------------------------------------------ */
 /* 命令层演示：一行命令，一个动作，不需要语言                            */
 /* ------------------------------------------------------------------ */
@@ -153,9 +177,10 @@ static void demo_commands(void)
 /* ------------------------------------------------------------------ */
 /* 自检：把"数据结构 -> HOOK -> 注册表 -> 查找"这条主链路跑一遍           */
 /* ------------------------------------------------------------------ */
-static int self_check(void)
+static int self_check(int verbose)
 {
     int failures = 0;
+#define SC_LOG(...) do { if (verbose) printf(__VA_ARGS__); } while (0)
 
     /* 1. 任意精度数值（BHS） */
     BHS *a = bignum_from_string("100");
@@ -166,7 +191,7 @@ static int self_check(void)
         char buf[64];
         buf[0] = '\0';
         bignum_to_string(c, buf, sizeof(buf), 0);
-        printf("  [1] 任意精度数值     100 + 200 = %s\n", buf);
+        SC_LOG("  [1] 任意精度数值     100 + 200 = %s\n", buf);
         bignum_destroy(c);
     } else {
         printf("  [1] 任意精度数值     失败\n");
@@ -181,7 +206,7 @@ static int self_check(void)
     HOOK *h = NULL;
     int r = reg_register_hook(0 /* root */, SELFCHECK_HOOK_NAME, &h);
     if (r == 0 && h) {
-        printf("  [2] HOOK 注册        '%s' 注册成功（当前 HOOK 数=%d）\n",
+        SC_LOG("  [2] HOOK 注册        '%s' 注册成功（当前 HOOK 数=%d）\n",
                SELFCHECK_HOOK_NAME, reg_get_hook_count());
     } else {
         printf("  [2] HOOK 注册        失败 (ret=%d)\n", r);
@@ -192,7 +217,7 @@ static int self_check(void)
     HOOK *found = reg_find_hook(SELFCHECK_HOOK_NAME);
     if (found) {
         /* mstr_cstr 不带 \0，配 %s 会读到相邻未初始化内存，故用 %.*s */
-        printf("  [3] HOOK 查找        '%s' 找到，名字=%.*s\n",
+        SC_LOG("  [3] HOOK 查找        '%s' 找到，名字=%.*s\n",
                SELFCHECK_HOOK_NAME,
                (int)mstrlen(found->name), mstr_cstr(found->name));
     } else {
@@ -204,7 +229,7 @@ static int self_check(void)
     HOOK *dup = NULL;
     r = reg_register_hook(0, SELFCHECK_HOOK_NAME, &dup);
     if (r == 1) {
-        printf("  [4] 重名保护         重复注册被拒绝 (ret=1)\n");
+        SC_LOG("  [4] 重名保护         重复注册被拒绝 (ret=1)\n");
     } else {
         printf("  [4] 重名保护         异常 (ret=%d，期望 1)\n", r);
         failures++;
@@ -212,7 +237,7 @@ static int self_check(void)
 
     /* 5. 权限检查：root 恒真；其他用户取决于权限位是否初始化 */
     if (found) {
-        printf("  [5] 权限检查         root 可读=%d，其他用户可读=%d\n",
+        SC_LOG("  [5] 权限检查         root 可读=%d，其他用户可读=%d\n",
                is_entitled(found, 0, HOOK_READ),
                is_entitled(found, 12345, HOOK_READ));
     }
@@ -220,7 +245,66 @@ static int self_check(void)
     /* 自检产物不留在数据目录里 */
     reg_unregister_hook(SELFCHECK_HOOK_NAME);
 
+#undef SC_LOG
     return failures;
+}
+
+/* ------------------------------------------------------------------ */
+/* 交互模式（REPL）                                                     */
+/* ------------------------------------------------------------------ */
+static void repl(void)
+{
+    char line[4096];
+    char out[16384];
+
+    printf("\n输入命令，:help 查看用法，:quit 退出\n\n");
+
+    for (;;) {
+        printf("mhuixs> ");
+        fflush(stdout);
+
+        if (!fgets(line, sizeof(line), stdin)) {   /* Ctrl-D / 输入结束 */
+            printf("\n");
+            break;
+        }
+
+        /* 去掉行尾换行 */
+        size_t n = strlen(line);
+        while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) line[--n] = '\0';
+
+        /* 空白行直接跳过，不回声 */
+        int blank = 1;
+        for (const char *p = line; *p; p++) {
+            if (*p != ' ' && *p != '\t') { blank = 0; break; }
+        }
+        if (blank) continue;
+
+        /* 元命令（以 : 开头） */
+        if (line[0] == ':') {
+            if (!strcmp(line, ":quit") || !strcmp(line, ":q") || !strcmp(line, ":exit")) {
+                printf("\n");
+                break;
+            }
+            if (!strcmp(line, ":help") || !strcmp(line, ":?")) {
+                fputs(mhx_help_text(), stdout);
+                continue;
+            }
+            if (!strcmp(line, ":save")) {
+                int k = save_registry();
+                if (k < 0) printf("保存失败\n");
+                else       printf("已保存 %d 个 HOOK\n", k);
+                continue;
+            }
+            printf("未知的元命令：%s（可用 :help :save :quit）\n", line);
+            continue;
+        }
+
+        mhx_execute(line, out, sizeof(out));
+        if (out[0] != '\0') {
+            fputs(out, stdout);
+            if (out[strlen(out) - 1] != '\n') putchar('\n');
+        }
+    }
 }
 
 /* 拼出 <MhuixsHomePath>/registry.dat 的完整路径，调用方负责 mstr_free */
@@ -249,10 +333,22 @@ static char *make_registry_path(void)
 
 int main(int argc, char *argv[])
 {
-    (void)argc;
-    (void)argv;
+    /* 入口分发：无参数 = 交互模式；demo = 自检+演示；-h = 帮助 */
+    int mode_demo = 0;
+    if (argc > 1) {
+        if (!strcmp(argv[1], "demo")) {
+            mode_demo = 1;
+        } else if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
+            print_usage();
+            return 0;
+        } else {
+            fprintf(stderr, "未知参数: %s\n\n", argv[1]);
+            print_usage();
+            return 2;
+        }
+    }
 
-    printf("==== Mhuixs 内核启动 ====\n");
+    printf("==== Mhuixs %s ====\n", MHUIXS_VERSION);
 
     /* 环境变量模块 */
     if (env_init() != 0) {
@@ -300,28 +396,42 @@ int main(int argc, char *argv[])
         free(reg_path);
     }
 
-    /* 主链路自检 */
-    printf("\n---- 主链路自检 ----\n");
-    int failures = self_check();
+    /* 主链路自检：演示模式打印明细，交互模式静默（只在失败时出声） */
+    int failures;
+    if (mode_demo) {
+        printf("\n---- 主链路自检 ----\n");
+        failures = self_check(1);
 
-    /* 命令层演示 */
-    printf("\n---- 命令层演示 ----\n");
-    demo_commands();
+        printf("\n---- 命令层演示 ----\n");
+        demo_commands();
 
-    /* 保存 HOOK 到磁盘 */
-    {
-        char *reg_path = make_registry_path();
-        if (reg_save_to_disk(reg_path) == 0) {
-            printf("\n  已保存 %d 个 HOOK 到磁盘\n", reg_get_hook_count());
-        } else {
-            printf("\n  保存 HOOK 到磁盘失败\n");
-        }
-        free(reg_path);
+        int saved = save_registry();
+        if (saved < 0) printf("\n  保存 HOOK 到磁盘失败\n");
+        else           printf("\n  已保存 %d 个 HOOK 到磁盘\n", saved);
+
+        printf("\n==== 自检结果：%s ====\n",
+               failures == 0 ? "全部通过" : "有失败项");
+
+        reg_destroy();
+        return failures == 0 ? 0 : 1;
     }
 
-    printf("\n==== 自检结果：%s ====\n",
-           failures == 0 ? "全部通过" : "有失败项");
+    /* 交互模式 */
+    failures = self_check(0);
+    if (failures) {
+        printf("\n⚠ 主链路自检有 %d 项失败（用 demo 参数可看明细），仍进入交互模式\n",
+               failures);
+    } else {
+        printf("  主链路自检通过\n");
+    }
+
+    repl();
+
+    /* 退出时保存 */
+    int saved = save_registry();
+    if (saved < 0) printf("保存 HOOK 到磁盘失败\n");
+    else           printf("已保存 %d 个 HOOK 到磁盘\n", saved);
 
     reg_destroy();
-    return failures == 0 ? 0 : 1;
+    return 0;
 }

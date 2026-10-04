@@ -20,39 +20,8 @@ execute.c —— Mhuixs 命令执行层
     这样 Mhuixs 不必与 Lua / Python 竞争，也不必实现图灵完备 —— 
     命令是可白名单、可审计、可静态检查的，对 AI 调用方尤其重要。
 
-命令一览：
-    create <list|bitmap|kvalot> <name>          创建数据结构并挂钩
-    create table <name> <field:type> [...]      创建表并挂钩，如 id:int name:str
-    drop <name>                   摘除钩子
-    hooks                         列出所有钩子
-    type <name>                   查看钩子指向的类型
-
-    rpush <name> <v> [<v>...]     LIST 右侧插入
-    lpush <name> <v> [<v>...]     LIST 左侧插入
-    lpop  <name>                  LIST 左侧弹出
-    rpop  <name>                  LIST 右侧弹出
-    llen  <name>                  LIST 长度
-    lget  <name> <i>              LIST 读取下标 i
-    lset  <name> <i> <v>          LIST 改写下标 i
-    lrem  <name> <i>              LIST 移除下标 i，返回被移除的值
-
-    bset   <name> <off> <0|1>     BITMAP 设置某位
-    bget   <name> <off>           BITMAP 读取某位
-    bcount <name> <st> <ed>       BITMAP 统计闭区间 [st,ed] 内 1 的个数
-    bsize  <name>                 BITMAP 位数
-
-    kset <name> <key> <value>     KVALOT 写入（键已存在则覆盖，SET 语义）
-    kget <name> <key>             KVALOT 读取
-    kdel <name> <key>             KVALOT 删除
-    klen <name>                   KVALOT 键数量
-    kexists <name> <key>          KVALOT 键是否存在
-
-    tadd  <name> [<v>...]         TABLE 追加一行
-    tget  <name> <row> <col>      TABLE 读取单元格，col 可为列名或下标
-    tset  <name> <row> <col> <v>  TABLE 改写单元格
-    tdel  <name> <row>            TABLE 删除一行
-    trows <name>                  TABLE 行数
-    tfields <name>                TABLE 字段列表
+命令与值的完整清单见文件末的 mhx_help_text()（那是唯一出处，
+交互层的 :help 直接打印它）。
 
 值语法：
     123       -> NUMBER
@@ -909,6 +878,61 @@ static int cmd_tfields(token_t *t, int argc, char *out, size_t outlen)
         append(out, outlen, "%-16s %s\n", fname, type_name(tb->field[i].type));
     }
     return 0;
+}
+
+/* ---------------- 帮助文本 ----------------
+ * 命令清单的【唯一出处】。交互层（Mhuixs.c 的 :help）直接打印这个，
+ * 不要在别处再抄一份 —— 抄了就会两边不一致。
+ */
+const char *mhx_help_text(void)
+{
+    return
+"数据结构\n"
+"  create <list|bitmap|kvalot> <name>       创建并挂钩\n"
+"  create table <name> <field:type> [...]   创建表，如 id:int name:str\n"
+"  drop <name>                              摘除钩子（释放其数据）\n"
+"  hooks                                    列出所有钩子\n"
+"  type <name>                              查看钩子指向的类型\n"
+"\n"
+"LIST\n"
+"  rpush <name> <v> [<v>...]                右侧插入（可多个）\n"
+"  lpush <name> <v> [<v>...]                左侧插入\n"
+"  lpop  <name> / rpop <name>               左/右侧弹出并返回\n"
+"  llen  <name>                             元素个数\n"
+"  lget  <name> <i>                         读取下标 i\n"
+"  lset  <name> <i> <v>                     改写下标 i\n"
+"  lrem  <name> <i>                         移除下标 i，返回被移除的值\n"
+"\n"
+"BITMAP\n"
+"  bset   <name> <off> <0|1>                设置某位\n"
+"  bget   <name> <off>                      读取某位\n"
+"  bcount <name> <st> <ed>                  统计闭区间 [st,ed] 内 1 的个数\n"
+"  bsize  <name>                            位数\n"
+"\n"
+"KVALOT（键一律按字符串处理）\n"
+"  kset <name> <key> <value>                写入（键已存在则覆盖）\n"
+"  kget <name> <key>                        读取\n"
+"  kdel <name> <key>                        删除\n"
+"  klen <name>                              键数量\n"
+"  kexists <name> <key>                     键是否存在\n"
+"\n"
+"TABLE（col 可用列名或下标）\n"
+"  tadd  <name> [<v>...]                    追加一行\n"
+"  tget  <name> <row> <col>                 读取单元格\n"
+"  tset  <name> <row> <col> <v>             改写单元格\n"
+"  tdel  <name> <row>                       删除一行\n"
+"  trows <name>                             行数\n"
+"  tfields <name>                           字段列表\n"
+"\n"
+"值语法\n"
+"  123       -> 数字\n"
+"  \"hello\"   -> 字符串（引号强制）\n"
+"  hello     -> 字符串（非数字时自动回退）\n"
+"\n"
+"交互元命令\n"
+"  :help / :?      显示本说明\n"
+"  :save           立即保存到磁盘\n"
+"  :quit / :q      退出（退出时自动保存）\n";
 }
 
 /* ---------------- 分发 ---------------- */

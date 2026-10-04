@@ -21,7 +21,7 @@ HOOK 同时承担三件事：**防止数据失联**（有名可查）、**权限
 
 ---
 
-## 2. 当前状态（2026-10）
+## 2. 当前状态（v0.1.0 / 2026-10）
 
 项目正处于**重建期**，当前聚焦回最初的内核。上一轮减重剥离了后来叠加、且相互冲突的部分：
 
@@ -39,9 +39,18 @@ HOOK 同时承担三件事：**防止数据失联**（有名可查）、**权限
 |---|---|
 | 数据结构 | `lib/list.c`、`lib/tblh.c`、`lib/bitmap.c`、`lib/kvalh.c`、`lib/bignum.c` |
 | HOOK 与注册表 | `lib/hook.c`、`registry.c` |
+| 命令层 | `execute.c` |
 | 基础设施 | `lib/env.c`、`lib/getid.c`、`lib/merr.c`、`lib/hash.c`、`lib/mstring.h`、`lib/bitcpy.c` |
 
-当前内核可编译、可运行，并通过 5 项主链路自检。**六种数据结构全部可以被 HOOK 引用**：
+**v0.1.0 的界定**：内核自洽、能交互使用的第一个版本。具体是：
+
+- 编译零错误，三套回归测试全过
+- **六种数据结构全部可以被 HOOK 引用**（含 TABLE / KVALOT）
+- 内存所有权处处明确（容器拥有元素；注册表拥有 HOOK），有对照测量作证
+- 能交互使用：`./mhuixs` 进入 REPL，命令驱动，退出时自动存盘
+- HOOK 与数据可完整落盘并恢复
+
+尚未包含（见"已知限制"）：网络、多用户与权限隔离、脚本语言、原子落盘、命令历史。
 
 | 数据结构 | BHS 原生支持 | 能挂到 HOOK |
 |---|---|---|
@@ -50,8 +59,6 @@ HOOK 同时承担三件事：**防止数据失联**（有名可查）、**权限
 | BITMAP | ✅ | ✅ |
 | TABLE | ✅ | ✅ |
 | KVALOT | ✅ | ✅ |
-
-支持 HOOK 落盘与恢复（含 TABLE / KVALOT 的完整内容）。
 
 ---
 
@@ -115,35 +122,56 @@ KVALOT 的键一律按字符串处理。
 ```bash
 cd src
 make          # 编译
-./mhuixs      # 运行：模块初始化 + 主链路自检 + 命令层演示
-make test     # 回归测试（两个）：基础库所有权与深拷贝 / 持久化往返
+./mhuixs      # 进入交互模式（REPL）
+make test     # 回归测试（三套）：基础库 / 持久化往返 / HOOK 生命周期
 ```
 
-预期输出（节选）：
+### 交互模式
+
+直接运行 `./mhuixs` 进入 REPL，一行一条命令：
 
 ```
-==== Mhuixs 内核启动 ====
+==== Mhuixs 0.1.0 ====
   ENV 模块就绪
   Logger 模块就绪
   ID 分配器就绪
   注册表就绪
+  无已持久化的 HOOK（首次运行或数据为空）
+  主链路自检通过
 
----- 主链路自检 ----
-  [1] 任意精度数值     100 + 200 = 300
-  [2] HOOK 注册        'mhuixs_selfcheck' 注册成功（当前 HOOK 数=1）
-  [3] HOOK 查找        'mhuixs_selfcheck' 找到，名字=mhuixs_selfcheck
-  [4] 重名保护         重复注册被拒绝 (ret=1)
-  [5] 权限检查         root 可读=1，其他用户可读=1
+输入命令，:help 查看用法，:quit 退出
 
----- 命令层演示 ----
-  mhuixs> create list fruits
-         OK created list 'fruits'
-  ...
+mhuixs> create table users id:int name:str age:int
+OK created table 'users' with 3 field(s)
+mhuixs> tadd users 1 alice 25
+OK tadd users, rows=1
+mhuixs> tget users 0 name
+OK "alice"
+mhuixs> create kvalot cache
+OK created kvalot 'cache'
+mhuixs> kset cache user:1 bob
+OK kset cache, keys=1
+mhuixs> kget cache user:1
+OK "bob"
+mhuixs> hooks
+OK 2 hook(s):
+cache            kvalot
+users            table
+mhuixs> :quit
 
-==== 自检结果：全部通过 ====
+已保存 2 个 HOOK 到磁盘
 ```
 
-数据目录由 `src/Mhuixs.config` 的 `MhuixsHomePath` 指定，HOOK 注册表落盘为 `<MhuixsHomePath>/registry.dat`。
+交互元命令：`:help` 查看全部命令，`:save` 立即存盘，`:quit` 退出（退出时自动保存）。
+
+### 其他入口
+
+```bash
+./mhuixs demo       # 主链路自检明细 + 命令层演示，跑完退出
+./mhuixs -h         # 用法说明
+```
+
+数据目录由 `src/Mhuixs.config` 的 `MhuixsHomePath` 指定，HOOK 注册表落盘为 `<MhuixsHomePath>/registry.dat`。启动时自动恢复，退出时自动保存。
 
 ---
 
@@ -152,7 +180,7 @@ make test     # 回归测试（两个）：基础库所有权与深拷贝 / 持�
 ```
 Mhuixs/
 ├── src/
-│   ├── Mhuixs.c          # 内核入口：模块初始化 + 自检 + 命令层演示
+│   ├── Mhuixs.c          # 入口：模块初始化 + 交互模式(REPL) + demo + 自检
 │   ├── execute.c/h       # 命令执行层：一行一条命令
 │   ├── registry.c/h      # 注册表：统一管理 HOOK、权限、落盘
 │   ├── Makefile
@@ -204,11 +232,13 @@ Mhuixs/
 
 - **组权限当前对所有人生效**：用户组模块剥离后，`get_primary_gid_by_uid()` 恒返回 0，`HOOK_login()` 也把 `hook->group` 设为 0，于是任何 caller 都被判定为"同组"。在用户组模块回归前，**不要依赖组权限做隔离**。详见 `src/lib/hook.c`。
 - **`mstr_cstr()` 返回的指针不带 `\0`**：不能直接配 `printf("%s")` / `strcmp` 用，会读到相邻未初始化内存（症状是字符串后面多出乱码，且时有时无）。要用 `mstr_to_cstr()`（需 free）或 `%.*s` + `mstrlen()`。详见 `src/lib/mstring.h`。
-- **还不能交互使用**：`mhuixs` 启动后跑自检与演示就退出，没有命令输入循环。命令层 `mhx_execute()` 已可用，但需要调用方（C 代码 / 未来某个前端）来驱动。这是目前距离"能用"最大的一步。
 - `lib/pkg.c` 依赖网络字节序（`arpa/inet.h`），暂未纳入构建。
 - 注册表落盘不是原子操作：直接写 `registry.dat`，中途失败会留下截断的文件。建议改为写临时文件再重命名。
 - 深拷贝没有环检测：若数据里出现自引用（结构套自己），`bignum_copy` 会无限递归。当前没有产生这种结构的路径。
 - 权限系统只有 owner/other 两档真正生效（组权限因用户组模块剥离而恒通过）。
+- 交互模式没有命令历史、没有 Tab 补全（有意从简，先把可用的最小形态做出来）。
+- 注册表锁在 Windows 上是可重入的临界区，POSIX 分支用的是默认互斥锁。
+  已有代码刻意避免在持锁时再取锁，但换平台时值得复查一遍。
 
 ---
 
@@ -220,11 +250,24 @@ Mhuixs 不实现自己的编程语言。操作以命令形式提供，语言层�
 
 ---
 
-## 9. 参与与交流
+## 9. 里程碑
+
+- **2024.10** 项目启动，最初设想：内存数据结构 + HOOK 统一引用
+- **2024.12** 初版服务端骨架（run_queue / ret_queue + 命令格式）
+- **2025.01** 纯 C 数据结构库成型（`datstrc/`：table / kvalot / list / bitmap / stack / queue / stream）
+- **2025.07** 迁往 C++，扩展为服务端 + 客户端 + 语言层的完整构想
+- **2026.01** 从 C++ 迁回 C；Logex 语言层集中落地后陷入方向迷失
+- **2026.10.05** **清理重建**：剥离语言层 / 网络层 / 用户组，回到内核；
+  补齐 TABLE 与 KVALOT 到 HOOK 的桥接；确立所有权模型并修掉一批泄漏；
+  补上命令层与交互模式 → **v0.1.0**
+
+---
+
+## 10. 参与与交流
 
 - **Email**: Mhuxis@outlook.com | Mhuxis.db@gmail.com
 - **GitHub**: [hujiyo/Mhuixs](https://github.com/hujiyo/Mhuixs)
 
 ---
 
-**本 README 最后更新**: 2026.10.05（重建期）
+**本 README 最后更新**: 2026.10.05 · **v0.1.0**（内核可用，进入重建期后的第一个版本）

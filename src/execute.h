@@ -12,4 +12,10 @@ execute.h —— Mhuixs 命令执行层接口
 
 int mhx_execute(const char *line, char *out, size_t outlen);
 
+/*
+ * 命令列表与用法说明（静态字符串，不要 free）。
+ * 命令清单的唯一出处在这里，交互层的 :help 直接打印它。
+ */
+const char *mhx_help_text(void);
+
 #endif /* EXECUTE_H */
