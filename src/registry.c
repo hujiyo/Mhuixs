@@ -42,9 +42,16 @@ int reg_init(void) {
 }
 
 /* 销毁注册表 */
+/* hash_destroy 的回调：把注册表里每个 HOOK 都销毁掉。
+ * 之前的写法是 hash_destroy(map, NULL) 且注释写着"由外部管理"，
+ * 但实际没有外部 —— 于是退出时注册表里所有 HOOK 和它们的数据全部泄漏。 */
+static void hook_free_cb(void* p) {
+    hook_destroy((HOOK*)p);
+}
+
 void reg_destroy(void) {
     if (Reg.hook_map) {
-        hash_destroy(Reg.hook_map, NULL); /* 不释放 HOOK*，由外部管理 */
+        hash_destroy(Reg.hook_map, hook_free_cb); /* 释放键 + 每个 HOOK（含其 BHS） */
         Reg.hook_map = NULL;
     }
     
@@ -110,18 +117,16 @@ int reg_register_hook(M_UID owner, const char* name, HOOK** hook_return) {
     /* 双检：并发情况下同名 HOOK 仍可能在这中间被插入 */
     if (hash_contains(Reg.hook_map, name)) {
         reg_unlock();
-        /* 此处不能调用 HOOK_logout（它会按名字注销掉别人），
-         * 只需释放这个尚未入表的 HOOK 自身。 */
-        mstr_free(hook->name);
-        free(hook);
+        /* 此处不能调用 HOOK_logout（它会按名字摘除，删掉的是已存在那条），
+         * 也不只是 free(hook) —— 那样会漏掉名字和 obj。 */
+        hook_destroy(hook);
         return 1;
     }
 
     /* 添加到哈希表 */
     if (hash_put(Reg.hook_map, name, hook) != 0) {
         reg_unlock();
-        mstr_free(hook->name);
-        free(hook);
+        hook_destroy(hook);
         return -1;
     }
 
@@ -132,16 +137,50 @@ int reg_register_hook(M_UID owner, const char* name, HOOK** hook_return) {
 }
 
 /* 注销HOOK */
+/*
+ * 注销 HOOK：从注册表摘除，并释放 HOOK 与其持有的 BHS。
+ *
+ * 语义：注册表拥有 HOOK（以及 hook_set_bhs 深拷贝进来的对象），
+ * 所以 drop 就该把这一整条链释放掉。之前这里只做 hash_remove，
+ * 既不释放 HOOK 也不释放数据 —— 反复 drop / 重建同名钩子会持续增长内存。
+ */
 void reg_unregister_hook(const char* name) {
     if (!name) return;
-    
+
     reg_lock();
-    
-    HOOK* hook = (HOOK*)hash_get(Reg.hook_map, name);
-    if (hook) {
-        hash_remove(Reg.hook_map, name);
+    HOOK* hook = (HOOK*)hash_remove(Reg.hook_map, name);
+    reg_unlock();
+
+    /* 在锁外销毁：bignum_destroy 可能较大，不必占着注册表锁 */
+    if (hook) hook_destroy(hook);
+}
+
+/* 按指针身份摘除（只摘除，不释放）。名字要先拷出来，
+ * 因为 hash_remove 会释放表内存储的那个键。 */
+void reg_detach_hook(HOOK* hook) {
+    if (!hook || !Reg.hook_map) return;
+
+    reg_lock();
+
+    hash_iterator_t it = hash_iterator_init(Reg.hook_map);
+    const char* k = NULL;
+    void* v = NULL;
+    char* found = NULL;
+
+    while (hash_iterator_next(&it, &k, &v)) {
+        if (v == (void*)hook) {
+            size_t n = strlen(k);
+            found = (char*)malloc(n + 1);
+            if (found) memcpy(found, k, n + 1);
+            break;
+        }
     }
-    
+
+    if (found) {
+        hash_remove(Reg.hook_map, found);
+        free(found);
+    }
+
     reg_unlock();
 }
 
@@ -968,20 +1007,23 @@ int reg_load_from_disk(const char *path) {
         /* 检查是否已存在同名HOOK（避免重复） */
         if (hash_contains(Reg.hook_map, name)) {
             free(name);
-            /* 不能调用 HOOK_logout：它按 hook->name 去注册表注销，
+            /* 不能调用 HOOK_logout：它按 hook->name 去注册表摘除，
              * 同名就会把已存在的那一条删掉（与 reg_register_hook 里同一种错）。
-             * 这里只释放这个尚未入表的新对象自身。 */
-            if (hook->obj) bignum_destroy(hook->obj);
-            if (hook->name) mstr_free(hook->name);
-            free(hook);
+             * 这里只销毁这个尚未入表的新对象自身。 */
+            hook_destroy(hook);
             continue;
         }
         
         /* 注册到哈希表 */
         if (hash_put(Reg.hook_map, name, hook) != 0) {
             free(name);
-            HOOK_logout(hook);
-            free(hook);
+            /* 未入表，直接销毁即可。
+             * 原来这里是 HOOK_logout(hook) + free(hook)：
+             *   - HOOK_logout 内部会 reg_lock()，而此处正持锁 →
+             *     Windows 的 CRITICAL_SECTION 可重入所以没暴露，
+             *     换 POSIX 默认互斥锁就会死锁
+             *   - 而且它随后又 free(hook)，与 HOOK_logout 自己的释放重复 */
+            hook_destroy(hook);
             reg_unlock();
             fclose(fp);
             return -1;

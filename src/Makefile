@@ -98,12 +98,16 @@ TEST_OBJS = $(filter-out Mhuixs.o,$(OBJS))
 LIB_TEST_SRC = ../test/test_lib_status.c
 # 2) 持久化：TABLE / KVALOT 挂到 HOOK 之后落盘-恢复往返
 ROUNDTRIP_SRC = ../test/test_persist_roundtrip.c
+# 3) HOOK 生命周期：注册 -> 挂数据 -> 注销 的释放检查
+REG_TEST_SRC = ../test/test_registry_lifecycle.c
 
-test: run_libtest run_roundtrip
+test: run_libtest run_roundtrip run_regtest
 	@echo ""
 	./run_libtest
 	@echo ""
 	./run_roundtrip
+	@echo ""
+	./run_regtest
 
 run_libtest: $(TEST_OBJS) $(LIB_TEST_SRC)
 	$(CC) $(CFLAGS) -o run_libtest $(LIB_TEST_SRC) $(TEST_OBJS) $(LDFLAGS)
@@ -111,8 +115,16 @@ run_libtest: $(TEST_OBJS) $(LIB_TEST_SRC)
 run_roundtrip: $(TEST_OBJS) $(ROUNDTRIP_SRC)
 	$(CC) $(CFLAGS) -o run_roundtrip $(ROUNDTRIP_SRC) $(TEST_OBJS) $(LDFLAGS)
 
+# 生命周期测试要读进程工作集，Windows 上需链接 psapi
+run_regtest: $(TEST_OBJS) $(REG_TEST_SRC)
+ifeq ($(OS),Windows_NT)
+	$(CC) $(CFLAGS) -o run_regtest $(REG_TEST_SRC) $(TEST_OBJS) $(LDFLAGS) -lpsapi
+else
+	$(CC) $(CFLAGS) -o run_regtest $(REG_TEST_SRC) $(TEST_OBJS) $(LDFLAGS)
+endif
+
 clean:
-	rm -f $(OBJS) $(TARGET) run_libtest run_roundtrip rt_test.dat .log.inf
+	rm -f $(OBJS) $(TARGET) run_libtest run_roundtrip run_regtest rt_test.dat .log.inf
 
 rebuild: clean all
 

@@ -40,8 +40,15 @@ void reg_destroy(void);
 /* 注册HOOK，0=成功，1=重名失败，负数=其他错误，hook_return是返回的HOOK */
 int reg_register_hook(M_UID owner, const char* name, HOOK** hook_return);
 
-/* 注销HOOK */
+/* 注销HOOK：从注册表摘除，并释放 HOOK 及其持有的对象 */
 void reg_unregister_hook(const char* name);
+
+/*
+ * 按【指针身份】把指定 HOOK 从注册表摘除（只摘除，不释放）。
+ * 用于 HOOK_logout：按名字摘除会误删同名的另一条。
+ * 本函数自行获取注册表锁。
+ */
+void reg_detach_hook(HOOK* hook);
 
 /* 查找HOOK */
 HOOK* reg_find_hook(const char* name);

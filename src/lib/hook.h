@@ -78,7 +78,22 @@ typedef enum {
 
 /* HOOK 函数声明 */
 HOOK* HOOK_login(M_UID owner, mstring name, Obj obj); /* bhs必须是堆分配的！或者为NULL */
+
+/*
+ * 销毁一个 HOOK：释放名字、它持有的对象（BHS）、以及结构体本身。
+ *
+ * 调用前必须确保该 HOOK 已从注册表摘除，否则注册表会留下野指针。
+ * 正常路径应该用 reg_unregister_hook(name)，它会先摘除再销毁。
+ */
+void hook_destroy(HOOK* hook);
+
+/*
+ * 摘除并销毁一个 HOOK（HOOK_login 的逆操作）。
+ *
+ * 注意：本函数会自行获取注册表锁，**不得在已持有注册表锁时调用**。
+ */
 int HOOK_logout(HOOK* hook);
+
 int hook_new_obj(HOOK* hook, M_UID caller, obj_type objtype, void *parameter1, void *parameter2, void *parameter3); /* 用钩子建立一个新对象 */
 void hook_reset_pm(HOOK* hook, M_UID caller, const char* pm_str); /* 设置组和权限 */
 int is_entitled(HOOK* hook, M_UID caller, Mode_type mode); /* 权限检查 */

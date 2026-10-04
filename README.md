@@ -172,10 +172,11 @@ Mhuixs/
 │       ├── bitcpy.c/h    # 位级拷贝
 │       ├── pkg.c/h       # MUIX 打包协议（暂挂起，待网络层回归）
 │       └── logo.c/h      # 启动标识
-├── doc/                  # 哈希表相关的设计文档
+├── doc/                  # 哈希表相关的设计文档、引用模型
 └── test/
     ├── test_lib_status.c            # LIST 所有权与深拷贝 / BITMAP / TABLE（make test）
     ├── test_persist_roundtrip.c     # TABLE / KVALOT 落盘-恢复往返（make test）
+    ├── test_registry_lifecycle.c    # HOOK 注册→挂数据→注销 的释放检查（make test）
     ├── test_list_memory.c           # LIST 内存回收检查（手动，仅 Windows）
     └── test_hash_performance.c      # 哈希表性能（手动）
 ```
@@ -203,10 +204,11 @@ Mhuixs/
 
 - **组权限当前对所有人生效**：用户组模块剥离后，`get_primary_gid_by_uid()` 恒返回 0，`HOOK_login()` 也把 `hook->group` 设为 0，于是任何 caller 都被判定为"同组"。在用户组模块回归前，**不要依赖组权限做隔离**。详见 `src/lib/hook.c`。
 - **`mstr_cstr()` 返回的指针不带 `\0`**：不能直接配 `printf("%s")` / `strcmp` 用，会读到相邻未初始化内存（症状是字符串后面多出乱码，且时有时无）。要用 `mstr_to_cstr()`（需 free）或 `%.*s` + `mstrlen()`。详见 `src/lib/mstring.h`。
-- **`drop` 只从注册表摘除 HOOK，不释放 HOOK 对象与它持有的数据**：`reg_unregister_hook` 只做 `hash_remove`。反复 drop / 重建同名钩子会持续增长内存。
+- **还不能交互使用**：`mhuixs` 启动后跑自检与演示就退出，没有命令输入循环。命令层 `mhx_execute()` 已可用，但需要调用方（C 代码 / 未来某个前端）来驱动。这是目前距离"能用"最大的一步。
 - `lib/pkg.c` 依赖网络字节序（`arpa/inet.h`），暂未纳入构建。
 - 注册表落盘不是原子操作：直接写 `registry.dat`，中途失败会留下截断的文件。建议改为写临时文件再重命名。
 - 深拷贝没有环检测：若数据里出现自引用（结构套自己），`bignum_copy` 会无限递归。当前没有产生这种结构的路径。
+- 权限系统只有 owner/other 两档真正生效（组权限因用户组模块剥离而恒通过）。
 
 ---
 

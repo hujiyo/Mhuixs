@@ -95,25 +95,32 @@ HOOK* HOOK_login(M_UID owner, mstring name, Obj obj) {
     return hook;
 }
 
-/* 注销 HOOK */
+/* 销毁一个 HOOK：释放名字、持有的对象、以及结构体本身。
+ * 调用方必须保证它已从注册表摘除（否则注册表留野指针）。 */
+void hook_destroy(HOOK* hook) {
+    if (!hook) return;
+
+    /* 注册表拥有 obj（hook_set_bhs 是深拷贝进来的），这里负责释放 */
+    if (hook->obj) {
+        bignum_destroy(hook->obj);
+        hook->obj = NULL;
+    }
+
+    /* HOOK_login 直接接管 mstring 的所有权（hook->name = name，不复制） */
+    if (hook->name) {
+        mstr_free(hook->name);
+        hook->name = NULL;
+    }
+
+    free(hook);
+}
+
+/* 摘除并销毁一个 HOOK。注册表按【指针身份】摘除，不是按名字 ——
+ * 按名字摘除会误删同名的另一条（这正是之前 reg_register_hook 的 bug）。 */
 int HOOK_logout(HOOK* hook) {
     if (!hook) return -1;
-    
-    /* 如果已注册，先注销 */
-    if (hook->name) {
-        const char* name_cstr = mstr_to_cstr(hook->name);
-        if (name_cstr && hook_reg_exists(name_cstr)) {
-            reg_unregister(name_cstr);
-        }
-        free((void*)name_cstr);
-    }
-    
-    /* 清理 obj */
-    if (hook->obj) {
-        /* TODO: 调用 BHS 的清理函数 */
-        /* bignum_clear(hook->obj); */
-    }
-    
+    reg_detach_hook(hook);   /* 自行加锁；调用方不得已持有注册表锁 */
+    hook_destroy(hook);
     return 0;
 }
 
