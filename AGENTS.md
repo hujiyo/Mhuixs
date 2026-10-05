@@ -119,6 +119,8 @@ src/
 - **一个提交只做一件事**；相关但可分开撤销的改动要拆开提交
 - 用本机 git 配置（`hujiyo`），不要 `-c user.name=` 临时覆盖
 - 关键动作（push / 迁移）后用 `git ls-remote` 核实，**不要相信退出码**
+- **tag 与分支一样保持远端同步**；推完用 `git ls-remote --tags` 核实。
+  （不要用 `git push --tags` 一把推 —— 万一本地有垃圾 tag 会被一起带上去。）
 
 **不要提交**：编译产物（`*.o` / `mhuixs` / `*.exe`）、`Mhuixs.config`、
 `.workbuddy/`、密钥。
