@@ -155,6 +155,79 @@ static void test_nested_list(void)
     printf("  嵌套 LIST 递归深拷贝：通过\n\n");
 }
 
+static void test_decimal(void)
+{
+    printf("=== 小数呈现 ===\n");
+    /*
+     * 缓冲区刻意用小一点（32 字节）。
+     *
+     * 为什么强调这个：precision<0 若被实现成"补零到 100 位小数"，
+     * 输出 3.14 需要 3+1+2+98 = 104 字节 —— 小缓冲区会写到一半就失败，
+     * 留下一串没有收尾的零。用大缓冲区（如 128/512）反而测不出来，
+     * 因为补的零能装下、随后又被"移除尾随零"清掉，结果凑巧是对的。
+     * 命令层的缓冲区大小不该影响数值能否被表示。
+     */
+    char b[32];
+
+    struct { const char *in; const char *want; } cases[] = {
+        { "3.14",                 "3.14" },
+        { "0.5",                  "0.5" },
+        { "100",                  "100" },                 /* 整数不应带小数点 */
+        { "-2.5",                 "-2.5" },
+        { "0.000001",             "0.000001" },            /* 前导零要保留 */
+        { "1234567890123.456789", "1234567890123.456789" },
+        { "0",                    "0" },
+        { "-0.25",                "-0.25" },
+    };
+
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        BHS *v = bignum_from_string(cases[i].in);
+        if (!v) { printf("  FAIL: 无法解析 \"%s\"\n", cases[i].in); fails++; continue; }
+
+        b[0] = '\0';
+        int rc = bignum_to_string(v, b, sizeof(b), -1);
+        if (rc != BIGNUM_SUCCESS) {
+            printf("  FAIL: \"%s\" to_string 返回 %d（32 字节缓冲区应够）\n",
+                   cases[i].in, rc);
+            fails++;
+        } else if (strcmp(b, cases[i].want) != 0) {
+            printf("  FAIL: \"%s\" -> \"%s\"（期望 \"%s\"）\n",
+                   cases[i].in, b, cases[i].want);
+            fails++;
+        }
+        bignum_destroy(v);
+    }
+
+    /* precision=0 的语义是「不要小数位」，这是已知陷阱。命令层一律传 -1。
+     * 这里把它固化下来，免得将来有人以为 0 是"用默认值"。 */
+    {
+        BHS *v = bignum_from_string("3.14");
+        if (v) {
+            b[0] = '\0';
+            bignum_to_string(v, b, sizeof(b), 0);
+            CHECK(strcmp(b, "3") == 0, "precision=0 表示不要小数位（故命令层传 -1）");
+            bignum_destroy(v);
+        }
+    }
+
+    /* 存进容器再取出，小数必须原样保留（用户看到的就是这一层） */
+    LIST *l = list_create();
+    CHECK(l != NULL, "list_create");
+    CHECK(list_rpush(l, bignum_from_string("3.14")) == 0, "rpush 3.14");
+    CHECK(list_rpush(l, bignum_from_string("0.5")) == 0, "rpush 0.5");
+
+    b[0] = '\0';
+    bignum_to_string(list_get_index(l, 0), b, sizeof(b), -1);
+    CHECK(strcmp(b, "3.14") == 0, "从 LIST 取出 3.14 仍是 3.14");
+
+    b[0] = '\0';
+    bignum_to_string(list_get_index(l, 1), b, sizeof(b), -1);
+    CHECK(strcmp(b, "0.5") == 0, "从 LIST 取出 0.5 仍是 0.5");
+
+    free_list(l);
+    printf("  小数精确呈现：通过\n\n");
+}
+
 static void test_bitmap(void)
 {
     printf("=== BITMAP ===\n");
@@ -225,6 +298,7 @@ int main(void)
 
     test_list();
     test_nested_list();
+    test_decimal();
     test_bitmap();
     test_table();
 

@@ -192,7 +192,7 @@ static int self_check(int verbose)
     if (c) {
         char buf[64];
         buf[0] = '\0';
-        bignum_to_string(c, buf, sizeof(buf), 0);
+        bignum_to_string(c, buf, sizeof(buf), -1);
         SC_LOG("  [1] 任意精度数值     100 + 200 = %s\n", buf);
         bignum_destroy(c);
     } else {

@@ -205,7 +205,7 @@ static void summarize(BHS *obj, char *buf, size_t n)
         default: {
             char v[128];
             v[0] = '\0';
-            bignum_to_string(obj, v, sizeof(v), 0);
+            bignum_to_string(obj, v, sizeof(v), -1);
             snprintf(buf, n, "%s", v);
             break;
         }
@@ -291,7 +291,7 @@ static int cmd_info(token_t *t, int argc, char *out, size_t outlen)
                 char s[256];
                 s[0] = '\0';
                 if (IS_MERR_OBJ(v)) continue;
-                bignum_to_string(v, s, sizeof(s), 0);
+                bignum_to_string(v, s, sizeof(s), -1);
                 dump_line(out, outlen, &shown, (int)n, "  [%zu] %s\n", i, s);
             }
             break;
@@ -325,7 +325,7 @@ static int cmd_info(token_t *t, int argc, char *out, size_t outlen)
                 v[0] = '\0';
                 mstr_to_buf(kv->keypool[i].key, k, sizeof(k));
                 if (kv->keypool[i].value) {
-                    bignum_to_string(kv->keypool[i].value, v, sizeof(v), 0);
+                    bignum_to_string(kv->keypool[i].value, v, sizeof(v), -1);
                 }
                 dump_line(out, outlen, &shown, (int)n, "  %s = %s\n", k, v);
             }
@@ -354,7 +354,7 @@ static int cmd_info(token_t *t, int argc, char *out, size_t outlen)
                     Obj v = get_value(tb, r, c);
                     char s[128];
                     s[0] = '\0';
-                    if (v) bignum_to_string(v, s, sizeof(s), 0);
+                    if (v) bignum_to_string(v, s, sizeof(s), -1);
                     else   snprintf(s, sizeof(s), "(empty)");
                     append(out, outlen, " %s", s);
                 }
@@ -370,7 +370,7 @@ static int cmd_info(token_t *t, int argc, char *out, size_t outlen)
         default: {
             char v[256];
             v[0] = '\0';
-            bignum_to_string(obj, v, sizeof(v), 0);
+            bignum_to_string(obj, v, sizeof(v), -1);
             append(out, outlen, "  值: %s\n", v);
             break;
         }
@@ -430,7 +430,7 @@ static int cmd_pop(token_t *t, int argc, char *out, size_t outlen, int left)
 
     char buf[512];
     buf[0] = '\0';
-    bignum_to_string(v, buf, sizeof(buf), 0);
+    bignum_to_string(v, buf, sizeof(buf), -1);
     bignum_destroy(v);
 
     obj->length = list_size(lst);
@@ -461,7 +461,7 @@ static int cmd_lget(token_t *t, int argc, char *out, size_t outlen)
     }
     char buf[512];
     buf[0] = '\0';
-    bignum_to_string(v, buf, sizeof(buf), 0);
+    bignum_to_string(v, buf, sizeof(buf), -1);
     snprintf(out, outlen, "OK %s", buf);
     return 0;
 }
@@ -507,7 +507,7 @@ static int cmd_lrem(token_t *t, int argc, char *out, size_t outlen)
 
     char buf[512];
     buf[0] = '\0';
-    bignum_to_string(v, buf, sizeof(buf), 0);
+    bignum_to_string(v, buf, sizeof(buf), -1);
     bignum_destroy(v);
 
     obj->length = list_size(lst);
@@ -809,7 +809,7 @@ static int cmd_kget(token_t *t, int argc, char *out, size_t outlen)
     /* kvalot_find 返回借用指针，不要释放 */
     char buf[512];
     buf[0] = '\0';
-    bignum_to_string(found, buf, sizeof(buf), 0);
+    bignum_to_string(found, buf, sizeof(buf), -1);
     snprintf(out, outlen, "OK %s", buf);
     return 0;
 }
@@ -950,7 +950,7 @@ static int cmd_tget(token_t *t, int argc, char *out, size_t outlen)
 
     char buf[512];
     buf[0] = '\0';
-    bignum_to_string(v, buf, sizeof(buf), 0);
+    bignum_to_string(v, buf, sizeof(buf), -1);
     snprintf(out, outlen, "OK %s", buf);
     return 0;
 }

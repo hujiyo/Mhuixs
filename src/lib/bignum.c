@@ -629,8 +629,19 @@ int bignum_to_string(const BHS *num, char *str, size_t max_len, int precision) {
         return BIGNUM_SUCCESS;
     }
 
-    if (precision < 0) precision = BIGNUM_DEFAULT_PRECISION;
-    
+    /*
+     * precision < 0 表示「按数字自身的小数位数精确输出」——不补零、不截断。
+     *
+     * 原来这里是 = BIGNUM_DEFAULT_PRECISION（100），即"补零到 100 位小数"。
+     * 那个行为有害：调用方的缓冲区通常只有几十字节，补零会一路写到写不下，
+     * 于是函数在"移除尾随零"之前就 return BIGNUM_ERROR 了，
+     * 调用方拿到的是一个没有收尾的半截字符串（例如 3.14 后面接 61 个零）。
+     *
+     * 注意：传 0 不是"用默认值"，而是"不要小数位"——
+     * 3.14 会被输出成 3，0.5 变成 0。这是数值呈现错误，调用方别传 0。
+     */
+    if (precision < 0) precision = num->type_data.num.decimal_pos;
+
     int pos = 0;
     
     /* 添加符号 */
