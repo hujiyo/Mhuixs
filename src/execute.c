@@ -172,6 +172,46 @@ static int cmd_type(token_t *t, int argc, char *out, size_t outlen)
     return 0;
 }
 
+/* 一行内容摘要，用于 hooks 列表 */
+static void summarize(BHS *obj, char *buf, size_t n)
+{
+    if (!obj) { snprintf(buf, n, "(empty)"); return; }
+
+    switch (obj->type) {
+        case BIGNUM_TYPE_LIST: {
+            LIST *l = bignum_get_list(obj);
+            snprintf(buf, n, "len=%zu", l ? list_size(l) : 0);
+            break;
+        }
+        case BIGNUM_TYPE_BITMAP: {
+            uint64_t sz = bitmap_size(obj);
+            uint64_t ones = (sz > 0) ? bitmap_count(obj, 0, sz - 1) : 0;
+            snprintf(buf, n, "bits=%llu ones=%llu",
+                     (unsigned long long)sz, (unsigned long long)ones);
+            break;
+        }
+        case BIGNUM_TYPE_KVALOT: {
+            KVALOT *kv = bignum_get_kvalot(obj);
+            snprintf(buf, n, "keys=%u", kv ? kvalot_size(kv) : 0);
+            break;
+        }
+        case BIGNUM_TYPE_TABLE: {
+            TABLE *t = bignum_get_table(obj);
+            snprintf(buf, n, "rows=%zu fields=%zu",
+                     t ? get_record_count(t) : 0,
+                     t ? get_field_count(t) : 0);
+            break;
+        }
+        default: {
+            char v[128];
+            v[0] = '\0';
+            bignum_to_string(obj, v, sizeof(v), 0);
+            snprintf(buf, n, "%s", v);
+            break;
+        }
+    }
+}
+
 /* hooks 命令的输出累加器 */
 struct hook_list_acc {
     char  *out;
@@ -183,8 +223,12 @@ static int collect_hooks(const char *key, void *value, void *user_data)
 {
     struct hook_list_acc *acc = (struct hook_list_acc *)user_data;
     BHS *obj = ((HOOK *)value)->obj;
-    append(acc->out, acc->outlen, "%-16s %s\n",
-           key, obj ? type_name(obj->type) : "(empty)");
+
+    char summary[96];
+    summarize(obj, summary, sizeof(summary));
+
+    append(acc->out, acc->outlen, "%-16s %-8s %s\n",
+           key, obj ? type_name(obj->type) : "?", summary);
     acc->count++;
     return 0;
 }
@@ -200,6 +244,137 @@ static int cmd_hooks(token_t *t, int argc, char *out, size_t outlen)
     struct hook_list_acc acc;
     acc.out = out; acc.outlen = outlen; acc.count = 0;
     hash_foreach(Reg.hook_map, collect_hooks, &acc);
+    return 0;
+}
+
+/* 内容最多展示多少条，避免一个巨大的表把输出刷爆 */
+#define INSPECT_MAX 20
+
+/* 追加一行内容，超过 INSPECT_MAX 就提示还有多少没显示 */
+static void dump_line(char *out, size_t outlen, int *shown, int total,
+                      const char *fmt, ...)
+{
+    if (*shown >= INSPECT_MAX) { (*shown)++; return; }
+
+    size_t used = strlen(out);
+    if (used >= outlen - 1) { (*shown)++; return; }
+
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(out + used, outlen - used, fmt, ap);
+    va_end(ap);
+    (*shown)++;
+
+    if (*shown == INSPECT_MAX && total > INSPECT_MAX) {
+        append(out, outlen, "  ... 还有 %d 项未显示\n", total - INSPECT_MAX);
+    }
+}
+
+static int cmd_info(token_t *t, int argc, char *out, size_t outlen)
+{
+    if (argc != 2) { snprintf(out, outlen, "ERR usage: info <name>"); return -1; }
+
+    BHS *obj = get_obj(t[1].text, -1, out, outlen);
+    if (!obj) return -1;
+
+    out[0] = '\0';
+    append(out, outlen, "%s : %s\n", t[1].text, type_name(obj->type));
+
+    switch (obj->type) {
+        case BIGNUM_TYPE_LIST: {
+            LIST *l = bignum_get_list(obj);
+            size_t n = l ? list_size(l) : 0;
+            append(out, outlen, "  元素 %zu 个\n", n);
+            int shown = 0;
+            for (size_t i = 0; i < n; i++) {
+                Obj v = list_get_index(l, i);
+                char s[256];
+                s[0] = '\0';
+                if (IS_MERR_OBJ(v)) continue;
+                bignum_to_string(v, s, sizeof(s), 0);
+                dump_line(out, outlen, &shown, (int)n, "  [%zu] %s\n", i, s);
+            }
+            break;
+        }
+
+        case BIGNUM_TYPE_BITMAP: {
+            uint64_t sz = bitmap_size(obj);
+            uint64_t ones = (sz > 0) ? bitmap_count(obj, 0, sz - 1) : 0;
+            append(out, outlen, "  共 %llu 位，其中 1 有 %llu 个\n",
+                   (unsigned long long)sz, (unsigned long long)ones);
+            /* 前 64 位用 0/1 串展示，看得出分布 */
+            uint64_t head = sz < 64 ? sz : 64;
+            if (head > 0) {
+                append(out, outlen, "  前 %llu 位: ", (unsigned long long)head);
+                for (uint64_t i = 0; i < head; i++) {
+                    append(out, outlen, "%d", bitmap_get(obj, i) ? 1 : 0);
+                }
+                append(out, outlen, "%s\n", sz > head ? " ..." : "");
+            }
+            break;
+        }
+
+        case BIGNUM_TYPE_KVALOT: {
+            KVALOT *kv = bignum_get_kvalot(obj);
+            uint32_t n = kv ? kvalot_size(kv) : 0;
+            append(out, outlen, "  键 %u 个\n", n);
+            int shown = 0;
+            for (uint32_t i = 0; i < n && kv; i++) {
+                char k[128];
+                char v[256];
+                v[0] = '\0';
+                mstr_to_buf(kv->keypool[i].key, k, sizeof(k));
+                if (kv->keypool[i].value) {
+                    bignum_to_string(kv->keypool[i].value, v, sizeof(v), 0);
+                }
+                dump_line(out, outlen, &shown, (int)n, "  %s = %s\n", k, v);
+            }
+            break;
+        }
+
+        case BIGNUM_TYPE_TABLE: {
+            TABLE *tb = bignum_get_table(obj);
+            size_t rows = tb ? get_record_count(tb) : 0;
+            size_t nf   = tb ? get_field_count(tb) : 0;
+
+            append(out, outlen, "  字段 %zu 个:", nf);
+            for (size_t c = 0; c < nf; c++) {
+                char fname[64];
+                append(out, outlen, " %s(%s)",
+                       mstr_to_buf(tb->field[c].name, fname, sizeof(fname)),
+                       type_name(tb->field[c].type));
+            }
+            append(out, outlen, "\n  记录 %zu 行\n", rows);
+
+            int shown = 0;
+            for (size_t r = 0; r < rows; r++) {
+                if (shown >= INSPECT_MAX) { shown++; continue; }
+                append(out, outlen, "  [%zu]", r);
+                for (size_t c = 0; c < nf; c++) {
+                    Obj v = get_value(tb, r, c);
+                    char s[128];
+                    s[0] = '\0';
+                    if (v) bignum_to_string(v, s, sizeof(s), 0);
+                    else   snprintf(s, sizeof(s), "(empty)");
+                    append(out, outlen, " %s", s);
+                }
+                append(out, outlen, "\n");
+                shown++;
+            }
+            if (rows > INSPECT_MAX) {
+                append(out, outlen, "  ... 还有 %zu 行未显示\n", rows - INSPECT_MAX);
+            }
+            break;
+        }
+
+        default: {
+            char v[256];
+            v[0] = '\0';
+            bignum_to_string(obj, v, sizeof(v), 0);
+            append(out, outlen, "  值: %s\n", v);
+            break;
+        }
+    }
     return 0;
 }
 
@@ -811,14 +986,8 @@ static int cmd_tset(token_t *t, int argc, char *out, size_t outlen)
     }
 
     char cname[64];
-    cname[0] = '\0';
-    if (tb->field[col].name) {
-        size_t n = mstrlen(tb->field[col].name);
-        if (n > sizeof(cname) - 1) n = sizeof(cname) - 1;
-        memcpy(cname, mstr_cstr(tb->field[col].name), n);
-        cname[n] = '\0';
-    }
-    snprintf(out, outlen, "OK tset %s row=%ld field=%s", t[1].text, row, cname);
+    snprintf(out, outlen, "OK tset %s row=%ld field=%s", t[1].text, row,
+             mstr_to_buf(tb->field[col].name, cname, sizeof(cname)));
     return 0;
 }
 
@@ -868,14 +1037,9 @@ static int cmd_tfields(token_t *t, int argc, char *out, size_t outlen)
          * 不能直接配 %s 用，否则会读到相邻的未初始化内存。
          * 这里按长度拷进本地缓冲再补 \0。 */
         char fname[64];
-        fname[0] = '\0';
-        if (tb->field[i].name) {
-            size_t n = mstrlen(tb->field[i].name);
-            if (n > sizeof(fname) - 1) n = sizeof(fname) - 1;
-            memcpy(fname, mstr_cstr(tb->field[i].name), n);
-            fname[n] = '\0';
-        }
-        append(out, outlen, "%-16s %s\n", fname, type_name(tb->field[i].type));
+        append(out, outlen, "%-16s %s\n",
+               mstr_to_buf(tb->field[i].name, fname, sizeof(fname)),
+               type_name(tb->field[i].type));
     }
     return 0;
 }
@@ -891,8 +1055,9 @@ const char *mhx_help_text(void)
 "  create <list|bitmap|kvalot> <name>       创建并挂钩\n"
 "  create table <name> <field:type> [...]   创建表，如 id:int name:str\n"
 "  drop <name>                              摘除钩子（释放其数据）\n"
-"  hooks                                    列出所有钩子\n"
-"  type <name>                              查看钩子指向的类型\n"
+"  hooks                                    列出所有钩子（含内容摘要）\n"
+"  info <name>                              查看某个钩子的内容\n"
+"  type <name>                              只看钩子指向的类型\n"
 "\n"
 "LIST\n"
 "  rpush <name> <v> [<v>...]                右侧插入（可多个）\n"
@@ -952,6 +1117,7 @@ int mhx_execute(const char *line, char *out, size_t outlen)
     if (!strcmp(cmd, "drop"))   return cmd_drop (toks, argc, out, outlen);
     if (!strcmp(cmd, "hooks"))  return cmd_hooks(toks, argc, out, outlen);
     if (!strcmp(cmd, "type"))   return cmd_type (toks, argc, out, outlen);
+    if (!strcmp(cmd, "info"))   return cmd_info (toks, argc, out, outlen);
 
     if (!strcmp(cmd, "rpush"))  return cmd_push (toks, argc, out, outlen, 0);
     if (!strcmp(cmd, "lpush"))  return cmd_push (toks, argc, out, outlen, 1);

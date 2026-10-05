@@ -10,6 +10,18 @@ CC      = gcc
 CFLAGS  = -Wall -Wextra -g -O2 -std=c99 -I. -Ilib
 LDFLAGS = -lm -lpthread
 
+# POSIX 特性宏，必须放在这里（而不是某个头文件里）——
+# -std=c99 下 glibc 会定义 __STRICT_ANSI__，默认不暴露 POSIX 函数，
+# 而「特性宏必须在任何系统头文件之前定义」。
+# 放在头文件里是靠不住的：registry.h 第一行就是 #include <stdio.h>，
+# 等轮到 env.h 定义宏时 stdio.h 已经进来了，fileno 仍然没有声明。
+# 症状（只在 Linux 上出现，Windows 那段代码根本没编译）：
+#   warning: implicit declaration of function 'readlink' / 'fileno'
+# 隐式声明会让编译器按 int 理解返回值，而它们返回 ssize_t，属于未定义行为。
+ifneq ($(OS),Windows_NT)
+CFLAGS += -D_POSIX_C_SOURCE=200809L
+endif
+
 TARGET = mhuixs
 
 OBJS = Mhuixs.o \

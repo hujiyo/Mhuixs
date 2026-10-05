@@ -22,17 +22,11 @@
  */
 
 /*
- * 特性宏必须在任何系统头文件之前定义。
- *
- * 原因：本项目用 -std=c99 编译，此时 glibc 定义 __STRICT_ANSI__，
- * 默认**不暴露 POSIX 函数** —— 即使包含了 <unistd.h>，readlink()
- * 也没有声明。结果是隐式声明：编译器按 int 去理解返回值，
- * 而 readlink 实际返回 ssize_t（64 位）。这里返回值只是个长度，
- * 侥幸没出事，但属于未定义行为，且在别的平台/优化级别下可能真的坏掉。
- *
- * 在 Linux 上用 gcc 13 编译会看到这条告警：
- *   lib/env.c:91: warning: implicit declaration of function 'readlink'
- * （Windows 上看不到，因为那段代码在 #else 分支里，根本没被编译。）
+ * 说明：POSIX 特性宏的权威定义在 src/Makefile 里（-D_POSIX_C_SOURCE=200809L）。
+ * 放在构建脚本里才靠得住 —— 「特性宏必须在任何系统头文件之前定义」，
+ * 而头文件之间的包含顺序无法保证（例如 registry.h 第一行就是 <stdio.h>，
+ * 等这里定义宏时 stdio.h 已经进来了）。
+ * 这里保留一份，只是为了单独手工编译本文件时也能过。
  */
 #if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L

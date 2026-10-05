@@ -12,6 +12,9 @@
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
 #pragma pop_macro("SID")
+#include <io.h>          /* _commit */
+#else
+#include <unistd.h>      /* fsync */
 #endif
 
 /* 全局注册表实例 */
@@ -909,40 +912,111 @@ static int save_hook_callback(const char *key, void *value, void *user_data) {
 }
 
 /* 保存注册表到磁盘 */
+/* ==================== 原子落盘辅助 ==================== */
+
+/*
+ * 让 path 原子地变成 tmp_path 的内容。
+ *
+ * 为什么需要：registry.dat 一个文件承载全部数据。若直接往目标文件写，
+ * 写到一半进程被杀（断电、OOM、Ctrl-C），磁盘上就只剩一个截断的文件 ——
+ * 下次启动加载失败，而原来完好的数据已经被覆盖没了。
+ * 先写临时文件再整体改名，可保证目标文件在任何时刻要么是旧内容、
+ * 要么是新内容，不存在"写了一半"的中间态。
+ *
+ * 临时文件必须与目标在同一目录（跨文件系统改名不是原子操作），
+ * 所以调用方用 "<path>.tmp"。
+ */
+static int replace_file_atomic(const char *tmp_path, const char *path) {
+#ifdef _WIN32
+    /* POSIX 的 rename 会直接覆盖已存在的目标；Windows 上 C 运行库的
+     * rename 在目标存在时会失败，必须用 MoveFileEx 明确要求替换。 */
+    if (!MoveFileExA(tmp_path, path, MOVEFILE_REPLACE_EXISTING)) return -1;
+    return 0;
+#else
+    if (rename(tmp_path, path) != 0) return -1;
+    return 0;
+#endif
+}
+
+/* 把缓冲区真正刷到磁盘，而不是只交给操作系统缓存 */
+static int sync_file(FILE *fp) {
+    if (fflush(fp) != 0) return -1;
+    {
+        int fd = fileno(fp);
+        if (fd < 0) return -1;
+#ifdef _WIN32
+        if (_commit(fd) != 0) return -1;
+#else
+        if (fsync(fd) != 0) return -1;
+#endif
+    }
+    return 0;
+}
+
+/*
+ * 保存注册表。
+ *
+ * 采用「写临时文件 + 原子改名」：中途失败或进程被杀时，
+ * 磁盘上原来那份 registry.dat 保持完好，不会被写成半截。
+ * 磁盘格式没有变化，旧文件仍能正常加载。
+ */
 int reg_save_to_disk(const char *path) {
     if (!path || !Reg.hook_map) return -1;
-    
+
+    /* 临时文件放在目标同目录，才能保证改名是原子操作 */
+    size_t plen = strlen(path);
+    char *tmp_path = (char*)malloc(plen + 5);   /* "<path>.tmp" + NUL */
+    if (!tmp_path) return -1;
+    memcpy(tmp_path, path, plen);
+    memcpy(tmp_path + plen, ".tmp", 5);
+
     reg_lock();
-    
-    FILE *fp = fopen(path, "wb");
+
+    FILE *fp = fopen(tmp_path, "wb");
     if (!fp) {
         reg_unlock();
-        report(merr_open_file, "Registry", "Failed to open file for saving");
+        free(tmp_path);
+        report(merr_open_file, "Registry", "Failed to open temp file for saving");
         return -1;
     }
-    
-    /* 写入魔数和版本 */
+
     uint32_t magic = 0x4D485853; /* "MHXS" */
     uint32_t version = 1;
-    fwrite(&magic, sizeof(uint32_t), 1, fp);
-    fwrite(&version, sizeof(uint32_t), 1, fp);
-    
-    /* 写入HOOK数量 */
-    int count = (int)hash_size(Reg.hook_map);
-    fwrite(&count, sizeof(int), 1, fp);
-    
-    /* 遍历并保存每个HOOK */
+    int ok = 1;
+
+    if (fwrite(&magic, sizeof(uint32_t), 1, fp) != 1) ok = 0;
+    if (ok && fwrite(&version, sizeof(uint32_t), 1, fp) != 1) ok = 0;
+
+    if (ok) {
+        int count = (int)hash_size(Reg.hook_map);
+        if (fwrite(&count, sizeof(int), 1, fp) != 1) ok = 0;
+    }
+
     save_context_t ctx = { fp, 0, 0 };
-    hash_foreach(Reg.hook_map, save_hook_callback, &ctx);
-    
+    if (ok) hash_foreach(Reg.hook_map, save_hook_callback, &ctx);
+    if (ctx.error) ok = 0;
+
+    /* 落到磁盘再改名；只 fflush 的话，断电时改名已生效但内容还没落盘 */
+    if (ok && sync_file(fp) != 0) ok = 0;
+
     fclose(fp);
     reg_unlock();
-    
-    if (ctx.error) {
+
+    if (!ok) {
+        remove(tmp_path);
+        free(tmp_path);
         report(error, "Registry", "Error occurred during save");
         return -1;
     }
-    
+
+    if (replace_file_atomic(tmp_path, path) != 0) {
+        remove(tmp_path);
+        free(tmp_path);
+        report(error, "Registry", "Failed to replace registry file");
+        return -1;
+    }
+
+    free(tmp_path);
     return 0;
 }
 

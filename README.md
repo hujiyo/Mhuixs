@@ -73,12 +73,13 @@ Mhuixs **不做自己的编程语言**。操作方式是**一行一条命令**�
 ```
 create <list|bitmap|kvalot> <name>      创建数据结构并挂钩
 create table <name> <field:type> [...]  创建表，如 id:int name:str
-drop <name>                             摘除钩子
-hooks                                   列出所有钩子
-type <name>                             查看钩子指向的类型
+drop <name>                             摘除钩子（并释放其数据）
+hooks                                   列出所有钩子，带内容摘要
+info <name>                             查看某个钩子的内容
+type <name>                             只看钩子指向的类型
 
 rpush/lpush/lpop/rpop <name> [<v>...]   LIST 操作
-llen/lget/lset <name> ...               LIST 操作
+llen/lget/lset/lrem <name> ...          LIST 操作
 
 bset/bget/bcount/bsize <name> ...       BITMAP 操作
 
@@ -93,6 +94,32 @@ trows/tfields <name>                    TABLE 行数 / 字段列表
 
 值语法：`123` → NUMBER，`"hello"` → STRING（引号强制），`hello` → STRING（自动回退）。
 KVALOT 的键一律按字符串处理。
+
+`hooks` 带内容摘要，`info` 展开细节：
+
+```
+mhuixs> hooks
+OK 4 hook(s):
+fruits           list     len=3
+flags            bitmap   bits=64 ones=3
+cache            kvalot   keys=2
+users            table    rows=3 fields=3
+
+mhuixs> info users
+users : table
+  字段 3 个: id(number) name(string) age(number)
+  记录 3 行
+  [0] 1 "alice" 25
+  [1] 2 "bob" 30
+  [2] 3 "carol" (empty)
+
+mhuixs> info flags
+flags : bitmap
+  共 64 位，其中 1 有 3 个
+  前 64 位: 0001000000100000000000000000000000000000000000000000000000000001
+```
+
+`info` 最多展示 20 条，更多的会提示还有多少未显示。
 
 运行效果：
 
@@ -183,6 +210,23 @@ mhuixs> :quit
 想改配置，直接编辑 `~/.mhuixs/Mhuixs.config`；删掉它会重新生成一份默认的。
 配置里写的 `MhuixsHomePath` 目录如果不存在，会自动递归创建。
 
+### 落盘是原子的
+
+保存时先写 `registry.dat.tmp`，刷到磁盘后再整体改名覆盖 `registry.dat`。
+这样目标文件在任何时刻要么是旧的完整内容、要么是新的完整内容，
+不存在"写到一半"的中间态 —— 断电、OOM、Ctrl-C 都不会把已有数据毁掉。
+
+实测（Ubuntu，注入"写完文件头就 `_exit`"模拟中途崩溃）：
+
+| | 旧行为（直接写目标文件） | 现行为（临时文件 + 改名） |
+|---|---|---|
+| 崩溃前 | 113 B, md5 `2bc80fdb…` | 113 B, md5 `2bc80fdb…` |
+| 崩溃后 | **12 B, md5 变了** | **113 B, md5 不变** |
+| 重启后 | 恢复失败，0 个 hook，数据全丢 | 恢复 1 个 hook，内容完好 |
+
+崩溃会留下一个 `registry.dat.tmp`，无碍：下次保存以 `wb` 打开会直接截断它，
+不会累积，也不会被加载。
+
 ---
 
 ## 5. 平台支持
@@ -215,10 +259,15 @@ KVALOT / TABLE）在 Linux 上能完整恢复。原因是序列化只用定宽�
 ### 编译告警里的一个坑（已修）
 
 `-std=c99` 下 glibc 会定义 `__STRICT_ANSI__`，**默认不暴露 POSIX 函数**——
-即使包含了 `<unistd.h>`，`readlink()` 也没有声明，编译器只能按 `int` 去理解
-它的返回值（实际是 `ssize_t`）。这个问题只在 Linux 上能看到
-（Windows 上那段代码在 `#else` 分支里，根本没被编译）。
-修法是在 `lib/env.h` 顶部请求 `_POSIX_C_SOURCE`。
+即使包含了 `<unistd.h>`，`readlink()` / `fileno()` 也没有声明，
+编译器只能按 `int` 去理解返回值（实际是 `ssize_t`）。
+这个问题只在 Linux 上能看到（Windows 上那些代码在 `#else` 分支里，根本没被编译）。
+
+修法是在 **Makefile** 里加 `-D_POSIX_C_SOURCE=200809L`（非 Windows 时）。
+放头文件里是靠不住的 —— `registry.h` 第一行就是 `#include <stdio.h>`，
+等轮到 `env.h` 定义宏时 `stdio.h` 已经进来了，`fileno` 仍然没有声明。
+特性宏必须在任何系统头文件之前定义，只有构建脚本能保证这一点。
+修好之后，两平台的编译告警集合完全一致。
 
 ### 配置与数据放在哪（曾导致 Linux 开箱不可用）
 
@@ -290,7 +339,6 @@ Mhuixs/
 - **组权限当前对所有人生效**：用户组模块剥离后，`get_primary_gid_by_uid()` 恒返回 0，`HOOK_login()` 也把 `hook->group` 设为 0，于是任何 caller 都被判定为"同组"。在用户组模块回归前，**不要依赖组权限做隔离**。详见 `src/lib/hook.c`。
 - **`mstr_cstr()` 返回的指针不带 `\0`**：不能直接配 `printf("%s")` / `strcmp` 用，会读到相邻未初始化内存（症状是字符串后面多出乱码，且时有时无）。要用 `mstr_to_cstr()`（需 free）或 `%.*s` + `mstrlen()`。详见 `src/lib/mstring.h`。
 - `lib/pkg.c` 依赖网络字节序（`arpa/inet.h`），暂未纳入构建。
-- 注册表落盘不是原子操作：直接写 `registry.dat`，中途失败会留下截断的文件。建议改为写临时文件再重命名。
 - 深拷贝没有环检测：若数据里出现自引用（结构套自己），`bignum_copy` 会无限递归。当前没有产生这种结构的路径。
 - 权限系统只有 owner/other 两档真正生效（组权限因用户组模块剥离而恒通过）。
 - 交互模式没有命令历史、没有 Tab 补全（有意从简，先把可用的最小形态做出来）。

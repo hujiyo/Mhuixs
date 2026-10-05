@@ -156,6 +156,33 @@ static inline char* mstr_to_cstr(mstring str){
     return cstr;
 }
 
+/*
+ * 把 mstring 拷进调用方给的缓冲区并补上 \0，返回 buf。
+ *
+ * 需要 printf("%s") / strcmp / 当文件名这类「按 \0 判断结尾」的场合，
+ * 一律用这个，不要直接用 mstr_cstr()（它不补 \0，会读到相邻内存）。
+ * 这个坑在本项目里踩过不止一次：症状是字符串后面多出一串乱码，
+ * 而且乱码是非法 UTF-8 时会把终端解码带偏 —— 看起来像整段文字都坏了。
+ *
+ * 缓冲区不够就截断（保证仍然以 \0 结尾）。
+ */
+static inline char* mstr_to_buf(mstring str, char* buf, size_t buflen){
+    if(!buf || buflen == 0){
+        return buf;
+    }
+    if(!str){
+        buf[0] = '\0';
+        return buf;
+    }
+    size_t len = mstrlen(str);
+    if(len > buflen - 1){
+        len = buflen - 1;
+    }
+    memcpy(buf, str + MSTR_HDR_SIZE, len);
+    buf[len] = '\0';
+    return buf;
+}
+
 /* 从二进制数据创建字符串 */
 static inline mstring mstr_from_bytes(const uint8_t* data, size_t len){
     if(!data){

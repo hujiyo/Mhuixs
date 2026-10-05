@@ -171,7 +171,9 @@ static void demo_commands(void)
     run_command("type cache");
     run_command("type users");
 
+    /* 查看内容：hooks 给摘要，info 展开细节 */
     run_command("hooks");
+    run_command("info users");
 }
 
 /* ------------------------------------------------------------------ */
