@@ -25,6 +25,10 @@ build_server/
 
 logs/
 
+# 运行期配置：机器相关（数据目录/端口/内存上限），由首次启动在
+# ~/.mhuixs/Mhuixs.config 生成。仓库里只保留 Mhuixs.config.example 模板。
+Mhuixs.config
+
 # 日志模块（logger_init）产生的日志文件
 *.log.inf
 

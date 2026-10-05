@@ -171,7 +171,17 @@ mhuixs> :quit
 ./mhuixs -h         # 用法说明
 ```
 
-数据目录由 `src/Mhuixs.config` 的 `MhuixsHomePath` 指定，HOOK 注册表落盘为 `<MhuixsHomePath>/registry.dat`。启动时自动恢复，退出时自动保存。
+数据目录和配置**不在仓库里**：首次启动会自动在用户目录生成
+`~/.mhuixs/Mhuixs.config`，并把数据目录也建在 `~/.mhuixs/data`。
+启动时从 `registry.dat` 恢复，退出时自动保存。
+
+配置查找顺序（`src/Mhuixs.config.example` 是模板，只作说明）：
+
+1. `<可执行文件所在目录>/Mhuixs.config` —— 部署时可在此覆盖
+2. `~/.mhuixs/Mhuixs.config` —— 用户配置；不存在则自动生成
+
+想改配置，直接编辑 `~/.mhuixs/Mhuixs.config`；删掉它会重新生成一份默认的。
+配置里写的 `MhuixsHomePath` 目录如果不存在，会自动递归创建。
 
 ---
 
@@ -210,12 +220,15 @@ KVALOT / TABLE）在 Linux 上能完整恢复。原因是序列化只用定宽�
 （Windows 上那段代码在 `#else` 分支里，根本没被编译）。
 修法是在 `lib/env.h` 顶部请求 `_POSIX_C_SOURCE`。
 
-### 已知的跨平台缺口
+### 配置与数据放在哪（曾导致 Linux 开箱不可用）
 
-`src/Mhuixs.config` 里 `MhuixsHomePath` 写的是 Windows 绝对路径
-（`D:\Mhuixs_data`），且数据目录不存在时会拒绝启动 —— 意味着
-**Linux 上拿到源码后开箱不可用**，需要先改配置并手动建目录。
-详见第 8 章"已知限制"。
+`src/Mhuixs.config` 曾经被提交进仓库，里面写死了 `MhuixsHomePath D:\Mhuixs_data`，
+而且数据目录不存在就拒绝启动 —— 结果在 Linux 上拿到源码后完全跑不起来
+（这条只在 Linux 实测时才暴露，Windows 上看不出来）。
+
+现在改成：**配置文件不进仓库**（它是机器相关的），
+首次启动在 `~/.mhuixs/Mhuixs.config` 生成一份，
+数据目录 `~/.mhuixs/data` 一并自动创建。仓库里只留 `Mhuixs.config.example` 作模板。
 
 ---
 
@@ -228,7 +241,7 @@ Mhuixs/
 │   ├── execute.c/h       # 命令执行层：一行一条命令
 │   ├── registry.c/h      # 注册表：统一管理 HOOK、权限、落盘
 │   ├── Makefile
-│   ├── Mhuixs.config     # 运行配置
+│   ├── Mhuixs.config.example  # 配置模板（只作说明；运行配置在 ~/.mhuixs/）
 │   └── lib/              # 基础库
 │       ├── list.c/h      # LIST 列表
 │       ├── tblh.c/h      # TABLE 表
@@ -276,7 +289,6 @@ Mhuixs/
 
 - **组权限当前对所有人生效**：用户组模块剥离后，`get_primary_gid_by_uid()` 恒返回 0，`HOOK_login()` 也把 `hook->group` 设为 0，于是任何 caller 都被判定为"同组"。在用户组模块回归前，**不要依赖组权限做隔离**。详见 `src/lib/hook.c`。
 - **`mstr_cstr()` 返回的指针不带 `\0`**：不能直接配 `printf("%s")` / `strcmp` 用，会读到相邻未初始化内存（症状是字符串后面多出乱码，且时有时无）。要用 `mstr_to_cstr()`（需 free）或 `%.*s` + `mstrlen()`。详见 `src/lib/mstring.h`。
-- **`src/Mhuixs.config` 写死了 Windows 路径，且数据目录不存在就拒绝启动**：`MhuixsHomePath D:\Mhuixs_data` 在 Linux 上不是有效路径，`env_init()` 直接失败、程序退出。所以 Linux 上必须先改配置并手动建目录才能用。两处都值得修：配置该用平台无关的路径，数据目录该在首次运行时自动创建。
 - `lib/pkg.c` 依赖网络字节序（`arpa/inet.h`），暂未纳入构建。
 - 注册表落盘不是原子操作：直接写 `registry.dat`，中途失败会留下截断的文件。建议改为写临时文件再重命名。
 - 深拷贝没有环检测：若数据里出现自引用（结构套自己），`bignum_copy` 会无限递归。当前没有产生这种结构的路径。

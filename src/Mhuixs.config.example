@@ -1,0 +1,33 @@
+# Mhuixs 配置模板
+#
+# 这个文件是【模板】，只作说明用途，不会被程序读取。
+#
+# 程序启动时按以下顺序找配置：
+#   1. <可执行文件所在目录>/Mhuixs.config   部署时可在此覆盖
+#   2. ~/.mhuixs/Mhuixs.config              用户配置；不存在则自动生成
+#
+# 为什么仓库里不放一份能用的配置：配置是【机器相关】的
+# （数据目录、端口、内存上限），提交进仓库会在别的机器上出错。
+# 以前这里写死了 Windows 路径，导致 Linux 上拿到源码后开箱不可用。
+#
+# 想改配置，直接编辑 ~/.mhuixs/Mhuixs.config；删掉它就会重新生成。
+
+# 数据存储目录（不存在会自动递归创建）
+# Windows 示例：D:\Mhuixs_data
+# Linux   示例：/home/yourname/.mhuixs/data
+MhuixsHomePath D:/Mhuixs_data
+
+# 线程数限制 (2-1024)
+threadslimit 4
+
+# 内存限制 (MB)
+memmorylimit 1024
+
+# 最大会话数
+max_sessions 1024
+
+# 禁用压缩 (0=启用, 1=禁用)
+disablecompression 0
+
+# 服务端口
+port 18185
