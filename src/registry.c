@@ -853,7 +853,21 @@ static HOOK* hook_deserialize(FILE *fp, char **out_name) {
     BHS *bhs_data = NULL;
     if (has_bhs) {
         bhs_data = bhs_deserialize(fp);
-        /* bhs_data 可以为 NULL（如果原始数据就是 NULL BHS） */
+        /*
+         * has_bhs=1 意味着写盘时 hook->obj 非 NULL（见 hook_serialize），
+         * 因此这条 BHS 记录一定不是"空值"。bhs_deserialize 返回 NULL
+         * 只可能是读到文件末尾或格式损坏 —— 必须当成错误。
+         *
+         * 原来这里写着「bhs_data 可以为 NULL（如果原始数据就是 NULL BHS）」，
+         * 那个假设是错的：真正的空值会走 has_bhs=0 这条分支，
+         * 根本不会进到这里。结果是文件被截断时静默产出一条 obj==NULL 的
+         * HOOK，下一次保存就把那部分数据彻底丢掉（实测：3 条 HOOK 的
+         * 文件砍掉 20 字节仍报"恢复 3 个"，但其中一条已变成空壳）。
+         */
+        if (!bhs_data) {
+            free(name);
+            return NULL;
+        }
     }
     
     /* 创建 HOOK */
