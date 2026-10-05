@@ -1020,94 +1020,148 @@ int reg_save_to_disk(const char *path) {
     return 0;
 }
 
+/* 文件是否存在（用 fopen 判断，避免为此引入平台相关的 stat 头文件） */
+static int plain_file_exists(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    fclose(f);
+    return 1;
+}
+
+/*
+ * 把加载失败的文件改名「隔离」，避免后续保存把它覆盖掉。
+ *
+ * 为什么需要：registry.dat 一个文件装全部数据。若它损坏而加载失败，
+ * 程序会以空注册表继续运行，退出时再把空表存回去 —— 那个还能手工抢救的
+ * 坏文件就被彻底覆盖了。先改名留档，数据至少还在磁盘上。
+ *
+ * 备份名：<path>.corrupt；若已存在则依次尝试 .corrupt.1 / .2 ...
+ */
+static void quarantine_registry_file(const char *path) {
+    char backup[ENV_PATH_MAX + 32];
+
+    for (int n = 0; n < 100; n++) {
+        if (n == 0) snprintf(backup, sizeof(backup), "%s.corrupt", path);
+        else        snprintf(backup, sizeof(backup), "%s.corrupt.%d", path, n);
+
+        if (plain_file_exists(backup)) continue;   /* 换一个名字，不覆盖旧备份 */
+
+        if (replace_file_atomic(path, backup) == 0) {
+            fprintf(stderr, "[registry] 已把损坏的文件留档为 %s\n", backup);
+            return;
+        }
+        break;   /* 改名失败（权限/占用），不必继续试 */
+    }
+    fprintf(stderr, "[registry] 无法留档损坏的文件 %s（原文件保留原地，请注意别再覆盖）\n", path);
+}
+
 /* 从磁盘加载注册表 */
 int reg_load_from_disk(const char *path) {
     if (!path || !Reg.hook_map) return -1;
-    
+
     FILE *fp = fopen(path, "rb");
     if (!fp) {
         /* 文件不存在不算错误,可能是首次启动 */
         return 0;
     }
-    
+
+    int failed = 0;
+    const char *why = NULL;
+
     /* 读取魔数和版本 */
-    uint32_t magic, version;
+    uint32_t magic = 0, version = 0;
     if (fread(&magic, sizeof(uint32_t), 1, fp) != 1 ||
         fread(&version, sizeof(uint32_t), 1, fp) != 1) {
-        fclose(fp);
-        return -1;
+        why = "读取文件头失败（文件可能被截断）";
+        failed = 1;
+    } else if (magic != 0x4D485853) {
+        why = "文件格式不对（魔数不匹配）";
+        failed = 1;
+    } else if (version != 1) {
+        why = "文件版本不被支持";
+        failed = 1;
     }
-    
-    if (magic != 0x4D485853) {
-        report(error, "Registry", "Invalid registry file format");
-        fclose(fp);
-        return -1;
-    }
-    
-    if (version != 1) {
-        report(error, "Registry", "Unsupported registry file version");
-        fclose(fp);
-        return -1;
-    }
-    
+
     /* 读取HOOK数量 */
-    int count;
-    if (fread(&count, sizeof(int), 1, fp) != 1) {
-        fclose(fp);
-        return -1;
+    int count = 0;
+    if (!failed) {
+        if (fread(&count, sizeof(int), 1, fp) != 1) {
+            why = "读取记录数失败（文件可能被截断）";
+            failed = 1;
+        } else if (count < 0 || count > 10000000) {
+            why = "记录数不合法";
+            failed = 1;
+        }
     }
-    
-    if (count < 0 || count > 10000000) {
-        report(error, "Registry", "Invalid hook count in registry file");
-        fclose(fp);
-        return -1;
-    }
-    
+
     /* 加载每个HOOK */
-    reg_lock();
     int loaded = 0;
-    
-    for (int i = 0; i < count; i++) {
-        char *name = NULL;
-        HOOK *hook = hook_deserialize(fp, &name);
-        if (!hook || !name) {
-            if (name) free(name);
-            reg_unlock();
-            fclose(fp);
-            report(error, "Registry", "Failed to deserialize hook");
-            return -1;
-        }
-        
-        /* 检查是否已存在同名HOOK（避免重复） */
-        if (hash_contains(Reg.hook_map, name)) {
+    if (!failed) {
+        reg_lock();
+
+        for (int i = 0; i < count; i++) {
+            char *name = NULL;
+            HOOK *hook = hook_deserialize(fp, &name);
+            if (!hook || !name) {
+                if (name) free(name);
+                why = "某条记录损坏";
+                failed = 1;
+                break;
+            }
+
+            /* 检查是否已存在同名HOOK（避免重复） */
+            if (hash_contains(Reg.hook_map, name)) {
+                free(name);
+                /* 不能调用 HOOK_logout：它按 hook->name 去注册表摘除，
+                 * 同名就会把已存在的那一条删掉（与 reg_register_hook 里同一种错）。
+                 * 这里只销毁这个尚未入表的新对象自身。 */
+                hook_destroy(hook);
+                continue;
+            }
+
+            /* 注册到哈希表 */
+            if (hash_put(Reg.hook_map, name, hook) != 0) {
+                free(name);
+                /* 未入表，直接销毁即可。
+                 * 原来这里是 HOOK_logout(hook) + free(hook)：
+                 *   - HOOK_logout 内部会 reg_lock()，而此处正持锁 →
+                 *     Windows 的 CRITICAL_SECTION 可重入所以没暴露，
+                 *     换 POSIX 默认互斥锁就会死锁
+                 *   - 而且它随后又 free(hook)，与 HOOK_logout 自己的释放重复 */
+                hook_destroy(hook);
+                why = "内存不足，记录无法入表";
+                failed = 1;
+                break;
+            }
+
             free(name);
-            /* 不能调用 HOOK_logout：它按 hook->name 去注册表摘除，
-             * 同名就会把已存在的那一条删掉（与 reg_register_hook 里同一种错）。
-             * 这里只销毁这个尚未入表的新对象自身。 */
-            hook_destroy(hook);
-            continue;
+            loaded++;
         }
-        
-        /* 注册到哈希表 */
-        if (hash_put(Reg.hook_map, name, hook) != 0) {
-            free(name);
-            /* 未入表，直接销毁即可。
-             * 原来这里是 HOOK_logout(hook) + free(hook)：
-             *   - HOOK_logout 内部会 reg_lock()，而此处正持锁 →
-             *     Windows 的 CRITICAL_SECTION 可重入所以没暴露，
-             *     换 POSIX 默认互斥锁就会死锁
-             *   - 而且它随后又 free(hook)，与 HOOK_logout 自己的释放重复 */
-            hook_destroy(hook);
-            reg_unlock();
-            fclose(fp);
-            return -1;
-        }
-        
-        free(name);
-        loaded++;
+
+        reg_unlock();
     }
-    
-    reg_unlock();
+
     fclose(fp);
+
+    if (failed) {
+        /*
+         * 关键：不能留下"半个注册表"。
+         * 前面可能已经成功载入了一些 HOOK，若就这么继续跑，
+         * 退出时会把这半个注册表存回去 —— 没读出来的那些就被静默丢掉了。
+         * 所以要么全载入、要么干净地重来，并把原文件留档。
+         */
+        reg_lock();
+        hash_clear(Reg.hook_map, hook_free_cb);
+        reg_unlock();
+
+        fprintf(stderr, "[registry] 加载失败：%s（已载入 %d 条，全部丢弃）\n",
+                why ? why : "未知原因", loaded);
+        quarantine_registry_file(path);
+        report(error, "Registry", "Failed to load registry from disk");
+
+        /* 返回 -1 让调用方能据此提示用户；数据已在 .corrupt 里留档 */
+        return -1;
+    }
+
     return loaded;
 }

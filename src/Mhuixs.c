@@ -393,7 +393,11 @@ int main(int argc, char *argv[])
         } else if (loaded == 0) {
             printf("  无已持久化的 HOOK（首次运行或数据为空）\n");
         } else {
-            printf("  从磁盘恢复 HOOK 失败\n");
+            /* reg_load_from_disk 已把坏文件改名留档，并打印了具体路径。
+             * 这里以空注册表继续运行是安全的：退出时保存的是新文件，
+             * 不会覆盖那份留档。 */
+            printf("  ⚠ 从磁盘恢复 HOOK 失败，已按空注册表启动\n");
+            printf("    （原文件已留档为 registry.dat.corrupt，数据未丢失，可手工抢救）\n");
         }
         free(reg_path);
     }
