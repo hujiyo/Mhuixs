@@ -144,11 +144,18 @@ typedef struct HOOK{
 
 ---
 
-## 7. 由此暴露的一个现成缺口
+## 7. 附记：`drop` 的释放缺口（已修复）
 
-`drop`（`reg_unregister_hook`）目前只做 `hash_remove`，
+`drop`（`reg_unregister_hook`）曾经只做 `hash_remove`，
 **不释放 HOOK 对象，也不释放它持有的 BHS**。
 在"显式所有权"模型下这是个明确的漏洞：注册表拥有 HOOK，drop 就该释放它。
+后果是反复 drop / 重建同名钩子会持续增长内存。
 
-反复 drop / 重建同名钩子会持续增长内存。
+**已修复**（提交 `d14aef4`「drop 与 reg_destroy 补齐释放」）：
+
+- `reg_unregister_hook` 摘除后调用 `hook_destroy`，释放 BHS、名字与 HOOK 本身
+- `reg_destroy` 通过 `hash_destroy` 的销毁回调释放每个 HOOK，退出路径不再整片泄漏
+
 这条与本文档是同一件事的两面 —— 在引用计数缺席时，"谁拥有"必须处处明确。
+它留在这里而不是删掉，是因为那次修复的教训值得记：
+**所有权只写在文档里不算数，得写进代码。**
