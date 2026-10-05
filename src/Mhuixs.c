@@ -411,9 +411,15 @@ int main(int argc, char *argv[])
         printf("\n---- 命令层演示 ----\n");
         demo_commands();
 
-        int saved = save_registry();
-        if (saved < 0) printf("\n  保存 HOOK 到磁盘失败\n");
-        else           printf("\n  已保存 %d 个 HOOK 到磁盘\n", saved);
+        /*
+         * demo 模式【不写盘】。
+         *
+         * 演示会在内存里创建一批同名钩子（fruits/flags/cache/users 等），
+         * 如果保存回去，就会把用户自己同名的数据覆盖掉 ——
+         * 跑一次 demo 毁一次数据，而用户只是"想看一眼示例"。
+         * 改动只留在内存里，进程退出即丢弃，磁盘上的 registry.dat 保持原样。
+         */
+        printf("\n  （demo 模式不写入磁盘，你的数据未受影响）\n");
 
         printf("\n==== 自检结果：%s ====\n",
                failures == 0 ? "全部通过" : "有失败项");
