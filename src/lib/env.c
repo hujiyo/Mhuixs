@@ -146,6 +146,7 @@ int env_init() {
     int port = 18185;
     char line[512];
     int found_datapath = 0, found_threadslimit = 0, found_memmorylimit = 0, found_max_sessions = 0, found_disablecompression = 0, found_port = 0;
+    int datapath_key_seen = 0;   /* 配置里是否出现过 MhuixsHomePath 这个键 */
     int sys_mem = get_system_memory_mb();
     int mem_max = sys_mem * 90 / 100;
     int mem_default = sys_mem * 75 / 100;
@@ -157,7 +158,8 @@ int env_init() {
         trim(key);
         trim(value);
         if (strcmp(key, "MhuixsHomePath") == 0) {
-            MhuixsHomePath = parse_path(value, "[env] 数据目录不可用");
+            datapath_key_seen = 1;
+            MhuixsHomePath = parse_path(value, "[env] MhuixsHomePath 不是可用目录");
             found_datapath = (MhuixsHomePath != NULL);
         } else if (strcmp(key, "threadslimit") == 0) {
             threadslimit = parse_int(value, 2, 1024, 2, "[env] 线程数配置非法(<2)");
@@ -185,8 +187,13 @@ int env_init() {
     }
     fclose(fp);
     if (!found_datapath) {
-        const char* path = MhuixsHomePath ? mstr_cstr(MhuixsHomePath) : "";
-        fprintf(stderr, "[env] 数据目录不可用: %.*s\n", (int)(MhuixsHomePath ? mstrlen(MhuixsHomePath) : 0), path);
+        /* 只在"配置里压根没有这个键"时补一条提示。
+         * 键存在但目录不可用时，parse_path 已经报过具体路径了；
+         * 这里原来又报一次，而此时 MhuixsHomePath 已是 NULL，
+         * 于是打印出一行空路径 —— 看起来像内存坏了，实际是重复报错。 */
+        if (!datapath_key_seen) {
+            fprintf(stderr, "[env] 配置中缺少 MhuixsHomePath\n");
+        }
         mstr_free(config_path);
         return 1;
     }

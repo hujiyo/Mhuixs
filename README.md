@@ -177,12 +177,22 @@ mhuixs> :quit
 
 ## 5. 平台支持
 
-**已验证的平台：Windows（MSYS2 / MinGW-w64，gcc）。Linux 上从未验证过。**
+**已在两个平台实测通过：**
 
-本文档中所有"实测""验证"的数字，都来自 Windows + MSYS2 MinGW-w64
-（`uname` → `MINGW64_NT`，`gcc -dumpmachine` → `x86_64-w64-mingw32`）。
-开发机上跑不了 Linux（WSL 被安全策略禁用，也没有 docker），
-所以没有 Linux 的实测数据。
+| 平台 | 编译器 | 结果 |
+|---|---|---|
+| Windows（MSYS2 / MinGW-w64） | gcc 15.2.0 (`x86_64-w64-mingw32`) | make 零错误；三套测试全过；REPL 正常 |
+| Linux（Ubuntu 24.04 LTS，x86_64） | gcc 13.3.0 (`x86_64-linux-gnu`) | make 零错误；三套测试全过；REPL 正常 |
+
+Linux 侧实测（2026-10-05）：编译、三套回归测试、REPL 交互、
+六种数据结构的挂载与持久化跨重启，全部正常。
+两平台的编译告警集合**完全一致**（`-Wsign-compare` 35 处、`-Wunused-variable` 5 处、
+`-Wtype-limits` 3 处等，均为既有代码风格问题，不影响功能）。
+
+**数据文件可跨平台搬运**：Windows 写出的 `registry.dat`（含 LIST / BITMAP /
+KVALOT / TABLE）在 Linux 上能完整恢复。原因是序列化只用定宽整数、不做结构体
+整体 dump。注意这条结论的前提是**同为小端序、同为 LP64 模型**；
+若将来支持大端或 32 位平台需要重新验证。
 
 代码的跨平台情况分三类：
 
@@ -192,15 +202,20 @@ mhuixs> :quit
 | 依赖 POSIX 兼容层 | `lib/getid.c` | 无条件 `#include <pthread.h>`。Linux 原生可用；MSYS2 下由 mingw 提供；但**用 MSVC 或原生 MinGW 会编译失败** |
 | 未纳入构建 | `lib/pkg.c/h` | 依赖 `arpa/inet.h`（Linux 专有）。网络层回归时再处理 |
 
-要注意的细节：MinGW 会定义 `_WIN32`，所以**在 Windows 上跑测到的是 `_WIN32` 分支**；
-`#else` 里的 Linux 分支（`readlink("/proc/self/exe")`、`pthread_mutex_*`）
-从未被执行过。换个平台等于换了一半代码路径，需要重新验证。
+### 编译告警里的一个坑（已修）
 
-在 Linux 上验证只需要：
+`-std=c99` 下 glibc 会定义 `__STRICT_ANSI__`，**默认不暴露 POSIX 函数**——
+即使包含了 `<unistd.h>`，`readlink()` 也没有声明，编译器只能按 `int` 去理解
+它的返回值（实际是 `ssize_t`）。这个问题只在 Linux 上能看到
+（Windows 上那段代码在 `#else` 分支里，根本没被编译）。
+修法是在 `lib/env.h` 顶部请求 `_POSIX_C_SOURCE`。
 
-```bash
-cd src && make && make test
-```
+### 已知的跨平台缺口
+
+`src/Mhuixs.config` 里 `MhuixsHomePath` 写的是 Windows 绝对路径
+（`D:\Mhuixs_data`），且数据目录不存在时会拒绝启动 —— 意味着
+**Linux 上拿到源码后开箱不可用**，需要先改配置并手动建目录。
+详见第 8 章"已知限制"。
 
 ---
 
@@ -261,6 +276,7 @@ Mhuixs/
 
 - **组权限当前对所有人生效**：用户组模块剥离后，`get_primary_gid_by_uid()` 恒返回 0，`HOOK_login()` 也把 `hook->group` 设为 0，于是任何 caller 都被判定为"同组"。在用户组模块回归前，**不要依赖组权限做隔离**。详见 `src/lib/hook.c`。
 - **`mstr_cstr()` 返回的指针不带 `\0`**：不能直接配 `printf("%s")` / `strcmp` 用，会读到相邻未初始化内存（症状是字符串后面多出乱码，且时有时无）。要用 `mstr_to_cstr()`（需 free）或 `%.*s` + `mstrlen()`。详见 `src/lib/mstring.h`。
+- **`src/Mhuixs.config` 写死了 Windows 路径，且数据目录不存在就拒绝启动**：`MhuixsHomePath D:\Mhuixs_data` 在 Linux 上不是有效路径，`env_init()` 直接失败、程序退出。所以 Linux 上必须先改配置并手动建目录才能用。两处都值得修：配置该用平台无关的路径，数据目录该在首次运行时自动创建。
 - `lib/pkg.c` 依赖网络字节序（`arpa/inet.h`），暂未纳入构建。
 - 注册表落盘不是原子操作：直接写 `registry.dat`，中途失败会留下截断的文件。建议改为写临时文件再重命名。
 - 深拷贝没有环检测：若数据里出现自引用（结构套自己），`bignum_copy` 会无限递归。当前没有产生这种结构的路径。

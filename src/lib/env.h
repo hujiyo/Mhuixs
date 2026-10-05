@@ -21,6 +21,23 @@
  *   2. 通过全局变量 Env 访问配置参数
  */
 
+/*
+ * 特性宏必须在任何系统头文件之前定义。
+ *
+ * 原因：本项目用 -std=c99 编译，此时 glibc 定义 __STRICT_ANSI__，
+ * 默认**不暴露 POSIX 函数** —— 即使包含了 <unistd.h>，readlink()
+ * 也没有声明。结果是隐式声明：编译器按 int 去理解返回值，
+ * 而 readlink 实际返回 ssize_t（64 位）。这里返回值只是个长度，
+ * 侥幸没出事，但属于未定义行为，且在别的平台/优化级别下可能真的坏掉。
+ *
+ * 在 Linux 上用 gcc 13 编译会看到这条告警：
+ *   lib/env.c:91: warning: implicit declaration of function 'readlink'
+ * （Windows 上看不到，因为那段代码在 #else 分支里，根本没被编译。）
+ */
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 200809L
+#endif
+
 #ifndef ENV_H
 #define ENV_H
 
