@@ -57,8 +57,12 @@ static void print_usage(void)
     printf("Mhuixs %s —— 内存数据结构库\n\n", MHUIXS_VERSION);
     printf("用法:\n");
     printf("  mhuixs              进入交互模式（REPL）\n");
+    printf("  mhuixs <文件>       执行命令文件后退出（一行一条命令，# 注释）\n");
+    printf("  mhuixs -            从 stdin 逐行读命令，非交互执行\n");
     printf("  mhuixs demo         运行主链路自检与命令层演示后退出\n");
     printf("  mhuixs -h|--help    显示本说明\n");
+    printf("\n脚本模式：stdout 只剩命令输出（启动信息走 stderr）；\n");
+    printf("          出错即停，退出码 1，报错带文件名与行号；打不开文件退出码 2。\n");
     printf("\n交互模式下输入 :help 查看命令列表，:quit 退出。\n");
 }
 
@@ -259,6 +263,16 @@ static int self_check(int verbose)
  * 用 :format 切换，默认 text。 */
 static int g_json_mode = 0;
 
+/* 脚本模式标志。启动/收尾信息由此决定去向：
+ * 交互/demo 打到 stdout（老行为），脚本模式打到 stderr ——
+ * 让 stdout 只剩命令输出，重定向拿到的才是干净的结果。 */
+static int g_script_mode = 0;
+
+static FILE *boot_stream(void)
+{
+    return g_script_mode ? stderr : stdout;
+}
+
 static void repl(void)
 {
     char line[4096];
@@ -331,6 +345,118 @@ static void repl(void)
     }
 }
 
+/* ------------------------------------------------------------------ */
+/* 脚本模式：逐行执行命令文件（mhuixs <文件> / mhuixs -）                */
+/* ------------------------------------------------------------------ */
+
+/*
+ * 与交互模式同一套命令语义（一行一条命令、# 注释、元命令），差别只在呈现：
+ *   - 不打印提示符，stdout 只剩命令输出，可以安全重定向；
+ *   - 启动/收尾信息走 stderr（见 boot_stream）；
+ *   - 出错即停：第一条失败的命令中止脚本，报错带文件名与行号。
+ *
+ * 这不是脚本语言：没有变量、条件、循环，输入源从键盘换成文件而已。
+ * 边界论证见 README 设计边界一节与 doc/reference-model.md。
+ *
+ * 返回值即进程退出码：0 正常结束（含 :quit）；1 脚本内出错。
+ * 打不开文件由调用方处理，退出码 2。
+ */
+static int run_script(FILE *fp, const char *label)
+{
+    char line[4096];
+    char out[131072];   /* 与 repl() 同规格：JSON 是文本的超集，转义会膨胀 */
+    int  lineno = 0;
+
+    for (;;) {
+        if (!fgets(line, sizeof(line), fp)) break;   /* 文件结束 */
+
+        lineno++;
+
+        /* 跳过 UTF-8 BOM（Windows 记事本默认带） */
+        if (lineno == 1 && (unsigned char)line[0] == 0xEF &&
+                           (unsigned char)line[1] == 0xBB &&
+                           (unsigned char)line[2] == 0xBF) {
+            memmove(line, line + 3, strlen(line + 3) + 1);
+        }
+
+        /* 长行检查：缓冲 4096，更长的行会被 fgets 劈成两段，
+         * 尾段会变成一条不存在的命令。交互模式劈了也就劈了（用户自己敲的），
+         * 脚本模式必须明确报错，不能静默执行半条命令。 */
+        {
+            size_t raw = strlen(line);
+            int had_nl = (raw > 0 && line[raw - 1] == '\n');
+            if (!had_nl && raw == sizeof(line) - 1 && !feof(fp)) {
+                fprintf(stderr, "mhuixs: %s:%d: 单行超过 %d 字节，拒绝劈开执行"
+                                "（请拆成多条命令）\n",
+                        label, lineno, (int)(sizeof(line) - 1));
+                return 1;
+            }
+        }
+
+        /* 去掉行尾换行 */
+        size_t n = strlen(line);
+        while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) line[--n] = '\0';
+
+        /* 空白行跳过；# 注释由命令层的分词器处理（execute.c tokenize），这里不用管 */
+        int blank = 1;
+        for (const char *p = line; *p; p++) {
+            if (*p != ' ' && *p != '\t') { blank = 0; break; }
+        }
+        if (blank) continue;
+
+        /* 元命令：与 repl() 同一套 */
+        if (line[0] == ':') {
+            if (!strcmp(line, ":quit") || !strcmp(line, ":q") || !strcmp(line, ":exit"))
+                return 0;
+            if (!strcmp(line, ":help") || !strcmp(line, ":?")) {
+                fputs(mhx_help_text(), stdout);
+                continue;
+            }
+            if (!strcmp(line, ":save")) {
+                int k = save_registry();
+                if (k < 0) {
+                    fprintf(stderr, "mhuixs: %s:%d: :save 失败，中止执行\n", label, lineno);
+                    return 1;
+                }
+                printf("已保存 %d 个 HOOK\n", k);
+                continue;
+            }
+            if (!strncmp(line, ":format", 7)) {
+                const char *a = line + 7;
+                while (*a == ' ' || *a == '\t') a++;
+                if      (!strcmp(a, "json")) g_json_mode = 1;
+                else if (!strcmp(a, "text")) g_json_mode = 0;
+                else {
+                    fprintf(stderr, "mhuixs: %s:%d: 用法：:format text|json\n", label, lineno);
+                    return 1;
+                }
+                continue;
+            }
+            fprintf(stderr, "mhuixs: %s:%d: 未知的元命令：%s（可用 :help :save :format :quit）\n",
+                    label, lineno, line);
+            return 1;
+        }
+
+        int rc;
+        if (g_json_mode) {
+            rc = mhx_execute_json(line, out, sizeof(out));
+            if (out[0] != '\0') fputs(out, stdout);
+        } else {
+            rc = mhx_execute(line, out, sizeof(out));
+            if (out[0] != '\0') {
+                fputs(out, stdout);
+                if (out[strlen(out) - 1] != '\n') putchar('\n');
+            }
+        }
+
+        if (rc != 0) {
+            fprintf(stderr, "mhuixs: %s:%d: 命令失败，中止执行: %s\n", label, lineno, line);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /* 拼出 <MhuixsHomePath>/registry.dat 的完整路径，调用方负责 mstr_free */
 static char *make_registry_path(void)
 {
@@ -357,74 +483,81 @@ static char *make_registry_path(void)
 
 int main(int argc, char *argv[])
 {
-    /* 入口分发：无参数 = 交互模式；demo = 自检+演示；-h = 帮助 */
+    /* 入口分发：无参数 = 交互模式；<文件>|- = 脚本模式；demo = 自检+演示；-h = 帮助 */
     int mode_demo = 0;
+    const char *script = NULL;   /* NULL = 不跑脚本；"-" = 从 stdin 读 */
     if (argc > 1) {
         if (!strcmp(argv[1], "demo")) {
             mode_demo = 1;
         } else if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
             print_usage();
             return 0;
-        } else {
+        } else if (!strcmp(argv[1], "-")) {
+            script = "-";
+        } else if (argv[1][0] == '-') {
+            /* 以 - 开头的一律当选项拒绝，避免把拼错的选项当成文件名 */
             fprintf(stderr, "未知参数: %s\n\n", argv[1]);
             print_usage();
             return 2;
+        } else {
+            script = argv[1];   /* 其余一律当命令文件路径 */
         }
     }
+    g_script_mode = (script != NULL);
 
-    printf("==== Mhuixs %s ====\n", MHUIXS_VERSION);
+    fprintf(boot_stream(), "==== Mhuixs %s ====\n", MHUIXS_VERSION);
 
     /* 环境变量模块 */
     if (env_init() != 0) {
-        printf("ENV 模块初始化失败\n");
+        fprintf(boot_stream(), "ENV 模块初始化失败\n");
         return 1;
     }
-    printf("  ENV 模块就绪\n");
+    fprintf(boot_stream(), "  ENV 模块就绪\n");
 
     /* 日志模块 */
     {
         char *log_path = mstr_to_cstr(Env.MhuixsHomePath);
         if (logger_init(log_path) != 0) {
-            printf("  Logger 模块未能初始化（日志功能禁用）\n");
+            fprintf(boot_stream(), "  Logger 模块未能初始化（日志功能禁用）\n");
         } else {
-            printf("  Logger 模块就绪\n");
+            fprintf(boot_stream(), "  Logger 模块就绪\n");
         }
         free(log_path);
     }
 
     /* ID 分配器模块 */
     if (idalloc_init() != success) {
-        printf("ID 分配器初始化失败\n");
+        fprintf(boot_stream(), "ID 分配器初始化失败\n");
         return 1;
     }
-    printf("  ID 分配器就绪\n");
+    fprintf(boot_stream(), "  ID 分配器就绪\n");
 
     /* 注册表模块（统一管理 HOOK 与权限） */
     if (reg_init() != 0) {
-        printf("注册表初始化失败\n");
+        fprintf(boot_stream(), "注册表初始化失败\n");
         return 1;
     }
-    printf("  注册表就绪\n");
+    fprintf(boot_stream(), "  注册表就绪\n");
 
     /* 从磁盘恢复 HOOK */
     {
         char *reg_path = make_registry_path();
         int loaded = reg_load_from_disk(reg_path);
         if (loaded > 0) {
-            printf("  从磁盘恢复 %d 个 HOOK\n", loaded);
+            fprintf(boot_stream(), "  从磁盘恢复 %d 个 HOOK\n", loaded);
         } else if (loaded == 0) {
-            printf("  无已持久化的 HOOK（首次运行或数据为空）\n");
+            fprintf(boot_stream(), "  无已持久化的 HOOK（首次运行或数据为空）\n");
         } else {
             /* reg_load_from_disk 已把坏文件改名留档，并打印了具体路径。
              * 这里以空注册表继续运行是安全的：退出时保存的是新文件，
              * 不会覆盖那份留档。 */
-            printf("  ⚠ 从磁盘恢复 HOOK 失败，已按空注册表启动\n");
-            printf("    （原文件已留档为 registry.dat.corrupt，数据未丢失，可手工抢救）\n");
+            fprintf(boot_stream(), "  ⚠ 从磁盘恢复 HOOK 失败，已按空注册表启动\n");
+            fprintf(boot_stream(), "    （原文件已留档为 registry.dat.corrupt，数据未丢失，可手工抢救）\n");
         }
         free(reg_path);
     }
 
-    /* 主链路自检：演示模式打印明细，交互模式静默（只在失败时出声） */
+    /* 主链路自检：演示模式打印明细，交互/脚本模式静默（只在失败时出声） */
     int failures;
     if (mode_demo) {
         printf("\n---- 主链路自检 ----\n");
@@ -450,15 +583,41 @@ int main(int argc, char *argv[])
         return failures == 0 ? 0 : 1;
     }
 
-    /* 交互模式 */
     failures = self_check(0);
     if (failures) {
-        printf("\n⚠ 主链路自检有 %d 项失败（用 demo 参数可看明细），仍进入交互模式\n",
-               failures);
-    } else {
+        fprintf(boot_stream(),
+                "\n⚠ 主链路自检有 %d 项失败（用 demo 参数可看明细），仍继续运行\n",
+                failures);
+    } else if (!g_script_mode) {
         printf("  主链路自检通过\n");
     }
 
+    /* 脚本模式：逐行执行命令文件，出错即停 */
+    if (script != NULL) {
+        int exit_code;
+        if (!strcmp(script, "-")) {
+            exit_code = run_script(stdin, "-");
+        } else {
+            FILE *fp = fopen(script, "r");
+            if (!fp) {
+                fprintf(stderr, "mhuixs: 打不开文件: %s\n", script);
+                reg_destroy();
+                return 2;
+            }
+            exit_code = run_script(fp, script);
+            fclose(fp);
+        }
+
+        /* 与交互模式同一语义：退出时自动存盘（脚本跑到哪就算到哪） */
+        int saved = save_registry();
+        if (saved < 0) fprintf(boot_stream(), "保存 HOOK 到磁盘失败\n");
+        else           fprintf(boot_stream(), "已保存 %d 个 HOOK 到磁盘\n", saved);
+
+        reg_destroy();
+        return exit_code;
+    }
+
+    /* 交互模式 */
     repl();
 
     /* 退出时保存 */

@@ -148,9 +148,10 @@ flags : bitmap
 
 ```bash
 cd src
-make          # 编译
-./mhuixs      # 进入交互模式（REPL）
-make test     # 回归测试（三套）：基础库 / 持久化往返 / HOOK 生命周期
+make               # 编译
+./mhuixs           # 进入交互模式（REPL）
+./mhuixs job.mhx   # 脚本模式：执行命令文件后退出
+make test          # 回归测试（四套）：基础库 / 持久化往返 / HOOK 生命周期 / 命令层输出
 ```
 
 ### 交互模式
@@ -190,6 +191,34 @@ mhuixs> :quit
 ```
 
 交互元命令：`:help` 查看全部命令，`:save` 立即存盘，`:quit` 退出（退出时自动保存）。
+
+### 脚本模式
+
+像 `python script.py` 那样，把命令文件直接交给它：
+
+```bash
+./mhuixs job.mhx      # 执行命令文件后退出
+./mhuixs - < job.mhx  # 等价形式：从 stdin 逐行读命令
+```
+
+`job.mhx` 一行一条命令，空行与 `#` 注释跳过：
+
+```
+# 初始化演示数据
+create list fruits
+rpush fruits apple banana
+llen fruits
+```
+
+与交互模式的命令语义完全相同，差别只在呈现：
+
+- **stdout 只剩命令输出**：提示符不打印，启动/收尾信息走 stderr，可以放心 `> result.txt`
+- 元命令可用：`:format json`（结果变成 JSON 流）、`:save`、`:quit`
+- **出错即停**：第一条失败的命令中止脚本，退出码 1，报错带文件名与行号；打不开文件退出码 2
+- 跑完（或 `:quit`）自动存盘，与交互模式同一语义——脚本跑到哪，就存到哪
+
+仍然没有变量、条件、循环：脚本模式只是把「一行一条命令」的输入源从键盘换成
+文件，不是脚本语言（见第 9 节设计边界）。
 
 ### 其他入口
 
@@ -298,7 +327,7 @@ KVALOT / TABLE）在 Linux 上能完整恢复。原因是序列化只用定宽�
 ```
 Mhuixs/
 ├── src/
-│   ├── Mhuixs.c          # 入口：模块初始化 + 交互模式(REPL) + demo + 自检
+│   ├── Mhuixs.c          # 入口：模块初始化 + 交互模式(REPL) + 脚本模式 + demo + 自检
 │   ├── execute.c/h       # 命令执行层：一行一条命令
 │   ├── registry.c/h      # 注册表：统一管理 HOOK、权限、落盘
 │   ├── Makefile
