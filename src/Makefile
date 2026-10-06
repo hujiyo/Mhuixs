@@ -112,14 +112,18 @@ LIB_TEST_SRC = ../test/test_lib_status.c
 ROUNDTRIP_SRC = ../test/test_persist_roundtrip.c
 # 3) HOOK 生命周期：注册 -> 挂数据 -> 注销 的释放检查
 REG_TEST_SRC = ../test/test_registry_lifecycle.c
+# 4) 命令层输出：文本模式逐字不变 + JSON 的结构化字段
+EXEC_TEST_SRC = ../test/test_execute_json.c
 
-test: run_libtest run_roundtrip run_regtest
+test: run_libtest run_roundtrip run_regtest run_exectest
 	@echo ""
 	./run_libtest
 	@echo ""
 	./run_roundtrip
 	@echo ""
 	./run_regtest
+	@echo ""
+	./run_exectest
 
 run_libtest: $(TEST_OBJS) $(LIB_TEST_SRC)
 	$(CC) $(CFLAGS) -o run_libtest $(LIB_TEST_SRC) $(TEST_OBJS) $(LDFLAGS)
@@ -135,8 +139,11 @@ else
 	$(CC) $(CFLAGS) -o run_regtest $(REG_TEST_SRC) $(TEST_OBJS) $(LDFLAGS)
 endif
 
+run_exectest: $(TEST_OBJS) $(EXEC_TEST_SRC)
+	$(CC) $(CFLAGS) -o run_exectest $(EXEC_TEST_SRC) $(TEST_OBJS) $(LDFLAGS)
+
 clean:
-	rm -f $(OBJS) $(TARGET) run_libtest run_roundtrip run_regtest rt_test.dat .log.inf
+	rm -f $(OBJS) $(TARGET) run_libtest run_roundtrip run_regtest run_exectest rt_test.dat .log.inf
 
 rebuild: clean all
 

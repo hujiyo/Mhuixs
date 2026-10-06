@@ -48,7 +48,7 @@ Mhuixs 内核入口
 
 #define SELFCHECK_HOOK_NAME "mhuixs_selfcheck"
 
-#define MHUIXS_VERSION "0.1.0"
+#define MHUIXS_VERSION "0.1.3"
 
 static char *make_registry_path(void);   /* 定义在后面 */
 
@@ -254,10 +254,17 @@ static int self_check(int verbose)
 /* ------------------------------------------------------------------ */
 /* 交互模式（REPL）                                                     */
 /* ------------------------------------------------------------------ */
+
+/* 输出格式。text 是人类可读（历史行为），json 给程序/AI 消费。
+ * 用 :format 切换，默认 text。 */
+static int g_json_mode = 0;
+
 static void repl(void)
 {
     char line[4096];
-    char out[16384];
+    /* JSON 是文本的超集（还含 text 字段），转义后可能膨胀，
+     * 按 execute.h 的建议给到 128KB（文本模式当年是 16KB）。 */
+    char out[131072];
 
     printf("\n输入命令，:help 查看用法，:quit 退出\n\n");
 
@@ -297,7 +304,22 @@ static void repl(void)
                 else       printf("已保存 %d 个 HOOK\n", k);
                 continue;
             }
-            printf("未知的元命令：%s（可用 :help :save :quit）\n", line);
+            if (!strncmp(line, ":format", 7)) {
+                const char *a = line + 7;
+                while (*a == ' ' || *a == '\t') a++;
+                if      (!strcmp(a, "json")) { g_json_mode = 1; printf("输出格式：json\n"); }
+                else if (!strcmp(a, "text")) { g_json_mode = 0; printf("输出格式：text\n"); }
+                else printf("用法：:format text|json（当前：%s）\n", g_json_mode ? "json" : "text");
+                continue;
+            }
+            printf("未知的元命令：%s（可用 :help :save :format :quit）\n", line);
+            continue;
+        }
+
+        if (g_json_mode) {
+            /* 成败看返回码 / JSON 的 ok 字段，这里不再靠文本前缀判断 */
+            mhx_execute_json(line, out, sizeof(out));
+            if (out[0] != '\0') fputs(out, stdout);
             continue;
         }
 
