@@ -18,7 +18,7 @@ make              # 编译
 ./mhuixs          # 交互模式（REPL）；退出自动存盘
 ./mhuixs demo     # 主链路自检明细 + 命令演示，跑完退出
 ./mhuixs -h       # 用法
-make test         # 三套回归测试：基础库 / 持久化往返 / HOOK 生命周期
+make test         # 四套回归测试：基础库 / 持久化往返 / HOOK 生命周期 / 命令层输出
 ```
 
 ## 数据与配置在哪
@@ -37,7 +37,7 @@ make test         # 三套回归测试：基础库 / 持久化往返 / HOOK 生�
 ```
 src/
   Mhuixs.c        入口：模块初始化 + REPL + demo + 自检
-  execute.c       命令层：一行一条命令，mhx_execute() 是唯一入口
+  execute.c       命令层：一行一条命令，mhx_execute()/mhx_execute_json() 是入口
   registry.c      注册表：HOOK 增删查 + 权限 + 落盘（原子写）
   lib/
     bignum.c      BHS 统一类型：所有数据类型都装在这里
@@ -103,13 +103,14 @@ src/
 
 ## 测试
 
-`make test` 跑三套（都在 `test/` 下，新增测试记得加进 Makefile 的 `test` 目标）：
+`make test` 跑四套（都在 `test/` 下，新增测试记得加进 Makefile 的 `test` 目标）：
 
 | 文件 | 覆盖 |
 |---|---|
 | `test_lib_status.c` | LIST 所有权与深拷贝、嵌套 LIST、BITMAP、TABLE |
 | `test_persist_roundtrip.c` | TABLE / KVALOT 落盘-恢复往返 |
 | `test_registry_lifecycle.c` | HOOK 注册→挂数据→注销 的释放检查 |
+| `test_execute_json.c` | 命令层输出：文本逐字节不变 + JSON 的 ok/code/kind/value |
 
 另有 `test_list_memory.c`（手动运行，仅 Windows）：反复创建/释放观察进程工作集，
 用来验证容器真的回收了元素。**改内存所有权相关的代码就靠它。**
@@ -155,5 +156,20 @@ git config --get extensions.refStorage   # 查看当前后端
   理由：命令可白名单、可审计、非图灵完备；造语言等于与 Lua / Python 竞争。
 - **网络、多用户、权限隔离**。当前权限只有 owner/other 两档有效
   （组权限因用户组模块已剥离而恒通过）。
+- **崩溃恢复 / Ctrl-C 落盘**。持久化是**快照式**：只在关库（`:quit` /
+  Ctrl-D）和手动 `:save` 时写盘，运行期零磁盘 IO。
+  所以**不存在"写入太频繁"的问题，不要去做增量落盘、WAL、日志重放**。
+  Ctrl-C / 关窗口 / `kill -9` 丢整个会话，是模型语义，不是缺口，
+  也不要为此加信号处理器。
+  原子改名保护的是保存动作自身不被写成半截文件，与崩溃恢复无关。
 
 设计取舍的完整论证见 `doc/reference-model.md`。
+
+
+## 版本号约定
+
+日常小的修补、功能新增在用户不主动要求的情况下默认只提x1.x2.x3中的x3
+
+两步走：某次修补预计2个提交能把这次任务做完，那么在最后的第二个提交把宏MHUIXS_VERSION提上去，并且提交后打上tag标签并随commit一起推上去
+
+tag内容：保持简洁，尽量一句话说清改动效果即可

@@ -50,3 +50,5 @@ logex
 *.exe
 
 *.dll
+
+AGENTS.md
