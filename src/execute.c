@@ -98,7 +98,7 @@ static int tokenize(const char *line, token_t *toks, int max_tokens)
     return n;
 }
 
-/* ==================== 结构化结果 ====================
+/* ====== 结构化结果 ======
  *
  * 为什么需要这一层：命令原来的返回值只能是给人看的一串字（out），
  * 调用方（AI / MCP 层 / 别的语言）想拿值就必须解析那串字，也分不清

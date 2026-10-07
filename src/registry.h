@@ -56,7 +56,7 @@ HOOK* reg_find_hook(const char* name);
 /* 判断HOOK是否已注册 */
 int reg_is_registered(const char* name);
 
-/* ==================== C 接口层 ==================== */
+/* ====== C 接口层 ====== */
 /* 供 Logex（纯 C）调用的接口 */
 
 /* 不透明句柄类型 */

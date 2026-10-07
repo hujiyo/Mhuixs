@@ -2,9 +2,9 @@
 
 #define merr -1
 
-/* ========================================
+/* ============
  * 内部辅助函数
- * ======================================== */
+ * ============ */
 
 /**
  * 计算哈希桶数量对应的位数
@@ -196,9 +196,9 @@ static int resize_hash_table(KVALOT* kv) {
     return 0;
 }
 
-/* ========================================
+/* ============
  * KVALOT 基本操作
- * ======================================== */
+ * ============ */
 
 KVALOT* kvalot_create(Obj name) {
     if (!name || name->type != BIGNUM_TYPE_STRING) return NULL;
@@ -415,9 +415,9 @@ void kvalot_clear(KVALOT* kv) {
     kv->keypool_capacity = 0;
 }
 
-/* ========================================
+/* ============
  * 键值对操作
- * ======================================== */
+ * ============ */
 
 int kvalot_add(KVALOT* kv, Obj key, Obj value) {
     if (!kv || !key || key->type != BIGNUM_TYPE_STRING || !value) return merr;
@@ -554,9 +554,9 @@ int kvalot_exists(const KVALOT* kv, Obj key) {
     return kvalot_find(kv, key) != NULL ? 1 : 0;
 }
 
-/* ========================================
+/* ============
  * 查询操作
- * ======================================== */
+ * ============ */
 
 uint32_t kvalot_size(const KVALOT* kv) {
     return kv ? kv->num_keys : 0;
@@ -571,9 +571,9 @@ float kvalot_get_load_factor(const KVALOT* kv) {
     return (float)kv->num_keys / (float)kv->num_buckets;
 }
 
-/* ========================================
+/* ============
  * 调试和统计
- * ======================================== */
+ * ============ */
 
 void kvalot_print_stats(const KVALOT* kv) {
     if (!kv) return;
@@ -614,5 +614,5 @@ void kvalot_print_stats(const KVALOT* kv) {
                (float)kv->num_keys / used_buckets);
     }
     
-    printf("========================\n\n");
+    printf("==========\n\n");
 }

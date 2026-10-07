@@ -209,9 +209,9 @@ static inline mstring mstr_from_bytes(const uint8_t* data, size_t len){
     return result;
 }
 
-/* ========================================
+/* ============
  * BHS 互操作函数（需要 bignum.h）
- * ======================================== */
+ * ============ */
 
 #ifdef BIGNUM_H  /* 只有在包含了 bignum.h 后才定义这些函数 */
 

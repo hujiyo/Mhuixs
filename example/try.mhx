@@ -1,0 +1,68 @@
+# ==========================================================
+#
+# 运行（在 src 目录下）：
+#   ./mhuixs ../try.mhx        # 像跑 python 一样直接跑
+#   ./mhuixs - < ../try.mhx    # 等价形式：从 stdin 读
+#
+# 规则：一行一条命令；# 开头是注释；空行跳过。
+# 脚本对 stdout 只有命令输出（启动信息走 stderr）；
+# 结束时自动存盘 —— 所以最后把建的东西全 drop 掉，不给你库里留东西。
+# ==========================================================
+
+# ---- LIST：普通列表 ----
+create list todo
+rpush todo milk report gym
+llen todo
+lget todo 1
+
+# ---- BITMAP：位图（连续签到示例：第 0/1/3 天签了）----
+# 位图按最高置位位动态定长：置了第 3 位就是 4 位
+create bitmap checkin
+bset checkin 0 1
+bset checkin 1 1
+bset checkin 3 1
+bcount checkin 0 3
+
+# ---- KVALOT：键值对 ----
+create kvalot setting
+kset setting theme dark
+kset setting lang zh
+klen setting
+kget setting theme
+
+# ---- TABLE：关系表（carol 缺 age，留空）----
+create table staff id:int name:str age:int
+tadd staff 1 alice 25
+tadd staff 2 bob 30
+tadd staff 3 carol
+trows staff
+tget staff 1 name
+info staff
+
+# ---- 切成 JSON：这是给程序/AI 消费的样子 ----
+:format json
+llen todo
+kget setting theme
+tget staff 0 name
+:format text
+
+# ---- 手动存盘（可选；不写这行的话，退出时也会自动存）----
+:save
+
+# ---- 收尾：把建的全部摘掉，库里不留痕 ----
+drop todo
+drop checkin
+drop setting
+drop staff
+
+# ----------------------------------------------------------
+# 想看看"出错即停"？把下面这行行首的 # 去掉再跑一次：
+# 它会失败并停在这一行（退出码 1，报错带行号），
+# 它后面的 drop 全都不执行 —— 已执行的部分照常存盘，
+# 这就是"脚本跑到哪就存到哪"。看完记得把钩子手动清掉或重跑本脚本。
+#
+# llen no_such_list
+
+# 走到这里说明全部成功。查退出码：
+#   PowerShell:  $LASTEXITCODE      cmd:  echo %errorlevel%
+# 正常应为 0。

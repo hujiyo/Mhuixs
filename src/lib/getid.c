@@ -23,7 +23,7 @@ static pthread_mutex_t gid_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static int if_init = 0;
 
-/* ==================== 初始化和清理 ==================== */
+/* ====== 初始化和清理 ====== */
 
 int idalloc_init(void) {
     if (if_init) {
@@ -61,7 +61,7 @@ int idalloc_close(void) {
     return 0;
 }
 
-/* ==================== 会话ID分配 ==================== */
+/* ====== 会话ID分配 ====== */
 
 M_SID get_sid(void) {
     pthread_mutex_lock(&sid_mutex);
@@ -88,7 +88,7 @@ M_SID del_sid(M_SID sid) {
     return 0;
 }
 
-/* ==================== 用户ID分配 ==================== */
+/* ====== 用户ID分配 ====== */
 
 M_UID get_uid(M_UID_t type) {
     uint32_t start = 0, end = 0;
@@ -133,7 +133,7 @@ M_UID del_uid(M_UID_t type, M_UID uid) {
     return 0;
 }
 
-/* ==================== 组ID分配 ==================== */
+/* ====== 组ID分配 ====== */
 
 M_GID get_gid(M_GID_t type) {
     int start = 0, end = 0;

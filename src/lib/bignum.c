@@ -1682,7 +1682,7 @@ struct LIST* bignum_get_list(const BHS *num) {
     return num->data.list;
 }
 
-/* ========================================
+/* ============
  * TABLE / KVALOT 桥接
  *
  * 这两个类型原先只有类型标记（BIGNUM_TYPE_TABLE / BIGNUM_TYPE_KVALOT），
@@ -1691,7 +1691,7 @@ struct LIST* bignum_get_list(const BHS *num) {
  *
  * 语义与 bignum_from_list 保持一致：**复制**。
  * 调用方保留传入对象的所有权，需要自行 free_table / kvalot_destroy。
- * ======================================== */
+ * ============ */
 
 BHS* bignum_from_table(const TABLE *table) {
     if (table == NULL) return NULL;

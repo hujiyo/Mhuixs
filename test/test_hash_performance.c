@@ -229,9 +229,9 @@ void test_key_length_performance() {
 }
 
 int main() {
-    printf("===========================================\n");
+    printf("===============\n");
     printf("  Hash Table Performance Benchmark\n");
-    printf("===========================================\n");
+    printf("===============\n");
     
     srand(time(NULL));
     
@@ -256,9 +256,9 @@ int main() {
     /* 键长度性能测试 */
     test_key_length_performance();
     
-    printf("\n===========================================\n");
+    printf("\n===============\n");
     printf("  All tests completed!\n");
-    printf("===========================================\n");
+    printf("===============\n");
     
     return 0;
 }

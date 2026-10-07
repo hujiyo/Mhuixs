@@ -2,9 +2,9 @@
 #include <stdio.h>
 #include <assert.h>
 
-/* ========================================
+/* ============
  * 内部辅助函数
- * ======================================== */
+ * ============ */
 
 /* 向上取整到2的幂 */
 static inline uint32_t next_power_of_2(uint32_t n) {
@@ -214,9 +214,9 @@ static int hash_resize(hash_table_t* ht, uint32_t new_capacity) {
     return 0;
 }
 
-/* ========================================
+/* ============
  * 公共 API 实现
- * ======================================== */
+ * ============ */
 
 hash_table_t* hash_create(uint32_t initial_capacity) {
     if (initial_capacity < HASH_INITIAL_CAPACITY) {
@@ -468,7 +468,7 @@ void hash_print_stats(const hash_table_t* ht) {
     printf("Deletes: %u\n", ht->stats.num_deletes);
     printf("Resizes: %u\n", ht->stats.num_resizes);
     printf("Max PSL: %u\n", ht->stats.max_psl);
-    printf("============================\n\n");
+    printf("==============\n\n");
 }
 
 void hash_reset_stats(hash_table_t* ht) {

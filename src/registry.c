@@ -209,7 +209,7 @@ int reg_is_registered(const char* name) {
     return exists;
 }
 
-/* ==================== C 接口层实现 ==================== */
+/* ====== C 接口层实现 ====== */
 
 int reg_register(uint64_t owner, const char *name, HookHandle *out_hook) {
     if (!name || !out_hook) return -2;
@@ -248,7 +248,7 @@ int hook_set_permission(HookHandle hook, uint64_t caller, const char *pm_str) {
     return 0;
 }
 
-/* ==================== BHS 深拷贝 ==================== */
+/* ====== BHS 深拷贝 ====== */
 
 BHS* bhs_deep_copy(const BHS *src) {
     if (!src) return NULL;
@@ -305,7 +305,7 @@ void* hook_get_bhs(HookHandle hook, uint64_t caller) {
     return (void*)h->obj;
 }
 
-/* ==================== 持久化功能 ==================== */
+/* ====== 持久化功能 ====== */
 
 /* 获取注册表中HOOK的数量 */
 int reg_get_hook_count(void) {
@@ -313,7 +313,7 @@ int reg_get_hook_count(void) {
     return hash_size(Reg.hook_map);
 }
 
-/* ==================== BHS 序列化/反序列化 ==================== */
+/* ====== BHS 序列化/反序列化 ====== */
 
 /*
  * BHS 二进制序列化格式:
@@ -330,7 +330,7 @@ int reg_get_hook_count(void) {
  * [elements:   N * BHS]  递归序列化每个元素
  */
 
-/* ==================== 序列化辅助 ==================== */
+/* ====== 序列化辅助 ====== */
 
 /* 写一个带 uint32 长度前缀的字节串 */
 static int write_bytes32(const char *data, uint32_t len, FILE *fp) {
@@ -552,7 +552,7 @@ static KVALOT* kvalot_deserialize(FILE *fp) {
     return kv;
 }
 
-/* ==================== BHS 序列化 ==================== */
+/* ====== BHS 序列化 ====== */
 
 int bhs_serialize(const BHS *bhs, FILE *fp) {
     if (!fp) return -1;
@@ -756,7 +756,7 @@ BHS* bhs_deserialize(FILE *fp) {
     return NULL;
 }
 
-/* ==================== HOOK 序列化/反序列化 ==================== */
+/* ====== HOOK 序列化/反序列化 ====== */
 
 /*
  * HOOK 二进制序列化格式:
@@ -905,7 +905,7 @@ static HOOK* hook_deserialize(FILE *fp, char **out_name) {
     return hook;
 }
 
-/* ==================== 持久化回调 ==================== */
+/* ====== 持久化回调 ====== */
 
 typedef struct {
     FILE *fp;
@@ -926,7 +926,7 @@ static int save_hook_callback(const char *key, void *value, void *user_data) {
 }
 
 /* 保存注册表到磁盘 */
-/* ==================== 原子落盘辅助 ==================== */
+/* ====== 原子落盘辅助 ====== */
 
 /*
  * 让 path 原子地变成 tmp_path 的内容。

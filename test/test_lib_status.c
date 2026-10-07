@@ -292,9 +292,9 @@ static void test_table(void)
 
 int main(void)
 {
-    printf("========================================\n");
+    printf("============\n");
     printf("Mhuixs lib/ 数据结构测试\n");
-    printf("========================================\n\n");
+    printf("============\n\n");
 
     test_list();
     test_nested_list();
@@ -302,10 +302,10 @@ int main(void)
     test_bitmap();
     test_table();
 
-    printf("========================================\n");
+    printf("============\n");
     if (fails == 0) printf("全部通过\n");
     else            printf("%d 项失败\n", fails);
-    printf("========================================\n");
+    printf("============\n");
 
     return fails;
 }
