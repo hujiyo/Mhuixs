@@ -42,12 +42,6 @@ OBJS = Mhuixs.o \
        lib/tblh.o \
        lib/kvalh.o
 
-# lib/pkg.o 暂时挂起：
-#   pkg 是客户端/服务端之间的打包协议（htonl/ntohl 网络字节序），
-#   依赖 arpa/inet.h，在 Windows 上不可编译。
-#   网络层剥离期间无任何模块引用它，等网络层回归时再启用。
-#   （文件保留在 lib/pkg.c lib/pkg.h）
-
 #
 # 带平台网络依赖的对象。**不能并进 OBJS** ——
 # TEST_OBJS 是从 OBJS 里 filter-out 出来的，一旦并进去，
@@ -119,9 +113,6 @@ lib/tblh.o: lib/tblh.c lib/tblh.h lib/bignum.h lib/mstring.h
 
 lib/kvalh.o: lib/kvalh.c lib/kvalh.h lib/bignum.h lib/mstring.h lib/hash.h
 	$(CC) $(CFLAGS) -c lib/kvalh.c -o lib/kvalh.o
-
-lib/pkg.o: lib/pkg.c lib/pkg.h
-	$(CC) $(CFLAGS) -c lib/pkg.c -o lib/pkg.o
 
 # 跨平台 socket 薄封装（平台相关，只在主目标与网络测试里链）
 lib/sock.o: lib/sock.c lib/sock.h
