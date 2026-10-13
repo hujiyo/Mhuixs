@@ -26,6 +26,7 @@ TARGET = mhuixs
 
 OBJS = Mhuixs.o \
        execute.o \
+       session.o \
        registry.o \
        lib/env.o \
        lib/getid.o \
@@ -57,6 +58,10 @@ Mhuixs.o: Mhuixs.c lib/merr.h lib/env.h lib/getid.h lib/hook.h lib/mstring.h reg
 
 execute.o: execute.c execute.h registry.h lib/hook.h lib/bignum.h lib/list.h lib/bitmap.h
 	$(CC) $(CFLAGS) -c execute.c
+
+# 会话层：无 socket 依赖，留在 OBJS 里，普通单测可以直接链接
+session.o: session.c session.h execute.h registry.h lib/env.h lib/mstring.h lib/merr.h
+	$(CC) $(CFLAGS) -c session.c
 
 registry.o: registry.c registry.h lib/merr.h lib/env.h lib/mstring.h lib/hash.h lib/hook.h lib/bignum.h
 	$(CC) $(CFLAGS) -c registry.c
@@ -114,8 +119,10 @@ ROUNDTRIP_SRC = ../test/test_persist_roundtrip.c
 REG_TEST_SRC = ../test/test_registry_lifecycle.c
 # 4) 命令层输出：文本模式逐字不变 + JSON 的结构化字段
 EXEC_TEST_SRC = ../test/test_execute_json.c
+# 5) 会话层：元命令分派 + 输出格式是会话私有状态
+SESSION_TEST_SRC = ../test/test_session.c
 
-test: run_libtest run_roundtrip run_regtest run_exectest
+test: run_libtest run_roundtrip run_regtest run_exectest run_sesstest
 	@echo ""
 	./run_libtest
 	@echo ""
@@ -124,6 +131,8 @@ test: run_libtest run_roundtrip run_regtest run_exectest
 	./run_regtest
 	@echo ""
 	./run_exectest
+	@echo ""
+	./run_sesstest
 
 run_libtest: $(TEST_OBJS) $(LIB_TEST_SRC)
 	$(CC) $(CFLAGS) -o run_libtest $(LIB_TEST_SRC) $(TEST_OBJS) $(LDFLAGS)
@@ -142,8 +151,11 @@ endif
 run_exectest: $(TEST_OBJS) $(EXEC_TEST_SRC)
 	$(CC) $(CFLAGS) -o run_exectest $(EXEC_TEST_SRC) $(TEST_OBJS) $(LDFLAGS)
 
+run_sesstest: $(TEST_OBJS) $(SESSION_TEST_SRC)
+	$(CC) $(CFLAGS) -o run_sesstest $(SESSION_TEST_SRC) $(TEST_OBJS) $(LDFLAGS)
+
 clean:
-	rm -f $(OBJS) $(TARGET) run_libtest run_roundtrip run_regtest run_exectest rt_test.dat log.inf .log.inf
+	rm -f $(OBJS) $(TARGET) run_libtest run_roundtrip run_regtest run_exectest run_sesstest rt_test.dat log.inf .log.inf
 
 rebuild: clean all
 

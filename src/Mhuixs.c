@@ -36,6 +36,7 @@ Mhuixs 内核入口
 #include "mstring.h"   /* 字符串模块 */
 #include "registry.h"  /* 注册表模块 */
 #include "execute.h"   /* 命令执行层 */
+#include "session.h"   /* 会话层：元命令 + 命令执行 */
 
 /*
 存储在 Mhuixs 数据库的所有数据结构都需要使用钩子进行引用：
@@ -50,8 +51,6 @@ Mhuixs 内核入口
 
 #define MHUIXS_VERSION "0.1.4"
 
-static char *make_registry_path(void);   /* 定义在后面 */
-
 static void print_usage(void)
 {
     printf("Mhuixs %s —— 内存数据结构库\n\n", MHUIXS_VERSION);
@@ -64,16 +63,6 @@ static void print_usage(void)
     printf("\n脚本模式：stdout 只剩命令输出（启动信息走 stderr）；\n");
     printf("          出错即停，退出码 1，报错带文件名与行号；打不开文件退出码 2。\n");
     printf("\n交互模式下输入 :help 查看命令列表，:quit 退出。\n");
-}
-
-/* 保存注册表；成功返回保存的 HOOK 数，失败返回 -1 */
-static int save_registry(void)
-{
-    char *path = make_registry_path();
-    int rc = reg_save_to_disk(path);
-    free(path);
-    if (rc != 0) return -1;
-    return reg_get_hook_count();
 }
 
 /* ------------------------------------------------------------------ */
@@ -259,10 +248,6 @@ static int self_check(int verbose)
 /* 交互模式（REPL）                                                     */
 /* ------------------------------------------------------------------ */
 
-/* 输出格式。text 是人类可读（历史行为），json 给程序/AI 消费。
- * 用 :format 切换，默认 text。 */
-static int g_json_mode = 0;
-
 /* 脚本模式标志。启动/收尾信息由此决定去向：
  * 交互/demo 打到 stdout（老行为），脚本模式打到 stderr ——
  * 让 stdout 只剩命令输出，重定向拿到的才是干净的结果。 */
@@ -279,6 +264,9 @@ static void repl(void)
     /* JSON 是文本的超集（还含 text 字段），转义后可能膨胀，
      * 按 execute.h 的建议给到 128KB（文本模式当年是 16KB）。 */
     char out[131072];
+
+    mhx_session s;
+    mhx_session_init(&s, 0);
 
     printf("\n输入命令，:help 查看用法，:quit 退出\n\n");
 
@@ -302,45 +290,43 @@ static void repl(void)
         }
         if (blank) continue;
 
-        /* 元命令（以 : 开头） */
-        if (line[0] == ':') {
-            if (!strcmp(line, ":quit") || !strcmp(line, ":q") || !strcmp(line, ":exit")) {
-                printf("\n");
-                break;
-            }
-            if (!strcmp(line, ":help") || !strcmp(line, ":?")) {
-                fputs(mhx_help_text(), stdout);
-                continue;
-            }
-            if (!strcmp(line, ":save")) {
-                int k = save_registry();
-                if (k < 0) printf("保存失败\n");
-                else       printf("已保存 %d 个 HOOK\n", k);
-                continue;
-            }
-            if (!strncmp(line, ":format", 7)) {
-                const char *a = line + 7;
-                while (*a == ' ' || *a == '\t') a++;
-                if      (!strcmp(a, "json")) { g_json_mode = 1; printf("输出格式：json\n"); }
-                else if (!strcmp(a, "text")) { g_json_mode = 0; printf("输出格式：text\n"); }
-                else printf("用法：:format text|json（当前：%s）\n", g_json_mode ? "json" : "text");
-                continue;
-            }
-            printf("未知的元命令：%s（可用 :help :save :format :quit）\n", line);
-            continue;
-        }
+        /* 交给会话层：元命令与数据命令都从那里走。
+         * 这里只管"结果往哪写" —— 交互模式下的失败不中止，继续等下一行。 */
+        switch (mhx_session_feed_line(&s, line, out, sizeof(out))) {
+        case MHX_SESS_QUIT:
+            printf("\n");
+            return;
 
-        if (g_json_mode) {
-            /* 成败看返回码 / JSON 的 ok 字段，这里不再靠文本前缀判断 */
-            mhx_execute_json(line, out, sizeof(out));
-            if (out[0] != '\0') fputs(out, stdout);
-            continue;
-        }
+        case MHX_SESS_HELP:
+            fputs(out, stdout);            /* 帮助文本自带换行 */
+            break;
 
-        mhx_execute(line, out, sizeof(out));
-        if (out[0] != '\0') {
-            fputs(out, stdout);
-            if (out[strlen(out) - 1] != '\n') putchar('\n');
+        case MHX_SESS_SAVE_OK:
+            printf("%s\n", out);
+            break;
+
+        case MHX_SESS_SAVE_FAIL:
+            printf("保存失败\n");
+            break;
+
+        case MHX_SESS_FORMAT_OK:
+            printf("输出格式：%s\n", out);
+            break;
+
+        case MHX_SESS_FORMAT_BAD:
+            printf("用法：:format text|json（当前：%s）\n", s.json_mode ? "json" : "text");
+            break;
+
+        case MHX_SESS_UNKNOWN_META:
+            printf("未知的元命令：%s（可用 :help :save :format :quit）\n", out);
+            break;
+
+        default:   /* OK / ERR：数据命令的输出，成败都照打 */
+            if (out[0] != '\0') {
+                fputs(out, stdout);
+                if (out[strlen(out) - 1] != '\n') putchar('\n');
+            }
+            break;
         }
     }
 }
@@ -366,6 +352,9 @@ static int run_script(FILE *fp, const char *label)
     char line[4096];
     char out[131072];   /* 与 repl() 同规格：JSON 是文本的超集，转义会膨胀 */
     int  lineno = 0;
+
+    mhx_session s;
+    mhx_session_init(&s, 0);
 
     for (;;) {
         if (!fgets(line, sizeof(line), fp)) break;   /* 文件结束 */
@@ -404,81 +393,53 @@ static int run_script(FILE *fp, const char *label)
         }
         if (blank) continue;
 
-        /* 元命令：与 repl() 同一套 */
-        if (line[0] == ':') {
-            if (!strcmp(line, ":quit") || !strcmp(line, ":q") || !strcmp(line, ":exit"))
-                return 0;
-            if (!strcmp(line, ":help") || !strcmp(line, ":?")) {
-                fputs(mhx_help_text(), stdout);
-                continue;
-            }
-            if (!strcmp(line, ":save")) {
-                int k = save_registry();
-                if (k < 0) {
-                    fprintf(stderr, "mhuixs: %s:%d: :save 失败，中止执行\n", label, lineno);
-                    return 1;
-                }
-                printf("已保存 %d 个 HOOK\n", k);
-                continue;
-            }
-            if (!strncmp(line, ":format", 7)) {
-                const char *a = line + 7;
-                while (*a == ' ' || *a == '\t') a++;
-                if      (!strcmp(a, "json")) g_json_mode = 1;
-                else if (!strcmp(a, "text")) g_json_mode = 0;
-                else {
-                    fprintf(stderr, "mhuixs: %s:%d: 用法：:format text|json\n", label, lineno);
-                    return 1;
-                }
-                continue;
-            }
+        /* 与交互模式同一个会话层，差别只在失败处理：脚本出错即停 */
+        switch (mhx_session_feed_line(&s, line, out, sizeof(out))) {
+        case MHX_SESS_QUIT:
+            return 0;
+
+        case MHX_SESS_HELP:
+            fputs(out, stdout);
+            break;
+
+        case MHX_SESS_SAVE_OK:
+            printf("%s\n", out);
+            break;
+
+        case MHX_SESS_SAVE_FAIL:
+            fprintf(stderr, "mhuixs: %s:%d: :save 失败，中止执行\n", label, lineno);
+            return 1;
+
+        case MHX_SESS_FORMAT_OK:
+            break;   /* 脚本模式不回声：stdout 只留命令输出，方便重定向 */
+
+        case MHX_SESS_FORMAT_BAD:
+            fprintf(stderr, "mhuixs: %s:%d: 用法：:format text|json\n", label, lineno);
+            return 1;
+
+        case MHX_SESS_UNKNOWN_META:
             fprintf(stderr, "mhuixs: %s:%d: 未知的元命令：%s（可用 :help :save :format :quit）\n",
                     label, lineno, line);
             return 1;
-        }
 
-        int rc;
-        if (g_json_mode) {
-            rc = mhx_execute_json(line, out, sizeof(out));
-            if (out[0] != '\0') fputs(out, stdout);
-        } else {
-            rc = mhx_execute(line, out, sizeof(out));
+        case MHX_SESS_ERR:
+            /* 先把命令自己的输出吐出去（与原行为一致），再报错中止 */
             if (out[0] != '\0') {
                 fputs(out, stdout);
                 if (out[strlen(out) - 1] != '\n') putchar('\n');
             }
-        }
-
-        if (rc != 0) {
             fprintf(stderr, "mhuixs: %s:%d: 命令失败，中止执行: %s\n", label, lineno, line);
             return 1;
+
+        default:   /* OK：命令输出 */
+            if (out[0] != '\0') {
+                fputs(out, stdout);
+                if (out[strlen(out) - 1] != '\n') putchar('\n');
+            }
+            break;
         }
     }
     return 0;
-}
-
-/* 拼出 <MhuixsHomePath>/registry.dat 的完整路径，调用方负责 mstr_free */
-static char *make_registry_path(void)
-{
-    mstring home = Env.MhuixsHomePath;
-    mstring sep  = mstr(
-#ifdef _WIN32
-        (char*)"\\"
-#else
-        (char*)"/"
-#endif
-    );
-    mstring fname = mstr((char*)"registry.dat");
-    mstring tmp   = mstr_concat(home, sep);
-    mstring path  = mstr_concat(tmp, fname);
-    char   *cstr  = mstr_to_cstr(path);
-
-    mstr_free(sep);
-    mstr_free(fname);
-    mstr_free(tmp);
-    mstr_free(path);
-
-    return cstr;
 }
 
 int main(int argc, char *argv[])
@@ -541,7 +502,7 @@ int main(int argc, char *argv[])
 
     /* 从磁盘恢复 HOOK */
     {
-        char *reg_path = make_registry_path();
+        char *reg_path = mhx_registry_path();
         int loaded = reg_load_from_disk(reg_path);
         if (loaded > 0) {
             fprintf(boot_stream(), "  从磁盘恢复 %d 个 HOOK\n", loaded);
@@ -611,7 +572,7 @@ int main(int argc, char *argv[])
         }
 
         /* 与交互模式同一语义：退出时自动存盘（脚本跑到哪就算到哪） */
-        int saved = save_registry();
+        int saved = mhx_save_registry();
         if (saved < 0) fprintf(boot_stream(), "保存 HOOK 到磁盘失败\n");
         else           fprintf(boot_stream(), "已保存 %d 个 HOOK 到磁盘\n", saved);
 
@@ -624,7 +585,7 @@ int main(int argc, char *argv[])
     repl();
 
     /* 退出时保存 */
-    int saved = save_registry();
+    int saved = mhx_save_registry();
     if (saved < 0) printf("保存 HOOK 到磁盘失败\n");
     else           printf("已保存 %d 个 HOOK 到磁盘\n", saved);
 

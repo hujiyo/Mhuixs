@@ -57,6 +57,14 @@ int mhx_execute(const char *line, char *out, size_t outlen);
 int mhx_execute_json(const char *line, char *out, size_t outlen);
 
 /*
+ * 一条命令的参数上限，以及单个参数的长度上限（不含结尾 NUL）。
+ * 协议层和会话层都按这两个值设界 —— 它们必须跟着命令层走，
+ * 数字只在这里定义一次。
+ */
+#define MHX_MAX_ARGS      48
+#define MHX_MAX_ARG_BYTES 255
+
+/*
  * 结构化参数：给"参数已经切好了"的调用方用（网络协议层就是这种）。
  *
  * 为什么不直接拼一行再交给 mhx_execute：分词器会按空格和引号重新切分，
@@ -66,8 +74,9 @@ int mhx_execute_json(const char *line, char *out, size_t outlen);
     p/len   参数原始字节，**不含**结尾 NUL
     quoted  1 = 按字符串处理（等价文本模式里加引号），0 = 自动判定
 
- * 限制（命令层决定，不是分帧层）：单个参数最多 255 字节，且不能含内嵌 NUL
- * —— 参数在命令层是 C 字符串。越界会返回 internal 错误，不会静默截断。
+ * 限制（命令层决定，不是分帧层）：单个参数最多 MHX_MAX_ARG_BYTES 字节，
+ * 且不能含内嵌 NUL —— 参数在命令层是 C 字符串。越界会返回 internal
+ * 错误，不会静默截断。
  *
  * json 为 0 走文本版式、非 0 走 JSON 版式，与 mhx_execute / mhx_execute_json 一致。
  */
@@ -79,6 +88,17 @@ struct mhx_arg {
 
 int mhx_execute_argv(int argc, const struct mhx_arg *args,
                      char *out, size_t outlen, int json);
+
+/*
+ * 文本前端用：把一行切成参数。
+ *
+ * 参数文本被复制进调用方给的 storage，args[i].p 指向 storage 里的位置，
+ * 所以 storage 要活到这一行处理完。返回参数个数（0 = 空行 / 纯注释）。
+ *
+ * 复用命令层同一个分词器，因此文本前端的切分规则与直接调 mhx_execute 完全一致。
+ */
+int mhx_split_line(const char *line, char *storage, size_t storage_len,
+                   struct mhx_arg *args, int max_args);
 
 /*
  * 命令列表与用法说明（静态字符串，不要 free）。

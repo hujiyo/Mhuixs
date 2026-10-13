@@ -44,8 +44,10 @@ KVALOT 的键一律按字符串处理，不做数字回退。
 #include <string.h>
 #include <stdarg.h>
 
-#define MAX_TOKENS    48
-#define MAX_TOKEN_LEN 256
+/* 分词缓冲的规格。数值的唯一出处是 execute.h 里的 MHX_MAX_*，
+ * 免得命令层放宽了限制、协议层还按老数字设界。 */
+#define MAX_TOKENS    MHX_MAX_ARGS
+#define MAX_TOKEN_LEN (MHX_MAX_ARG_BYTES + 1)
 
 /* ---------------- 输出缓冲 ---------------- */
 
@@ -1625,4 +1627,27 @@ int mhx_execute_argv(int argc, const struct mhx_arg *args,
     int rc = mhx_run_tokens(toks, argc, &res);
     render_result(&res, out, outlen, json);
     return rc;
+}
+
+int mhx_split_line(const char *line, char *storage, size_t storage_len,
+                   struct mhx_arg *args, int max_args)
+{
+    if (!line || !storage || !args || max_args <= 0) return 0;
+
+    token_t toks[MAX_TOKENS];
+    int n = tokenize(line, toks, MAX_TOKENS);
+    if (n > max_args) n = max_args;
+
+    size_t used = 0;
+    for (int i = 0; i < n; i++) {
+        size_t len = strlen(toks[i].text);
+        if (used + len + 1 > storage_len) { n = i; break; }   /* 装不下就少给几个 */
+
+        memcpy(storage + used, toks[i].text, len + 1);
+        args[i].p      = storage + used;
+        args[i].len    = len;
+        args[i].quoted = toks[i].quoted;
+        used += len + 1;
+    }
+    return n;
 }
