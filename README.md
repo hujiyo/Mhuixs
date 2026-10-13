@@ -166,6 +166,11 @@ make test          # 回归测试（七套）：基础库 / 持久化往返 / HO
 直接运行 `./mhuixs` 进入 REPL，一行一条命令：
 
 ```
+   （启动横幅：点阵艺术字，每次花纹随机，见 lib/logo.c）
+                         Mhuixs
+        Memory-based Hybrid Universal Index System
+          Welcome to use Mhuixs Database Server
+
 ==== Mhuixs 0.2.0 ====
   ENV 模块就绪
   Logger 模块就绪
@@ -417,7 +422,7 @@ Mhuixs/
 │       ├── env.c/h       # 环境配置
 │       ├── merr.c/h      # 错误码与日志
 │       ├── bitcpy.c/h    # 位级拷贝
-│       └── logo.c/h      # 启动标识（客户端时期遗留，当前无调用点）
+│       └── logo.c/h      # 启动横幅（点阵艺术字，交互与服务端模式打印）
 ├── doc/                  # 哈希表相关的设计文档、引用模型
 ├── client/
 │   └── python/mhuixs.py  # Python 客户端，也是 MHP/1 的参考实现

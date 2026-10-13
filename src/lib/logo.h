@@ -1,26 +1,15 @@
-/*
-#版权所有 (c) HuJi 2024
-#许可证协议:
-#任何人或组织在未经版权所有者同意的情况下禁止使用、修改、分发此作品
-start from 2024.11
-Email:hj18914255909@outlook.com
-*/
 #ifndef LOGO_H
 #define LOGO_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+#include <stdio.h>
 
-/* 监听地址不在这里定义 —— 唯一来源是配置里的 bind（Env.bind_addr，
- * 默认 127.0.0.1）。再留一个常量会变成两个互相打架的默认值。 */
+/*
+logo.h —— 启动横幅
 
-void print_help();//打印帮助信息 (Client && Server)
-void print_version();//打印版本信息 (Client && Server)
-void print_welcome(const char* server_ip, int server_port);//打印欢迎信息 (Client && Server)
+写哪个流由调用方决定：交互模式走 stdout，服务端走 stderr
+（服务进程的 stdout 常被重定向到文件，横幅不该混进去）。
+脚本模式不打 —— 它的 stdout 要留给命令输出。
+*/
+void print_logo(FILE *out);
 
-#ifdef __cplusplus
-}
-#endif
-
-#endif
+#endif /* LOGO_H */

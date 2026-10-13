@@ -27,8 +27,6 @@ Mhuixs 内核入口
 #include <string.h>
 #include <stdint.h>
 
-#define _MHUIXS_ /* Mhuixs 服务端标志宏 */
-
 #include "merr.h"      /* 错误码与日志 */
 #include "env.h"       /* 环境变量模块 */
 #include "getid.h"     /* ID 分配器模块 */
@@ -38,6 +36,7 @@ Mhuixs 内核入口
 #include "execute.h"   /* 命令执行层 */
 #include "session.h"   /* 会话层：元命令 + 命令执行 */
 #include "server.h"    /* 网络前端 */
+#include "logo.h"      /* 启动横幅 */
 
 /*
 存储在 Mhuixs 数据库的所有数据结构都需要使用钩子进行引用：
@@ -50,7 +49,7 @@ Mhuixs 内核入口
 
 #define SELFCHECK_HOOK_NAME "mhuixs_selfcheck"
 
-#define MHUIXS_VERSION "0.2.0"
+#define MHUIXS_VERSION "0.2.1"
 
 static void print_usage(void)
 {
@@ -473,6 +472,11 @@ int main(int argc, char *argv[])
         }
     }
     g_boot_to_stderr = (script != NULL || mode_server);
+
+    /* 启动横幅：交互与服务端模式打。
+     * 脚本模式不打 —— 它的 stdout 要干净；demo 有自己的分节标题。 */
+    if (script == NULL && !mode_demo)
+        print_logo(boot_stream());
 
     fprintf(boot_stream(), "==== Mhuixs %s ====\n", MHUIXS_VERSION);
 
