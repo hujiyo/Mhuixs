@@ -143,7 +143,7 @@ run_exectest: $(TEST_OBJS) $(EXEC_TEST_SRC)
 	$(CC) $(CFLAGS) -o run_exectest $(EXEC_TEST_SRC) $(TEST_OBJS) $(LDFLAGS)
 
 clean:
-	rm -f $(OBJS) $(TARGET) run_libtest run_roundtrip run_regtest run_exectest rt_test.dat .log.inf
+	rm -f $(OBJS) $(TARGET) run_libtest run_roundtrip run_regtest run_exectest rt_test.dat log.inf .log.inf
 
 rebuild: clean all
 

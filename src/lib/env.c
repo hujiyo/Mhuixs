@@ -42,7 +42,18 @@
 #include <pwd.h>         /* getpwuid：$HOME 取不到时的兜底 */
 #endif
 
-struct ENV Env = {NULL, 0, 0, 1024, 0, 1, 18185};
+/* 指定初始化：这些默认值在 env_init() 里会被配置内容覆盖。
+ * 用字段名而不是位置 —— 往 struct ENV 中间插一个字段时，
+ * 位置初始化会静静地把它后面所有值都错位一格。 */
+struct ENV Env = {
+    .MhuixsHomePath     = NULL,
+    .threadslimit       = 0,
+    .memmorylimit       = 0,
+    .max_sessions       = 1024,
+    .disablecompression = 0,
+    .islittleendian     = 1,
+    .port               = 18185,
+};
 
 // 解析整数值，带范围检查
 static int parse_int(const char* value, int min_val, int max_val, int default_val, const char* error_msg) {

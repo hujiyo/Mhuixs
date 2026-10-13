@@ -579,6 +579,7 @@ int main(int argc, char *argv[])
         printf("\n==== 自检结果：%s ====\n",
                failures == 0 ? "全部通过" : "有失败项");
 
+        logger_close();
         reg_destroy();
         return failures == 0 ? 0 : 1;
     }
@@ -601,6 +602,7 @@ int main(int argc, char *argv[])
             FILE *fp = fopen(script, "r");
             if (!fp) {
                 fprintf(stderr, "mhuixs: 打不开文件: %s\n", script);
+                logger_close();
                 reg_destroy();
                 return 2;
             }
@@ -613,6 +615,7 @@ int main(int argc, char *argv[])
         if (saved < 0) fprintf(boot_stream(), "保存 HOOK 到磁盘失败\n");
         else           fprintf(boot_stream(), "已保存 %d 个 HOOK 到磁盘\n", saved);
 
+        logger_close();
         reg_destroy();
         return exit_code;
     }
@@ -625,6 +628,9 @@ int main(int argc, char *argv[])
     if (saved < 0) printf("保存 HOOK 到磁盘失败\n");
     else           printf("已保存 %d 个 HOOK 到磁盘\n", saved);
 
+    /* 收尾先关日志：日志末尾有没有 "Logger closed" 这一行，
+     * 是事后区分"正常退出"和"进程被杀/崩了"的唯一线索。 */
+    logger_close();
     reg_destroy();
     return 0;
 }

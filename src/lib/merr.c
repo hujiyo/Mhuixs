@@ -53,11 +53,35 @@ int logger_init(const char *path){
         return -1;
     }
     const size_t len = strlen(path);
-    
-    char* log_path= (char*)calloc(1,len+strlen("log.inf"));
-    if(!log_path)printf("[log][Error]:calloc err!\n");
-    memcpy(log_path,path,len);
-    memcpy(log_path+len,"log.inf",strlen("log.inf"));
+
+    /* path 按【目录】用，后面接日志文件名。这里曾经有两个问题：
+     *   1. 不补目录分隔符："D:/Mhuixs_data" 会拼成 "D:/Mhuixs_datalog.inf"，
+     *      日志落在数据目录旁边而不是里面
+     *   2. 分配时漏了结尾 NUL：写入长度正好等于分配长度，
+     *      fopen 会一直读到分配区之外
+     * 所以下面显式补分隔符，并且多留一个字节给 '\0'。 */
+    static const char fname[] = "log.inf";
+    const size_t fname_len = sizeof(fname) - 1;
+    const int has_sep = (len > 0 && (path[len - 1] == '/' || path[len - 1] == '\\'));
+#ifdef _WIN32
+    const char sep = '\\';
+#else
+    const char sep = '/';
+#endif
+
+    const size_t total = len + (has_sep ? 0 : 1) + fname_len;
+
+    char *log_path = (char*)malloc(total + 1);
+    if (!log_path) {
+        fprintf(stderr, "[log] out of memory\n");
+        return -1;
+    }
+
+    memcpy(log_path, path, len);
+    size_t off = len;
+    if (!has_sep) log_path[off++] = sep;
+    memcpy(log_path + off, fname, fname_len);
+    log_path[off + fname_len] = '\0';
 
     logFile = fopen(log_path,"a");//以追加模式打开日志文件
     if (!logFile) {

@@ -29,6 +29,9 @@ logs/
 # ~/.mhuixs/Mhuixs.config 生成。仓库里只保留 Mhuixs.config.example 模板。
 Mhuixs.config
 
+# 运行期日志（测试与 demo 会在 src/ 下生成）
+log.inf
+
 # 日志模块（logger_init）产生的日志文件
 *.log.inf
 
