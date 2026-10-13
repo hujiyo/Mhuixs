@@ -411,10 +411,22 @@ int env_init() {
             found_port = 1;
         } else if (strcmp(key, "bind") == 0) {
             /* 只做长度保护；地址本身是否合法由监听那一步判定，
-             * 这里报错反而会在"只是想本地跑一下"时把人挡住。 */
-            snprintf(bind_addr, sizeof(bind_addr), "%s", value);
+             * 这里报错反而会在"只是想本地跑一下"时把人挡住。
+             * 用显式截断而不是 snprintf：配置值最长 255 字节，
+             * 直接 snprintf 进 64 字节的缓冲会被编译器判为可能截断。 */
+            size_t blen = strlen(value);
+            if (blen >= sizeof(bind_addr)) {
+                blen = sizeof(bind_addr) - 1;
+                fprintf(stderr, "[env] bind 地址过长，已截断到 %d 字节\n",
+                        (int)blen);
+            }
+            memcpy(bind_addr, value, blen);
+            bind_addr[blen] = '\0';
         } else if (strcmp(key, "authtoken") == 0) {
-            snprintf(authtoken, sizeof(authtoken), "%s", value);
+            size_t tlen = strlen(value);
+            if (tlen >= sizeof(authtoken)) tlen = sizeof(authtoken) - 1;
+            memcpy(authtoken, value, tlen);
+            authtoken[tlen] = '\0';
         }
         // 以后可在此添加更多变量解析
     }
