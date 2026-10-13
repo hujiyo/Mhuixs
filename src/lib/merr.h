@@ -40,6 +40,9 @@ typedef enum errlevel {
 
 void report(enum errlevel code, const char* module_name, const char *special_message);//报告错误码
 
+//直接往日志写一行（不经过错误码表）。logFile 没打开时是空操作。
+void logger(const char* message);
+
 
 //下面函数用来开启report函数的日志写入功能
 int logger_init(const char *path);//在path下建立日志文件

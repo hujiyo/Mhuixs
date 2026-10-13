@@ -36,12 +36,10 @@ typedef enum {
     PROTO_ERR          /* 协议错；cmd->err 里有原因，连接应当关闭 */
 } proto_result;
 
-/* 一个参数。p 指向调用方缓冲区内部，本层不拥有内存。 */
-typedef struct {
-    const char *p;
-    size_t      len;
-    int         quoted;
-} proto_arg;
+/* 一个参数。字段与命令层的 struct mhx_arg 完全一致 —— 直接用同一个类型，
+ * 免得两处定义各自漂移；协议层拿到的参数可以原样递给会话层。
+ * p 指向调用方缓冲区内部，本层不拥有内存。 */
+typedef struct mhx_arg proto_arg;
 
 typedef struct {
     proto_arg   args[MHX_MAX_ARGS];

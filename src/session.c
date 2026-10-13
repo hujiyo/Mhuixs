@@ -35,7 +35,7 @@ static void mhx_exec_unlock(void) { }
 void mhx_session_init(mhx_session *s, int is_server)
 {
     if (!s) return;
-    s->json_mode     = 0;
+    s->json_mode     = is_server ? 1 : 0;
     s->authenticated = is_server ? 0 : 1;   /* 本地前端没有认证这回事 */
     s->is_server     = is_server;
 }
@@ -88,6 +88,19 @@ static int arg_eq(const struct mhx_arg *a, const char *lit)
     return n == 0 || memcmp(a->p, lit, n) == 0;
 }
 
+/*
+ * 把结果写进 out。两种会话的 out 含义不同：
+ *   本地会话 —— 给前端自己排版用的原文本（前端各有各的包装）
+ *   网络会话 —— 恒为一个 JSON 文档（协议只认这一种响应体）
+ * 用一条规则管住差别，前端就不必各自判断了。
+ */
+static void put_text(mhx_session *s, char *out, size_t outlen,
+                     int ok, const char *code, const char *text)
+{
+    if (s->is_server) mhx_json_text(out, outlen, ok, code, text);
+    else              snprintf(out, outlen, "%s", text);
+}
+
 static mhx_sess_status feed_meta(mhx_session *s, int argc,
                                  const struct mhx_arg *args, const char *raw,
                                  char *out, size_t outlen)
@@ -98,36 +111,48 @@ static mhx_sess_status feed_meta(mhx_session *s, int argc,
         return MHX_SESS_QUIT;
 
     if (arg_eq(m, ":help") || arg_eq(m, ":?")) {
-        snprintf(out, outlen, "%s", mhx_help_text());
+        put_text(s, out, outlen, 1, "ok", mhx_help_text());
         return MHX_SESS_HELP;
     }
 
     if (arg_eq(m, ":save")) {
         int k = mhx_save_registry();
-        if (k < 0) return MHX_SESS_SAVE_FAIL;
-        snprintf(out, outlen, "已保存 %d 个 HOOK", k);
+        if (k < 0) {
+            put_text(s, out, outlen, 0, "failed", "保存失败");
+            return MHX_SESS_SAVE_FAIL;
+        }
+        char msg[64];
+        snprintf(msg, sizeof(msg), "已保存 %d 个 HOOK", k);
+        put_text(s, out, outlen, 1, "ok", msg);
         return MHX_SESS_SAVE_OK;
     }
 
     if (arg_eq(m, ":format")) {
         if (argc > 1 && arg_eq(&args[1], "json")) {
             s->json_mode = 1;
-            snprintf(out, outlen, "json");
-            return MHX_SESS_FORMAT_OK;
-        }
-        if (argc > 1 && arg_eq(&args[1], "text")) {
+        } else if (argc > 1 && arg_eq(&args[1], "text")) {
             s->json_mode = 0;
-            snprintf(out, outlen, "text");
-            return MHX_SESS_FORMAT_OK;
+        } else {
+            put_text(s, out, outlen, 0, "bad_usage", "用法：:format text|json");
+            return MHX_SESS_FORMAT_BAD;
         }
-        return MHX_SESS_FORMAT_BAD;
+
+        if (s->is_server) {
+            /* 线格式固定是 JSON，客户端改不了 —— 但也不报错，
+             * 这样同一份脚本既能本地跑也能过网络跑。 */
+            put_text(s, out, outlen, 1, "ok",
+                     "网络会话固定 JSON 输出，本设置只影响本地呈现");
+        } else {
+            put_text(s, out, outlen, 1, "ok", s->json_mode ? "json" : "text");
+        }
+        return MHX_SESS_FORMAT_OK;
     }
 
     /* :shutdown 只对网络会话有意义：本地跑完就退出了，用不着停机指令 */
     if (s->is_server && arg_eq(m, ":shutdown"))
         return MHX_SESS_SHUTDOWN;
 
-    snprintf(out, outlen, "%s", raw ? raw : "");
+    put_text(s, out, outlen, 0, "unknown_command", raw ? raw : "");
     return MHX_SESS_UNKNOWN_META;
 }
 
@@ -140,7 +165,12 @@ static mhx_sess_status run_command(mhx_session *s, int argc,
                                    char *out, size_t outlen)
 {
     mhx_exec_lock();
-    int rc = mhx_execute_argv(argc, args, out, outlen, s->json_mode);
+
+    /* 网络会话恒用 JSON，不看 json_mode ——
+     * 否则客户端发一句 ":format text" 就能把线格式改坏。 */
+    int json = s->is_server ? 1 : s->json_mode;
+    int rc = mhx_execute_argv(argc, args, out, outlen, json);
+
     mhx_exec_unlock();
 
     return rc == 0 ? MHX_SESS_OK : MHX_SESS_ERR;

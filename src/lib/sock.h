@@ -40,6 +40,9 @@ void sock_close(mhx_sock_t s);
 /* 上次失败的错误码（POSIX 是 errno，Windows 是 WSAGetLastError） */
 int sock_last_error(void);
 
+/* 上次失败是不是"被信号打断，重试即可"。accept 之类的调用要据此决定是否重试。 */
+int sock_last_was_interrupted(void);
+
 /*
  * 收一次。返回值：
  *   > 0  实际收到的字节数
@@ -55,7 +58,8 @@ long sock_recv(mhx_sock_t s, void *buf, size_t len);
  */
 long sock_send_all(mhx_sock_t s, const void *buf, size_t len);
 
-/* 监听。bind_addr 传 NULL 时用 127.0.0.1。失败返回 MHX_SOCK_INVALID。 */
+/* 监听。bind_addr 传 NULL 时用 127.0.0.1；port 传 0 表示让系统挑一个，
+ * 实际端口事后用 sock_local_port 问。失败返回 MHX_SOCK_INVALID。 */
 mhx_sock_t sock_listen(const char *bind_addr, int port);
 
 /* 接受一个连接。失败返回 MHX_SOCK_INVALID（可查 sock_last_error 决定是否重试）。 */
@@ -66,5 +70,8 @@ mhx_sock_t sock_connect(const char *host, int port);
 
 /* 把对端地址写成 "ip:port" 便于日志。失败返回 0。 */
 int sock_peer_addr(mhx_sock_t s, char *buf, size_t buflen);
+
+/* 取本端实际端口。监听时传 0 让系统挑端口，再从这里问出来。失败返回 0。 */
+int sock_local_port(mhx_sock_t s, int *out);
 
 #endif /* SOCK_H */

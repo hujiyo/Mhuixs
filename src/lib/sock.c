@@ -69,6 +69,11 @@ static int was_interrupted(void)
 #endif
 }
 
+int sock_last_was_interrupted(void)
+{
+    return was_interrupted();
+}
+
 /* 关掉 Nagle：命令都是小包，攒着发只会平白多出几十毫秒延迟 */
 static void set_nodelay(mhx_sock_t s)
 {
@@ -113,7 +118,8 @@ long sock_send_all(mhx_sock_t s, const void *buf, size_t len)
 
 mhx_sock_t sock_listen(const char *bind_addr, int port)
 {
-    if (port <= 0 || port > 65535) return MHX_SOCK_INVALID;
+    /* port 传 0 表示"端口交给系统挑"，实际值事后用 sock_local_port 问 */
+    if (port < 0 || port > 65535) return MHX_SOCK_INVALID;
 
     mhx_sock_t fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd == MHX_SOCK_INVALID) return MHX_SOCK_INVALID;
@@ -202,5 +208,22 @@ int sock_peer_addr(mhx_sock_t s, char *buf, size_t buflen)
     if (!inet_ntop(AF_INET, &addr.sin_addr, ip, sizeof(ip))) return 0;
 
     snprintf(buf, buflen, "%s:%u", ip, (unsigned)ntohs(addr.sin_port));
+    return 1;
+}
+
+int sock_local_port(mhx_sock_t s, int *out)
+{
+    if (!out) return 0;
+
+    struct sockaddr_in addr;
+#ifdef _WIN32
+    int alen = (int)sizeof(addr);
+#else
+    socklen_t alen = sizeof(addr);
+#endif
+    memset(&addr, 0, sizeof(addr));
+
+    if (getsockname(s, (struct sockaddr*)&addr, &alen) != 0) return 0;
+    *out = (int)ntohs(addr.sin_port);
     return 1;
 }

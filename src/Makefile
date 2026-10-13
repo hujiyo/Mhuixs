@@ -53,7 +53,7 @@ OBJS = Mhuixs.o \
 # TEST_OBJS 是从 OBJS 里 filter-out 出来的，一旦并进去，
 # 五套测试全都要跟着链接 -lws2_32（Windows）或挂个空依赖（Linux）。
 #
-NET_OBJS = lib/sock.o
+NET_OBJS = lib/sock.o server.o
 
 ifeq ($(OS),Windows_NT)
 NET_LIBS = -lws2_32
@@ -127,6 +127,10 @@ lib/pkg.o: lib/pkg.c lib/pkg.h
 lib/sock.o: lib/sock.c lib/sock.h
 	$(CC) $(CFLAGS) -c lib/sock.c -o lib/sock.o
 
+# 网络前端（依赖 socket，所以也不进 OBJS）
+server.o: server.c server.h session.h proto.h lib/sock.h lib/merr.h
+	$(CC) $(CFLAGS) -c server.c
+
 run: $(TARGET)
 	./$(TARGET)
 
@@ -145,8 +149,10 @@ EXEC_TEST_SRC = ../test/test_execute_json.c
 SESSION_TEST_SRC = ../test/test_session.c
 # 6) 协议编解码：半包 / 粘包 / 二进制安全 / 非法输入
 PROTO_TEST_SRC = ../test/test_protocol.c
+# 7) 网络集成：真 socket、真分帧（要链 NET_OBJS）
+NET_TEST_SRC = ../test/test_server_net.c
 
-test: run_libtest run_roundtrip run_regtest run_exectest run_sesstest run_prototest
+test: run_libtest run_roundtrip run_regtest run_exectest run_sesstest run_prototest run_nettest
 	@echo ""
 	./run_libtest
 	@echo ""
@@ -159,6 +165,8 @@ test: run_libtest run_roundtrip run_regtest run_exectest run_sesstest run_protot
 	./run_sesstest
 	@echo ""
 	./run_prototest
+	@echo ""
+	./run_nettest
 
 run_libtest: $(TEST_OBJS) $(LIB_TEST_SRC)
 	$(CC) $(CFLAGS) -o run_libtest $(LIB_TEST_SRC) $(TEST_OBJS) $(LDFLAGS)
@@ -183,8 +191,11 @@ run_sesstest: $(TEST_OBJS) $(SESSION_TEST_SRC)
 run_prototest: $(TEST_OBJS) $(PROTO_TEST_SRC)
 	$(CC) $(CFLAGS) -o run_prototest $(PROTO_TEST_SRC) $(TEST_OBJS) $(LDFLAGS)
 
+run_nettest: $(TEST_OBJS) $(NET_OBJS) $(NET_TEST_SRC)
+	$(CC) $(CFLAGS) -o run_nettest $(NET_TEST_SRC) $(TEST_OBJS) $(NET_OBJS) $(LDFLAGS) $(NET_LIBS)
+
 clean:
-	rm -f $(OBJS) $(TARGET) run_libtest run_roundtrip run_regtest run_exectest run_sesstest run_prototest rt_test.dat log.inf .log.inf
+	rm -f $(OBJS) $(NET_OBJS) $(TARGET) run_libtest run_roundtrip run_regtest run_exectest run_sesstest run_prototest run_nettest rt_test.dat log.inf .log.inf
 
 rebuild: clean all
 

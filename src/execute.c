@@ -1651,3 +1651,17 @@ int mhx_split_line(const char *line, char *storage, size_t storage_len,
     }
     return n;
 }
+
+void mhx_json_text(char *dst, size_t dstlen, int ok, const char *code, const char *text)
+{
+    if (!dst || dstlen == 0) return;
+    dst[0] = '\0';
+
+    append(dst, dstlen, "{\"ok\":%s,\"code\":\"%s\",\"text\":\"",
+           ok ? "true" : "false",
+           code ? code : (ok ? "ok" : "failed"));
+
+    if (text) json_escape_append(dst, dstlen, text, strlen(text));
+
+    append(dst, dstlen, "\"}\n");
+}

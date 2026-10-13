@@ -90,6 +90,17 @@ int mhx_execute_argv(int argc, const struct mhx_arg *args,
                      char *out, size_t outlen, int json);
 
 /*
+ * 把一段纯文本包成 JSON 文档：{"ok":<ok>,"code":"<code>","text":"<已转义>"}
+ *
+ * 给**还没有结构化返回值**的路径用 —— 会话层的元命令就是这种：
+ * 它们的结果本来就是一句话，但要经网络送出去就必须是 JSON 文档。
+ * code 传 NULL 时按 ok 取 "ok" / "failed"。
+ *
+ * 与 mhx_execute_json 一样以 '\n' 收尾。
+ */
+void mhx_json_text(char *dst, size_t dstlen, int ok, const char *code, const char *text);
+
+/*
  * 文本前端用：把一行切成参数。
  *
  * 参数文本被复制进调用方给的 storage，args[i].p 指向 storage 里的位置，
