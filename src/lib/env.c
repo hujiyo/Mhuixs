@@ -53,6 +53,8 @@ struct ENV Env = {
     .disablecompression = 0,
     .islittleendian     = 1,
     .port               = 18185,
+    .bind_addr          = MHUIXS_DEFAULT_BIND,
+    .authtoken          = "",
 };
 
 // 解析整数值，带范围检查
@@ -187,7 +189,15 @@ static int write_default_config(const char* path, const char* data_dir) {
         "disablecompression 0\n"
         "\n"
         "# 服务端口\n"
-        "port 18185\n",
+        "port 18185\n"
+        "\n"
+        "# 服务端监听地址（服务端模式用；只填 IP 字面量）\n"
+        "bind " MHUIXS_DEFAULT_BIND "\n"
+        "\n"
+        "# 服务端访问令牌。留空或注释掉 = 拒绝启动服务端：\n"
+        "# 宁可起不来，也不要没有门槛地裸奔在网上。\n"
+        "# 对外提供服务前换成一串随机字符。值里不能有空格。\n"
+        "# authtoken 在这里填你的令牌\n",
         data_dir);
 
     fclose(fp);
@@ -348,6 +358,10 @@ int env_init() {
     int threadslimit = 0, memmorylimit = 0, disablecompression = 0;
     size_t max_sessions = 1024;
     int port = 18185;
+    char bind_addr[64];
+    char authtoken[256];
+    snprintf(bind_addr, sizeof(bind_addr), "%s", MHUIXS_DEFAULT_BIND);
+    authtoken[0] = '\0';
     char line[512];
     int found_datapath = 0, found_threadslimit = 0, found_memmorylimit = 0, found_max_sessions = 0, found_disablecompression = 0, found_port = 0;
     int datapath_key_seen = 0;   /* 配置里是否出现过 MhuixsHomePath 这个键 */
@@ -395,6 +409,12 @@ int env_init() {
         } else if (strcmp(key, "port") == 0) {
             port = parse_int(value, 1, 65535, 18185, "[env] 端口号配置非法(1-65535)");
             found_port = 1;
+        } else if (strcmp(key, "bind") == 0) {
+            /* 只做长度保护；地址本身是否合法由监听那一步判定，
+             * 这里报错反而会在"只是想本地跑一下"时把人挡住。 */
+            snprintf(bind_addr, sizeof(bind_addr), "%s", value);
+        } else if (strcmp(key, "authtoken") == 0) {
+            snprintf(authtoken, sizeof(authtoken), "%s", value);
         }
         // 以后可在此添加更多变量解析
     }
@@ -437,6 +457,8 @@ int env_init() {
     Env.disablecompression = disablecompression;
     Env.islittleendian = islittlendian();
     Env.port = port;
+    snprintf(Env.bind_addr, sizeof(Env.bind_addr), "%s", bind_addr);
+    snprintf(Env.authtoken, sizeof(Env.authtoken), "%s", authtoken);
 
     mstr_free(config_path);
     return 0;

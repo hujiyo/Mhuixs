@@ -12,9 +12,8 @@ Email:hj18914255909@outlook.com
 extern "C" {
 #endif
 
-/* 服务端默认监听地址。端口不在这里定义 —— 唯一来源是配置里的 port
- * （Env.port，默认 18185），再留一个常量会变成两个互相打架的默认值。 */
-#define DEFAULT_SERVER_IP "127.0.0.1"
+/* 监听地址不在这里定义 —— 唯一来源是配置里的 bind（Env.bind_addr，
+ * 默认 127.0.0.1）。再留一个常量会变成两个互相打架的默认值。 */
 
 void print_help();//打印帮助信息 (Client && Server)
 void print_version();//打印版本信息 (Client && Server)

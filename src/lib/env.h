@@ -50,6 +50,9 @@
 
 #define ENV_PATH_MAX 256
 
+/* 服务端默认监听地址：只接受本机连接。要对外提供服务就显式改配置。 */
+#define MHUIXS_DEFAULT_BIND "127.0.0.1"
+
 struct ENV {
     mstring MhuixsHomePath;// Mhuixs内部储存位置
     int threadslimit;// 线程数量限制
@@ -58,6 +61,8 @@ struct ENV {
     int disablecompression;// 禁用压缩标志
     bool islittleendian;//是否是小端 0-否 1-是
     int port;// 端口号
+    char bind_addr[64];// 服务端监听地址（IP 字面量）
+    char authtoken[256];// 服务端访问令牌；为空则拒绝启动服务端
 };
 
 // 配置项说明:
@@ -68,6 +73,10 @@ struct ENV {
 //   disablecompression - 是否禁用压缩 (0/1,默认0)
 //   islittleendian    - 是否是小端 (0/1,默认0)
 //   port              - 端口号 (1-65535,默认18185)
+//   bind              - 服务端监听地址 (默认127.0.0.1，只能填 IP 字面量)
+//   authtoken         - 服务端访问令牌 (空 = 拒绝启动服务端；
+//                       也可用环境变量 MHUIXS_TOKEN，它的优先级更高)
+// 注意：配置值按空白断词，所以令牌与地址里不能有空格。
 
 extern struct ENV Env;// 全局唯一环境配置结构体
 

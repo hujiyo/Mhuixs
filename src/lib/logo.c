@@ -26,7 +26,7 @@ void print_help() {
     printf("选项:\n");
     printf("  -h, --help              显示此帮助信息\n");
     printf("  -v, --version           显示版本信息\n");
-    printf("  -s, --server <IP>       指定服务器IP地址 (默认: %s)\n", DEFAULT_SERVER_IP);
+    printf("  -s, --server <IP>       指定服务器IP地址 (默认: 127.0.0.1)\n");
     printf("  -p, --port <端口>       指定服务器端口\n");
     printf("  -f, --file <文件>       从文件批量执行查询\n");
     printf("交互式命令:\n");
