@@ -21,7 +21,7 @@ HOOK 同时承担三件事：**防止数据失联**（有名可查）、**权限
 
 ---
 
-## 2. 当前状态（v0.1.0 / 2026-10）
+## 2. 当前状态（v0.2.0 / 2026-10）
 
 项目正处于**重建期**，当前聚焦回最初的内核。上一轮减重剥离了后来叠加、且相互冲突的部分：
 
@@ -40,25 +40,30 @@ HOOK 同时承担三件事：**防止数据失联**（有名可查）、**权限
 | 数据结构 | `lib/list.c`、`lib/tblh.c`、`lib/bitmap.c`、`lib/kvalh.c`、`lib/bignum.c` |
 | HOOK 与注册表 | `lib/hook.c`、`registry.c` |
 | 命令层 | `execute.c` |
+| 会话层 | `session.c` |
+| 网络 | `lib/sock.c`、`proto.c`、`server.c` |
 | 基础设施 | `lib/env.c`、`lib/getid.c`、`lib/merr.c`、`lib/hash.c`、`lib/mstring.h`、`lib/bitcpy.c` |
 
-**v0.1.0 的界定**：内核自洽、能交互使用的第一个版本。具体是：
+**v0.2.0 的界定**：在 v0.1.0（内核自洽、能交互使用）之上，加上了
+**能被别的进程使用**这一条 —— 一个常驻服务端，加一份文档化的线格式。
 
-- 编译零错误，三套回归测试全过
+- 编译零错误（两个平台），七套回归测试全过
 - **六种数据结构全部可以被 HOOK 引用**（含 TABLE / KVALOT）
 - 内存所有权处处明确（容器拥有元素；注册表拥有 HOOK），有对照测量作证
 - 能交互使用：`./mhuixs` 进入 REPL，命令驱动，退出时自动存盘
 - HOOK 与数据可完整落盘并恢复
+- **能作为服务端跑**：`./mhuixs server`，别的语言按 MHP/1 协议连上来下命令
+- 参考客户端在 `client/python/mhuixs.py`
 
-尚未包含（见"已知限制"）：网络、多用户与权限隔离、脚本语言、命令历史。
+尚未包含（见"已知限制"）：多连接并发、多用户与权限分级、脚本语言、命令历史。
 
-| 数据结构 | BHS 原生支持 | 能挂到 HOOK |
-|---|---|---|
-| NUMBER / STRING | ✅ | ✅ |
-| LIST | ✅ | ✅ |
-| BITMAP | ✅ | ✅ |
-| TABLE | ✅ | ✅ |
-| KVALOT | ✅ | ✅ |
+| 数据结构 | BHS 原生支持 | 能挂到 HOOK | 能经网络操作 |
+|---|---|---|---|
+| NUMBER / STRING | ✅ | ✅ | ✅ |
+| LIST | ✅ | ✅ | ✅ |
+| BITMAP | ✅ | ✅ | ✅ |
+| TABLE | ✅ | ✅ | ✅ |
+| KVALOT | ✅ | ✅ | ✅ |
 
 ---
 
@@ -151,7 +156,9 @@ cd src
 make               # 编译
 ./mhuixs           # 进入交互模式（REPL）
 ./mhuixs job.mhx   # 脚本模式：执行命令文件后退出
-make test          # 回归测试（四套）：基础库 / 持久化往返 / HOOK 生命周期 / 命令层输出
+./mhuixs server    # 服务端模式：监听端口，供其它程序连接
+make test          # 回归测试（七套）：基础库 / 持久化往返 / HOOK 生命周期 /
+                   #   命令层输出 / 会话层 / 协议编解码 / 网络集成
 ```
 
 ### 交互模式
@@ -159,7 +166,7 @@ make test          # 回归测试（四套）：基础库 / 持久化往返 / HO
 直接运行 `./mhuixs` 进入 REPL，一行一条命令：
 
 ```
-==== Mhuixs 0.1.0 ====
+==== Mhuixs 0.2.0 ====
   ENV 模块就绪
   Logger 模块就绪
   ID 分配器就绪
@@ -220,6 +227,66 @@ llen fruits
 仍然没有变量、条件、循环：脚本模式只是把「一行一条命令」的输入源从键盘换成
 文件，不是脚本语言（见第 9 节设计边界）。
 
+### 服务端模式
+
+让**别的进程、别的语言**来下命令：
+
+```bash
+MHUIXS_TOKEN=$(openssl rand -hex 16) ./mhuixs server
+```
+
+监听地址与端口取自配置的 `bind`（默认 `127.0.0.1`）和 `port`（默认 18185）。
+访问令牌取自配置的 `authtoken`，或环境变量 `MHUIXS_TOKEN`（后者优先，
+临时起一次服务可以不让令牌落进配置文件）。
+
+**没有令牌就拒绝启动**。这不是洁癖：协议是明文的，一个没有门槛的 Mhuixs
+等于把数据摊在网上。连上来之后第一条请求必须是 `AUTH <令牌>`，不对就断开。
+
+用自带的 Python 客户端试一下（它同时是这份协议的参考实现）：
+
+```bash
+python client/python/mhuixs.py --token 你的令牌 \
+  'create list todo' 'rpush todo milk egg' 'llen todo'
+# OK created list 'todo'
+# OK rpush todo, len=2
+# OK 2
+```
+
+#### 线格式（MHP/1）
+
+请求是**参数数组**，每个参数带长度前缀：
+
+```
+*3\r\n$5\r\nrpush\r\n$4\r\ntodo\r\n$4\r\nmilk\r\n
+```
+
+响应有三种：
+
+```
++OK\r\n                        认证成功
+-NOAUTH invalid token\r\n      出错，服务端随后断开
+$57\r\n{"ok":true,...}\r\n     一切正常结果（JSON 文档）
+```
+
+要点：
+
+- **参数带长度，不是拼成一行**。值是任意字节，可以含空格、换行、引号 ——
+  文本划不了这个界，长度前缀才能。这就是所谓二进制安全。
+- `$` 元素按内容自动判定数字还是字符串（等价于不加引号）；`+` 元素强制当
+  字符串（等价于加引号），所以 `rpush x "123"` 那种语义不会丢。
+- 响应体就是命令层那套 JSON（`ok` / `code` / `kind` / `value` / `text`），
+  错误码取值与文本模式完全一致。程序只该认这些字段，不要去解析文案。
+
+#### 已知边界
+
+- **一次只服务一个连接**（v0.2.0 是有意为之）。第二个客户端不会收到拒绝，
+  而是排在监听队列里等着 —— 所以它看起来像"没反应"，其实是排队。
+- **明文传输**。令牌能挡住误连，挡不住抓包。只在本机或可信网络里用；
+  要跨公网请套隧道。
+- **单个参数上限 255 字节，且不能含 NUL 字节**。这是命令层把参数当 C 字符串
+  处理决定的，不是分帧层的限制。超了会明确报错，不会静默截断。
+- `:quit` 只断开当前连接，服务继续；`:shutdown` 才让服务停下来（停机前存盘）。
+
 ### 其他入口
 
 ```bash
@@ -276,11 +343,12 @@ llen fruits
 
 | 平台 | 编译器 | 结果 |
 |---|---|---|
-| Windows（MSYS2 / MinGW-w64） | gcc 15.2.0 (`x86_64-w64-mingw32`) | make 零错误；三套测试全过；REPL 正常 |
-| Linux（Ubuntu 24.04 LTS，x86_64） | gcc 13.3.0 (`x86_64-linux-gnu`) | make 零错误；三套测试全过；REPL 正常 |
+| Windows（MSYS2 / MinGW-w64） | gcc 15.2.0 (`x86_64-w64-mingw32`) | make 零错误；七套测试全过；REPL / 服务端正常 |
+| Linux（Ubuntu 24.04 LTS，x86_64） | gcc 13.3.0 (`x86_64-linux-gnu`) | make 零错误；七套测试全过；REPL / 服务端正常 |
 
-Linux 侧实测（2026-10-05）：编译、三套回归测试、REPL 交互、
-六种数据结构的挂载与持久化跨重启，全部正常。
+Linux 侧实测（2026-10-13）：编译、七套回归测试、REPL 交互，
+以及**起服务端并用 Python 客户端走完整链路**（认证 → 建表写入查询 →
+存盘 → 停机 → 重启后数据仍在），六种数据结构的挂载与持久化跨重启，全部正常。
 两平台的编译告警集合**完全一致**（`-Wsign-compare` 35 处、`-Wunused-variable` 5 处、
 `-Wtype-limits` 3 处等，均为既有代码风格问题，不影响功能）。
 
@@ -294,8 +362,8 @@ KVALOT / TABLE）在 Linux 上能完整恢复。原因是序列化只用定宽�
 | 类别 | 文件 | 说明 |
 |---|---|---|
 | 已写平台分支 | `registry.c`、`lib/env.c`、`lib/env.h`、`Mhuixs.c` | 互斥锁、路径分隔符、取可执行文件路径都有 `_WIN32` 分支 |
+| 已写平台分支（网络） | `lib/sock.c`、`lib/sock.h` | Winsock 与 BSD socket 的差异收口在这里：初始化、关闭、错误码、收发签名、`SO_REUSEADDR` 的语义分歧 |
 | 依赖 POSIX 兼容层 | `lib/getid.c` | 无条件 `#include <pthread.h>`。Linux 原生可用；MSYS2 下由 mingw 提供；但**用 MSVC 或原生 MinGW 会编译失败** |
-| 未纳入构建 | `lib/pkg.c/h` | 依赖 `arpa/inet.h`（Linux 专有）。网络层回归时再处理 |
 
 ### 编译告警里的一个坑（已修）
 
@@ -327,8 +395,11 @@ KVALOT / TABLE）在 Linux 上能完整恢复。原因是序列化只用定宽�
 ```
 Mhuixs/
 ├── src/
-│   ├── Mhuixs.c          # 入口：模块初始化 + 交互模式(REPL) + 脚本模式 + demo + 自检
-│   ├── execute.c/h       # 命令执行层：一行一条命令
+│   ├── Mhuixs.c          # 入口：模块初始化 + 交互/脚本/服务端/demo 四种模式 + 自检
+│   ├── execute.c/h       # 命令执行层：一行一条命令，参数进来结果出去
+│   ├── session.c/h       # 会话层：元命令 + 命令执行，三个前端共用
+│   ├── proto.c/h         # MHP/1 线格式编解码（纯函数，无 socket 依赖）
+│   ├── server.c/h        # 网络前端：监听、accept、按帧收发
 │   ├── registry.c/h      # 注册表：统一管理 HOOK、权限、落盘
 │   ├── Makefile
 │   ├── Mhuixs.config.example  # 配置模板（只作说明；运行配置在 ~/.mhuixs/）
@@ -340,18 +411,24 @@ Mhuixs/
 │       ├── bignum.c/h    # BHS 统一类型 + 任意精度数值（含各类型的桥接）
 │       ├── hook.c/h      # HOOK
 │       ├── hash.c/h      # Robin Hood 哈希表
+│       ├── sock.c/h      # 跨平台 socket 薄封装（POSIX / Winsock）
 │       ├── mstring.h     # 字符串
 │       ├── getid.c/h     # ID 分配器
 │       ├── env.c/h       # 环境配置
 │       ├── merr.c/h      # 错误码与日志
 │       ├── bitcpy.c/h    # 位级拷贝
-│       ├── pkg.c/h       # MUIX 打包协议（暂挂起，待网络层回归）
-│       └── logo.c/h      # 启动标识
+│       └── logo.c/h      # 启动标识（客户端时期遗留，当前无调用点）
 ├── doc/                  # 哈希表相关的设计文档、引用模型
+├── client/
+│   └── python/mhuixs.py  # Python 客户端，也是 MHP/1 的参考实现
 └── test/
     ├── test_lib_status.c            # LIST 所有权与深拷贝 / BITMAP / TABLE（make test）
     ├── test_persist_roundtrip.c     # TABLE / KVALOT 落盘-恢复往返（make test）
     ├── test_registry_lifecycle.c    # HOOK 注册→挂数据→注销 的释放检查（make test）
+    ├── test_execute_json.c          # 命令层输出：文本逐字节不变 + JSON 结构（make test）
+    ├── test_session.c               # 会话层：元命令分派 + 格式是会话私有状态（make test）
+    ├── test_protocol.c              # 协议编解码：半包/粘包/二进制安全（make test）
+    ├── test_server_net.c            # 网络集成：真 socket 真分帧（make test）
     ├── test_list_memory.c           # LIST 内存回收检查（手动，仅 Windows）
     └── test_hash_performance.c      # 哈希表性能（手动）
 ```
@@ -379,7 +456,10 @@ Mhuixs/
 
 - **组权限当前对所有人生效**：用户组模块剥离后，`get_primary_gid_by_uid()` 恒返回 0，`HOOK_login()` 也把 `hook->group` 设为 0，于是任何 caller 都被判定为"同组"。在用户组模块回归前，**不要依赖组权限做隔离**。详见 `src/lib/hook.c`。
 - **`mstr_cstr()` 返回的指针不带 `\0`**：不能直接配 `printf("%s")` / `strcmp` 用，会读到相邻未初始化内存（症状是字符串后面多出乱码，且时有时无）。要用 `mstr_to_cstr()`（需 free）或 `%.*s` + `mstrlen()`。详见 `src/lib/mstring.h`。
-- `lib/pkg.c` 依赖网络字节序（`arpa/inet.h`），暂未纳入构建。
+- **服务端一次只服务一个连接**：有意为之，见第 4 节。第二个客户端会排队等待而不是被拒绝。多连接并发要改的是会话层那一处锁接缝（`session.c` 的 `mhx_exec_lock`），命令实现不用动。
+- **服务端是明文协议**：令牌只挡误连，不挡抓包。要么只监听本机，要么自己套隧道。
+- **单个参数上限 255 字节且不能含 NUL**：命令层把参数当 C 字符串处理，这是那一层决定的，不是分帧层的。超限会明确报错。
+- **准入即全权**：令牌对得上就连上来，连上来就是 owner。per-hook 权限位当前不参与判定（上面那条组权限恒通过是同一个原因），不要以为它管事。
 - 深拷贝没有环检测：若数据里出现自引用（结构套自己），`bignum_copy` 会无限递归。当前没有产生这种结构的路径。
 - 权限系统只有 owner/other 两档真正生效（组权限因用户组模块剥离而恒通过）。
 - 交互模式没有命令历史、没有 Tab 补全（有意从简，先把可用的最小形态做出来）。
@@ -414,6 +494,11 @@ Mhuixs 不实现自己的编程语言。操作以命令形式提供，语言层�
 - **2026.10.06** 原生脚本模式 → **v0.1.4**：`mhuixs 文件` 像跑 python 一样
   直接执行命令文件（`mhuixs -` 读 stdin）；stdout 只剩命令输出，
   出错即停带行号，跑完自动存盘
+- **2026.10.13** 服务端化 → **v0.2.0**：抽出会话层（三个前端共用元命令，
+  输出格式不再是一个进程级全局开关）、定下 MHP/1 线格式（参数带长度、
+  二进制安全）、`mhuixs server` 监听并把命令开放给别的进程，
+  Python 参考客户端落地。走的不是"把旧网络层捡回来"那条路：不引第三方库，
+  只加一层跨平台 socket 薄封装
 
 ---
 

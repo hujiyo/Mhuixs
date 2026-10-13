@@ -50,7 +50,7 @@ Mhuixs 内核入口
 
 #define SELFCHECK_HOOK_NAME "mhuixs_selfcheck"
 
-#define MHUIXS_VERSION "0.1.4"
+#define MHUIXS_VERSION "0.2.0"
 
 static void print_usage(void)
 {
