@@ -48,10 +48,23 @@ OBJS = Mhuixs.o \
 #   网络层剥离期间无任何模块引用它，等网络层回归时再启用。
 #   （文件保留在 lib/pkg.c lib/pkg.h）
 
+#
+# 带平台网络依赖的对象。**不能并进 OBJS** ——
+# TEST_OBJS 是从 OBJS 里 filter-out 出来的，一旦并进去，
+# 五套测试全都要跟着链接 -lws2_32（Windows）或挂个空依赖（Linux）。
+#
+NET_OBJS = lib/sock.o
+
+ifeq ($(OS),Windows_NT)
+NET_LIBS = -lws2_32
+else
+NET_LIBS =
+endif
+
 all: $(TARGET)
 
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
+$(TARGET): $(OBJS) $(NET_OBJS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(NET_OBJS) $(LDFLAGS) $(NET_LIBS)
 	@echo "Mhuixs 编译完成 -> $(TARGET)  [目标平台: $(shell $(CC) -dumpmachine)]"
 
 Mhuixs.o: Mhuixs.c lib/merr.h lib/env.h lib/getid.h lib/hook.h lib/mstring.h registry.h execute.h
@@ -109,6 +122,10 @@ lib/kvalh.o: lib/kvalh.c lib/kvalh.h lib/bignum.h lib/mstring.h lib/hash.h
 
 lib/pkg.o: lib/pkg.c lib/pkg.h
 	$(CC) $(CFLAGS) -c lib/pkg.c -o lib/pkg.o
+
+# 跨平台 socket 薄封装（平台相关，只在主目标与网络测试里链）
+lib/sock.o: lib/sock.c lib/sock.h
+	$(CC) $(CFLAGS) -c lib/sock.c -o lib/sock.o
 
 run: $(TARGET)
 	./$(TARGET)
