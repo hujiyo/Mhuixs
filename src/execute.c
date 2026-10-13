@@ -1473,14 +1473,15 @@ static void render_json(const mhx_result *r, char *out, size_t outlen)
 
 /* ---------------- 分发 ---------------- */
 
-/* 执行一条命令，结果写进 res。返回 0 成功 / 非 0 失败。 */
-static int mhx_run(const char *line, mhx_result *res)
+/* 分发：参数已经切好了。返回 0 成功 / 非 0 失败。
+ *
+ * 命令实现只认 token_t，所以文本入口和 argv 入口最终都汇到这里 ——
+ * 分发表只有一份，加命令时不必考虑调用方从哪来。 */
+static int mhx_run_tokens(token_t *toks, int argc, mhx_result *res)
 {
     res_init(res);
 
-    token_t toks[MAX_TOKENS];
-    int argc = tokenize(line, toks, MAX_TOKENS);
-    if (argc == 0) return 0;   /* 空行 / 纯注释 */
+    if (argc <= 0) return 0;   /* 空行 / 纯注释 */
 
     const char *cmd = toks[0].text;
     int rc;
@@ -1532,6 +1533,22 @@ static int mhx_run(const char *line, mhx_result *res)
     return rc;
 }
 
+/* 文本入口：分词后走同一条分发路径。分词规则一行没动，
+ * 所以 mhx_execute / mhx_execute_json 的输出与历史逐字节相同。 */
+static int mhx_run(const char *line, mhx_result *res)
+{
+    token_t toks[MAX_TOKENS];
+    int argc = tokenize(line, toks, MAX_TOKENS);
+    return mhx_run_tokens(toks, argc, res);
+}
+
+/* 把结果按请求的版式写进 out。两个入口共用，避免版式分叉。 */
+static void render_result(const mhx_result *res, char *out, size_t outlen, int json)
+{
+    if (json) render_json(res, out, outlen);
+    else      snprintf(out, outlen, "%s", res->text);
+}
+
 int mhx_execute(const char *line, char *out, size_t outlen)
 {
     if (!line || !out || outlen < 2) return -1;
@@ -1540,7 +1557,7 @@ int mhx_execute(const char *line, char *out, size_t outlen)
     mhx_result res;
     int rc = mhx_run(line, &res);
 
-    snprintf(out, outlen, "%s", res.text);
+    render_result(&res, out, outlen, 0);
     return rc;
 }
 
@@ -1552,6 +1569,60 @@ int mhx_execute_json(const char *line, char *out, size_t outlen)
     mhx_result res;
     int rc = mhx_run(line, &res);
 
-    render_json(&res, out, outlen);
+    render_result(&res, out, outlen, 1);
+    return rc;
+}
+
+int mhx_execute_argv(int argc, const struct mhx_arg *args,
+                     char *out, size_t outlen, int json)
+{
+    if (argc < 0 || (argc > 0 && !args) || !out || outlen < 2) return -1;
+    out[0] = '\0';
+
+    mhx_result res;
+
+    /* 参数不合法一律"报错并返回"，绝不静默截断 ——
+     * 悄悄存下一个不一样的值，比直接失败难查得多。 */
+    if (argc > MAX_TOKENS) {
+        res_init(&res);
+        res_err(&res, MHX_ERR_INTERNAL, "too many arguments (max %d)", MAX_TOKENS);
+        render_result(&res, out, outlen, json);
+        return -1;
+    }
+
+    token_t toks[MAX_TOKENS];
+    for (int i = 0; i < argc; i++) {
+        const struct mhx_arg *a = &args[i];
+
+        if (a->len > MAX_TOKEN_LEN - 1) {
+            res_init(&res);
+            res_err(&res, MHX_ERR_INTERNAL,
+                    "argument %d too long (%zu bytes, max %d)",
+                    i, a->len, MAX_TOKEN_LEN - 1);
+            render_result(&res, out, outlen, json);
+            return -1;
+        }
+        if (a->len > 0 && !a->p) {
+            res_init(&res);
+            res_err(&res, MHX_ERR_INTERNAL, "argument %d is null", i);
+            render_result(&res, out, outlen, json);
+            return -1;
+        }
+        /* 内嵌 NUL：命令层把参数当 C 字符串，存进去只会被截断，
+         * 客户端却以为存的是原值。这里直接拒绝。 */
+        if (a->len > 0 && memchr(a->p, '\0', a->len)) {
+            res_init(&res);
+            res_err(&res, MHX_ERR_INTERNAL, "argument %d contains NUL", i);
+            render_result(&res, out, outlen, json);
+            return -1;
+        }
+
+        memcpy(toks[i].text, a->p, a->len);
+        toks[i].text[a->len] = '\0';
+        toks[i].quoted = a->quoted;
+    }
+
+    int rc = mhx_run_tokens(toks, argc, &res);
+    render_result(&res, out, outlen, json);
     return rc;
 }

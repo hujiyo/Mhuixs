@@ -57,6 +57,30 @@ int mhx_execute(const char *line, char *out, size_t outlen);
 int mhx_execute_json(const char *line, char *out, size_t outlen);
 
 /*
+ * 结构化参数：给"参数已经切好了"的调用方用（网络协议层就是这种）。
+ *
+ * 为什么不直接拼一行再交给 mhx_execute：分词器会按空格和引号重新切分，
+ * 参数里的空格、引号、换行都会被破坏 —— 那正是二进制安全要避免的事。
+ * 走这条路，参数原样进命令层，一个字节都不重新解释。
+
+    p/len   参数原始字节，**不含**结尾 NUL
+    quoted  1 = 按字符串处理（等价文本模式里加引号），0 = 自动判定
+
+ * 限制（命令层决定，不是分帧层）：单个参数最多 255 字节，且不能含内嵌 NUL
+ * —— 参数在命令层是 C 字符串。越界会返回 internal 错误，不会静默截断。
+ *
+ * json 为 0 走文本版式、非 0 走 JSON 版式，与 mhx_execute / mhx_execute_json 一致。
+ */
+struct mhx_arg {
+    const char *p;
+    size_t      len;
+    int         quoted;
+};
+
+int mhx_execute_argv(int argc, const struct mhx_arg *args,
+                     char *out, size_t outlen, int json);
+
+/*
  * 命令列表与用法说明（静态字符串，不要 free）。
  * 命令清单的唯一出处在这里，交互层的 :help 直接打印它。
  */
