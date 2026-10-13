@@ -37,6 +37,7 @@ Mhuixs 内核入口
 #include "registry.h"  /* 注册表模块 */
 #include "execute.h"   /* 命令执行层 */
 #include "session.h"   /* 会话层：元命令 + 命令执行 */
+#include "server.h"    /* 网络前端 */
 
 /*
 存储在 Mhuixs 数据库的所有数据结构都需要使用钩子进行引用：
@@ -58,10 +59,14 @@ static void print_usage(void)
     printf("  mhuixs              进入交互模式（REPL）\n");
     printf("  mhuixs <文件>       执行命令文件后退出（一行一条命令，# 注释）\n");
     printf("  mhuixs -            从 stdin 逐行读命令，非交互执行\n");
+    printf("  mhuixs server       作为服务端监听，供其它程序连接\n");
     printf("  mhuixs demo         运行主链路自检与命令层演示后退出\n");
     printf("  mhuixs -h|--help    显示本说明\n");
     printf("\n脚本模式：stdout 只剩命令输出（启动信息走 stderr）；\n");
     printf("          出错即停，退出码 1，报错带文件名与行号；打不开文件退出码 2。\n");
+    printf("\n服务端模式：监听地址与端口取自配置（bind / port）；访问令牌取自\n");
+    printf("            配置 authtoken 或环境变量 MHUIXS_TOKEN —— 两者都没有\n");
+    printf("            就拒绝启动。线格式见 src/proto.h。\n");
     printf("\n交互模式下输入 :help 查看命令列表，:quit 退出。\n");
 }
 
@@ -248,14 +253,14 @@ static int self_check(int verbose)
 /* 交互模式（REPL）                                                     */
 /* ------------------------------------------------------------------ */
 
-/* 脚本模式标志。启动/收尾信息由此决定去向：
- * 交互/demo 打到 stdout（老行为），脚本模式打到 stderr ——
- * 让 stdout 只剩命令输出，重定向拿到的才是干净的结果。 */
-static int g_script_mode = 0;
+/* 启动/收尾信息是否改走 stderr。
+ * 交互与 demo 打到 stdout（老行为）；脚本与**服务端**打到 stderr ——
+ * 脚本要让 stdout 只剩命令输出好重定向，服务端的 stdout 常被重定向到文件。 */
+static int g_boot_to_stderr = 0;
 
 static FILE *boot_stream(void)
 {
-    return g_script_mode ? stderr : stdout;
+    return g_boot_to_stderr ? stderr : stdout;
 }
 
 static void repl(void)
@@ -444,12 +449,15 @@ static int run_script(FILE *fp, const char *label)
 
 int main(int argc, char *argv[])
 {
-    /* 入口分发：无参数 = 交互模式；<文件>|- = 脚本模式；demo = 自检+演示；-h = 帮助 */
+    /* 入口分发：无参数 = 交互模式；<文件>|- = 脚本模式；demo / server；-h = 帮助 */
     int mode_demo = 0;
+    int mode_server = 0;
     const char *script = NULL;   /* NULL = 不跑脚本；"-" = 从 stdin 读 */
     if (argc > 1) {
         if (!strcmp(argv[1], "demo")) {
             mode_demo = 1;
+        } else if (!strcmp(argv[1], "server")) {
+            mode_server = 1;
         } else if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
             print_usage();
             return 0;
@@ -464,7 +472,7 @@ int main(int argc, char *argv[])
             script = argv[1];   /* 其余一律当命令文件路径 */
         }
     }
-    g_script_mode = (script != NULL);
+    g_boot_to_stderr = (script != NULL || mode_server);
 
     fprintf(boot_stream(), "==== Mhuixs %s ====\n", MHUIXS_VERSION);
 
@@ -550,8 +558,34 @@ int main(int argc, char *argv[])
         fprintf(boot_stream(),
                 "\n⚠ 主链路自检有 %d 项失败（用 demo 参数可看明细），仍继续运行\n",
                 failures);
-    } else if (!g_script_mode) {
+    } else if (!g_boot_to_stderr) {
         printf("  主链路自检通过\n");
+    }
+
+    /* 服务端模式：监听并循环服务连接，直到收到 :shutdown */
+    if (mode_server) {
+        /* 令牌：环境变量优先 —— 临时起一次服务可以不让令牌落进配置文件 */
+        const char *token = getenv("MHUIXS_TOKEN");
+        if (!token || !token[0]) token = Env.authtoken;
+
+        if (sock_init() != 0) {
+            fprintf(stderr, "mhuixs: 网络初始化失败\n");
+            logger_close();
+            reg_destroy();
+            return 1;
+        }
+
+        int rc = mhx_server_run(Env.bind_addr, Env.port, token);
+
+        /* 与其它模式同一语义：跑完存盘 */
+        int saved = mhx_save_registry();
+        if (saved < 0) fprintf(stderr, "保存 HOOK 到磁盘失败\n");
+        else           fprintf(stderr, "已保存 %d 个 HOOK 到磁盘\n", saved);
+
+        sock_cleanup();
+        logger_close();
+        reg_destroy();
+        return rc == 0 ? 0 : 1;
     }
 
     /* 脚本模式：逐行执行命令文件，出错即停 */
