@@ -53,7 +53,7 @@ HOOK 同时承担三件事：**防止数据失联**（有名可查）、**权限
 - 能交互使用：`./mhuixs` 进入 REPL，命令驱动，退出时自动存盘
 - HOOK 与数据可完整落盘并恢复
 - **能作为服务端跑**：`./mhuixs server`，别的语言按 MHP/1 协议连上来下命令
-- 参考客户端在 `client/python/mhuixs.py`
+- 参考客户端在 `client/python/mhuixs.py`，命令行客户端在 `client/python/mhuixs_cli.py`
 
 尚未包含（见"已知限制"）：多连接并发、多用户与权限分级、脚本语言、命令历史。
 
@@ -257,6 +257,45 @@ python client/python/mhuixs.py --token 你的令牌 \
 # OK 2
 ```
 
+#### 交互式客户端 mhuixs-cli
+
+`mhuixs.py` 适合被代码 import；想**坐在键盘前敲命令**、或者把命令写进文件批量跑，
+用同一个目录下的 `mhuixs_cli.py`：
+
+```bash
+python client/python/mhuixs_cli.py                    # 进交互，一行一条命令
+python client/python/mhuixs_cli.py 'llen todo'        # 给命令就跑完退出
+python client/python/mhuixs_cli.py - < script.mhx     # 从 stdin / 管道逐行读
+```
+
+令牌不用每次打：`--token` > 环境变量 `MHUIXS_TOKEN` > 配置文件里的 `authtoken`
+（与原生服务端读令牌的**同一套顺序**）。所以配好一次之后，直接敲
+`python client/python/mhuixs_cli.py` 就能连上。
+
+输出版式由 `--format`（或交互里的 `:format`）切换：
+
+| 版式 | 打出来的东西 | 用途 |
+|---|---|---|
+| `value`（默认） | 只要值：数字就是数字，LIST 一行一项 | 直接管道给别的程序 |
+| `pretty` | 服务端那行人类可读文本，与原生 REPL 观感一致 | 人看 |
+| `text` | 只取 JSON 里的 `text` 字段 | 复用旧脚本 |
+| `json` | 完整 JSON 文档（`ok` / `code` / `kind` / `value`） | 调试与程序消费 |
+
+交互里的元命令（`:help` 看全部）：`:format` 切版式、`:commands` 打命令清单、
+`:fail on` 出错即停、`:run` 重跑一段带引号的命令、`:ping` / `:status` 探活、
+`:save` / `:shutdown` 让服务端落盘/停机。
+
+批处理模式下正常结果进 stdout、错误带行号进 stderr，退出码非 0 表示这一轮
+有过失败，适合塞进脚本：
+
+```bash
+printf 'create list todo\nrpush todo milk egg\nllen todo\n' \
+  | python client/python/mhuixs_cli.py --fail -
+```
+
+切词规则与原生文本模式一致（空格分词，引号内的值按字符串处理），
+所以值里有空格、或想存 `"123"` 这种数字样子的字符串时都要加引号。
+
 #### 线格式（MHP/1）
 
 请求是**参数数组**，每个参数带长度前缀：
@@ -425,7 +464,9 @@ Mhuixs/
 │       └── logo.c/h      # 启动横幅（点阵艺术字，交互与服务端模式打印）
 ├── doc/                  # 哈希表相关的设计文档、引用模型
 ├── client/
-│   └── python/mhuixs.py  # Python 客户端，也是 MHP/1 的参考实现
+│   └── python/
+│       ├── mhuixs.py      # Python 客户端，也是 MHP/1 的参考实现
+│       └── mhuixs_cli.py  # 命令行客户端：交互 REPL / 一次性命令 / 管道批处理
 └── test/
     ├── test_lib_status.c            # LIST 所有权与深拷贝 / BITMAP / TABLE（make test）
     ├── test_persist_roundtrip.c     # TABLE / KVALOT 落盘-恢复往返（make test）
