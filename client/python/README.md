@@ -173,7 +173,8 @@ db.execute("llen", "todo")        # -> 2
 
 ## 命令行客户端
 
-安装后会有一个 `mhuixs-cli` 命令；没安装时用 `python -m mhuixs`：
+安装后会有一个 `mhuixs-cli` 命令；在源码目录 `client/python` 下也可以用
+`python -m mhuixs`，参数完全一样：
 
 ```bash
 mhuixs-cli                          # 交互模式

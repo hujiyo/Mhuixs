@@ -21,7 +21,7 @@ HOOK 同时承担三件事：**防止数据失联**（有名可查）、**权限
 
 ---
 
-## 2. 当前状态（v0.2.0 / 2026-10）
+## 2. 当前状态（v0.2.3 / 2026-10）
 
 项目正处于**重建期**，当前聚焦回最初的内核。上一轮减重剥离了后来叠加、且相互冲突的部分：
 
@@ -44,8 +44,7 @@ HOOK 同时承担三件事：**防止数据失联**（有名可查）、**权限
 | 网络 | `lib/sock.c`、`proto.c`、`server.c` |
 | 基础设施 | `lib/env.c`、`lib/getid.c`、`lib/merr.c`、`lib/hash.c`、`lib/mstring.h`、`lib/bitcpy.c` |
 
-**v0.2.0 的界定**：在 v0.1.0（内核自洽、能交互使用）之上，加上了
-**能被别的进程使用**这一条 —— 一个常驻服务端，加一份文档化的线格式。
+**当前能力**：内核自洽、可交互使用，也能被别的进程通过 MHP/1 协议使用。
 
 - 编译零错误（两个平台），七套回归测试全过
 - **六种数据结构全部可以被 HOOK 引用**（含 TABLE / KVALOT）
@@ -53,7 +52,8 @@ HOOK 同时承担三件事：**防止数据失联**（有名可查）、**权限
 - 能交互使用：`./mhuixs` 进入 REPL，命令驱动，退出时自动存盘
 - HOOK 与数据可完整落盘并恢复
 - **能作为服务端跑**：`./mhuixs server`，别的语言按 MHP/1 协议连上来下命令
-- 参考客户端在 `client/python/mhuixs.py`，命令行客户端在 `client/python/mhuixs_cli.py`
+- Python 客户端是 pip 包：`pip install mhuixs`（源码在 `client/python/mhuixs/`），
+  命令行客户端是 `mhuixs-cli`，未安装时可用 `python -m mhuixs`
 
 尚未包含（见"已知限制"）：多连接并发、多用户与权限分级、脚本语言、命令历史。
 
@@ -171,7 +171,7 @@ make test          # 回归测试（七套）：基础库 / 持久化往返 / HO
         Memory-based Hybrid Universal Index System
           Welcome to use Mhuixs Database Server
 
-==== Mhuixs 0.2.0 ====
+==== Mhuixs 0.2.3 ====
   ENV 模块就绪
   Logger 模块就绪
   ID 分配器就绪
@@ -247,30 +247,44 @@ MHUIXS_TOKEN=$(openssl rand -hex 16) ./mhuixs server
 **没有令牌就拒绝启动**。这不是洁癖：协议是明文的，一个没有门槛的 Mhuixs
 等于把数据摊在网上。连上来之后第一条请求必须是 `AUTH <令牌>`，不对就断开。
 
-用自带的 Python 客户端试一下（它同时是这份协议的参考实现）：
+#### Python 库
+
+客户端是一个可以 pip 安装的包，源码在 `client/python/mhuixs/`：
 
 ```bash
-python client/python/mhuixs.py --token 你的令牌 \
-  'create list todo' 'rpush todo milk egg' 'llen todo'
-# OK created list 'todo'
-# OK rpush todo, len=2
-# OK 2
+pip install mhuixs
+# 从源码安装：pip install ./client/python
 ```
+
+```python
+import mhuixs
+
+with mhuixs.Mhuixs("127.0.0.1", 18185, token="你的令牌") as db:
+    db.create_list("todo")
+    db.rpush("todo", "milk", 2)     # 字符串存字符串，数字存数字
+    print(db.llen("todo"))          # 2
+    print(db.lget("todo", 0))       # milk
+```
+
+方法按数据结构分组，返回 Python 原生类型（整数 `int`、小数 `Decimal`、布尔
+`bool`）；需要服务端原始 JSON 文档时用 `db.call(...)`。完整说明见
+[`client/python/README.md`](client/python/README.md)。
 
 #### 交互式客户端 mhuixs-cli
 
-`mhuixs.py` 适合被代码 import；想**坐在键盘前敲命令**、或者把命令写进文件批量跑，
-用同一个目录下的 `mhuixs_cli.py`：
+安装包之后会有 `mhuixs-cli` 命令；在源码目录 `client/python` 下也可以直接用
+`python -m mhuixs`，参数完全一样：
 
 ```bash
-python client/python/mhuixs_cli.py                    # 进交互，一行一条命令
-python client/python/mhuixs_cli.py 'llen todo'        # 给命令就跑完退出
-python client/python/mhuixs_cli.py - < script.mhx     # 从 stdin / 管道逐行读
+mhuixs-cli                    # 进交互，一行一条命令
+mhuixs-cli 'llen todo'        # 给命令就跑完退出
+mhuixs-cli - < script.mhx     # 从 stdin / 管道逐行读
+python -m mhuixs 'llen todo'  # 未安装时的等价写法
 ```
 
 令牌不用每次打：`--token` > 环境变量 `MHUIXS_TOKEN` > 配置文件里的 `authtoken`
 （与原生服务端读令牌的**同一套顺序**）。所以配好一次之后，直接敲
-`python client/python/mhuixs_cli.py` 就能连上。
+`mhuixs-cli` 就能连上。
 
 输出版式由 `--format`（或交互里的 `:format`）切换：
 
@@ -290,7 +304,7 @@ python client/python/mhuixs_cli.py - < script.mhx     # 从 stdin / 管道逐行
 
 ```bash
 printf 'create list todo\nrpush todo milk egg\nllen todo\n' \
-  | python client/python/mhuixs_cli.py --fail -
+  | mhuixs-cli --fail -
 ```
 
 切词规则与原生文本模式一致（空格分词，引号内的值按字符串处理），
@@ -323,7 +337,7 @@ $57\r\n{"ok":true,...}\r\n     一切正常结果（JSON 文档）
 
 #### 已知边界
 
-- **一次只服务一个连接**（v0.2.0 是有意为之）。第二个客户端不会收到拒绝，
+- **一次只服务一个连接**（有意为之）。第二个客户端不会收到拒绝，
   而是排在监听队列里等着 —— 所以它看起来像"没反应"，其实是排队。
 - **明文传输**。令牌能挡住误连，挡不住抓包。只在本机或可信网络里用；
   要跨公网请套隧道。
@@ -465,8 +479,16 @@ Mhuixs/
 ├── doc/                  # 哈希表相关的设计文档、引用模型
 ├── client/
 │   └── python/
-│       ├── mhuixs.py      # Python 客户端，也是 MHP/1 的参考实现
-│       └── mhuixs_cli.py  # 命令行客户端：交互 REPL / 一次性命令 / 管道批处理
+│       ├── pyproject.toml         # pip 打包配置（包名 mhuixs）
+│       ├── README.md              # PyPI 页面：安装、API、异常、CLI
+│       ├── mhuixs/
+│       │   ├── _protocol.py       # MHP/1 纯编解码，也是协议的参考实现
+│       │   ├── _client.py         # Mhuixs 客户端与类型化命令
+│       │   ├── _errors.py         # 异常层级与 code 映射
+│       │   ├── cli.py             # 命令行客户端：交互 / 一次性 / 管道
+│       │   ├── __init__.py        # 公开 API 导出
+│       │   └── __main__.py        # python -m mhuixs
+│       └── tests/                 # 离线 unittest + 假服务端
 └── test/
     ├── test_lib_status.c            # LIST 所有权与深拷贝 / BITMAP / TABLE（make test）
     ├── test_persist_roundtrip.c     # TABLE / KVALOT 落盘-恢复往返（make test）
@@ -545,6 +567,10 @@ Mhuixs 不实现自己的编程语言。操作以命令形式提供，语言层�
   二进制安全）、`mhuixs server` 监听并把命令开放给别的进程，
   Python 参考客户端落地。走的不是"把旧网络层捡回来"那条路：不引第三方库，
   只加一层跨平台 socket 薄封装
+- **2026.10.22** Python 客户端打包 → **v0.2.3**：`pip install mhuixs`，
+  按数据结构提供类型化方法（`int` / `Decimal` / `bool`），
+  命令行客户端统一为 `mhuixs-cli`（或 `python -m mhuixs`）；
+  协议层与客户端有离线测试，不再依赖真实服务端
 
 ---
 

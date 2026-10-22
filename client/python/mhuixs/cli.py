@@ -9,7 +9,7 @@
     mhuixs-cli 'llen todo'                        # 给命令就直接跑完退出
     mhuixs-cli - < script.mhx                     # 从 stdin / 管道逐行读
 
-没安装时用 ``python -m mhuixs``，参数完全一样。
+没安装时在源码目录 `client/python` 下用 ``python -m mhuixs``，参数完全一样。
 
 交互模式下 `:help` 看用法，`:quit` 退出。
 
