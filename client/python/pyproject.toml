@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mhuixs"
+dynamic = ["version"]
+description = "Mhuixs 内存数据结构服务端的 Python 客户端（MHP/1 协议）"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Apache-2.0" }
+authors = [{ name = "HuJi" }]
+keywords = ["mhuixs", "in-memory", "database", "client", "redis-like"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Database",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["build>=1.2", "twine>=5.0"]
+
+[project.scripts]
+mhuixs-cli = "mhuixs.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/hujiyo/Mhuixs"
+Repository = "https://github.com/hujiyo/Mhuixs"
+Issues = "https://github.com/hujiyo/Mhuixs/issues"
+
+[tool.setuptools]
+packages = ["mhuixs"]
+
+[tool.setuptools.dynamic]
+version = { attr = "mhuixs._version.__version__" }

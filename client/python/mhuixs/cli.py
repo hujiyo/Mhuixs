@@ -2,12 +2,14 @@
 """mhuixs-cli —— 连上 Mhuixs 服务端、一行一条命令的命令行客户端。
 
 它只做三件事：切词、发命令、排版结果。协议编解码一行都不重复实现，
-全部复用同目录的 mhuixs.py（那份同时是 MHP/1 的参考实现）。
+全部复用包内的 ``_protocol``（那份同时是 MHP/1 的参考实现）。
 
-    python mhuixs_cli.py                          # 连 127.0.0.1:18185，进交互
-    python mhuixs_cli.py --host 10.0.0.5          # 换地址
-    python mhuixs_cli.py 'llen todo'              # 给命令就直接跑完退出
-    python mhuixs_cli.py - < script.mhx           # 从 stdin / 管道逐行读
+    mhuixs-cli                                    # 连 127.0.0.1:18185，进交互
+    mhuixs-cli --host 10.0.0.5                    # 换地址
+    mhuixs-cli 'llen todo'                        # 给命令就直接跑完退出
+    mhuixs-cli - < script.mhx                     # 从 stdin / 管道逐行读
+
+没安装时用 ``python -m mhuixs``，参数完全一样。
 
 交互模式下 `:help` 看用法，`:quit` 退出。
 
@@ -31,22 +33,10 @@ import json
 import os
 import sys
 
-# 同目录导入：直接 python mhuixs_cli.py 跑时脚本目录在 sys.path 上；
-# 作为模块导入时（测试、别处复用）走包内相对导入。
-try:
-    from mhuixs import Forced, Mhuixs, MhuixsError
-except ImportError:  # pragma: no cover - 取决于调用方式
-    from .mhuixs import Forced, Mhuixs, MhuixsError
-
-# 客户端版本。跟着 src/Mhuixs.c 的 MHUIXS_VERSION 走 —— 线格式没变时
-# 不必一起动，但对外说"这是哪个版本的客户端"得有个准数。
-__version__ = "0.2.2"
-
-# 与命令层同源的上限（src/execute.h 的 MHX_MAX_ARGS / MHX_MAX_ARG_BYTES）。
-# 本地先拦一道，是为了把"参数太长 / 太多"在发出去之前就说清楚，
-# 而不是等服务端回一句笼统的 internal。
-MAX_ARGS = 48
-MAX_ARG_BYTES = 255
+from ._client import Mhuixs
+from ._errors import AuthenticationError, ConnectionError, MhuixsError
+from ._protocol import MAX_ARG_BYTES, MAX_ARGS, Forced
+from ._version import __version__
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 18185
@@ -213,7 +203,12 @@ class CommandFeed:
 # ---------------------------------------------------------------- 令牌与配置
 
 def _config_candidates():
-    """配置文件的查找顺序，与原生程序启动时一致。"""
+    """配置文件的查找顺序，与原生程序启动时一致。
+
+    安装成命令时 ``sys.argv[0]`` 是启动脚本的路径；``python -m mhuixs``
+    时是包内 ``__main__.py`` 的路径。两种情况下都先看「启动位置旁边」，
+    再回落到 ``~/.mhuixs/Mhuixs.config``。
+    """
     here = os.path.dirname(os.path.abspath(sys.argv[0] or __file__))
     return [
         os.path.join(here, "Mhuixs.config"),
@@ -410,7 +405,7 @@ class Shell(cmd.Cmd):
     def perform(self, args):
         """执行一条切好的命令。返回 (结果文档, None) 或 (None, 出错说明)。
 
-        引号里的值若含换行，mhuixs.py 会抛 ValueError —— 那是协议的硬限制
+        引号里的值若含换行，_protocol 会抛 ValueError —— 那是协议的硬限制
         （+ 元素靠 CRLF 划界，见 src/proto.h），本行命令怎么写都绕不过去，
         所以原样报出来，不去替它猜意图。
         """
@@ -700,10 +695,17 @@ def main(argv=None):
         return 2
 
     try:
-        # 认证失败时构造函数会抛 MhuixsError，连接由它自己关掉
+        # 认证失败时构造函数会抛 AuthenticationError，连接由它自己关掉
         db = Mhuixs(host, port, token=token)
-    except MhuixsError as e:
+    except AuthenticationError as e:
         sys.stderr.write("mhuixs-cli: 连接 %s 被拒绝：%s\n" % (target, e))
+        return 2
+    except ConnectionError as e:
+        sys.stderr.write("mhuixs-cli: 连不上 %s：%s\n" % (target, e))
+        sys.stderr.write("  确认服务端在跑：mhuixs server\n")
+        return 2
+    except MhuixsError as e:
+        sys.stderr.write("mhuixs-cli: 连接 %s 失败：%s\n" % (target, e))
         return 2
     except OSError as e:
         sys.stderr.write("mhuixs-cli: 连不上 %s：%s\n" % (target, e))
