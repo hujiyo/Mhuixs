@@ -28,6 +28,11 @@
 
 #include <pthread.h>
 
+#ifndef _WIN32
+  #include <sys/socket.h> /* setsockopt */
+  #include <sys/time.h>   /* timeval：客户端读超时 */
+#endif
+
 static int fails = 0;
 #define CHECK(cond, msg) do { if (!(cond)) { printf("  FAIL: %s\n", msg); fails++; } } while (0)
 
@@ -91,6 +96,70 @@ static void close_round(pthread_t th, mhx_sock_t cli)
     pthread_join(th, NULL);
     sock_close(g_listener);
     g_listener = MHX_SOCK_INVALID;
+}
+
+/* ---------------------------------------------------------------- */
+/* 事件循环那一路：自己监听（端口 0 让系统挑），再在线程里跑循环       */
+/* ---------------------------------------------------------------- */
+
+static mhx_sock_t g_run_listener = MHX_SOCK_INVALID;
+static int        g_run_port     = 0;
+static int        g_run_rc       = -999;
+
+static void *run_thread(void *arg)
+{
+    (void)arg;
+    g_run_rc = mhx_server_run_listener(g_run_listener, TOKEN);
+    return NULL;
+}
+
+static int start_server(pthread_t *th)
+{
+    g_run_listener = sock_listen("127.0.0.1", 0);
+    if (g_run_listener == MHX_SOCK_INVALID) {
+        printf("  FAIL: 监听失败\n");
+        fails++;
+        return 0;
+    }
+    if (!sock_local_port(g_run_listener, &g_run_port)) {
+        printf("  FAIL: 取不到监听端口\n");
+        fails++;
+        sock_close(g_run_listener);
+        g_run_listener = MHX_SOCK_INVALID;
+        return 0;
+    }
+
+    g_run_rc = -999;
+    if (pthread_create(th, NULL, run_thread, NULL) != 0) {
+        printf("  FAIL: 起不了服务线程\n");
+        fails++;
+        sock_close(g_run_listener);
+        g_run_listener = MHX_SOCK_INVALID;
+        return 0;
+    }
+    return 1;
+}
+
+static void stop_server(pthread_t th)
+{
+    pthread_join(th, NULL);
+    sock_close(g_run_listener);
+    g_run_listener = MHX_SOCK_INVALID;
+}
+
+/* 给客户端设读超时：服务端万一没按预期回话，让测试失败而不是永远挂着 */
+static void set_recv_timeout(mhx_sock_t s, int ms)
+{
+    if (s == MHX_SOCK_INVALID) return;
+#ifdef _WIN32
+    DWORD t = (DWORD)ms;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, (const char*)&t, sizeof(t));
+#else
+    struct timeval tv;
+    tv.tv_sec  = ms / 1000;
+    tv.tv_usec = (ms % 1000) * 1000;
+    setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+#endif
 }
 
 /*
@@ -306,6 +375,158 @@ int main(void)
             CHECK(has(rx, "-PROTO"), "回的是 PROTO 错误");
             close_round(th, cli);
             CHECK(g_serve_rc == SERVE_FAIL, "serve_one 返回 SERVE_FAIL");
+        }
+    }
+
+    printf("多连接：挂着一个空闲连接，不影响别的连接\n");
+    {
+        pthread_t th;
+        if (start_server(&th)) {
+            /* 这条连接只连上、什么都不发 —— 旧的一对一模型会在这里把服务卡死 */
+            mhx_sock_t idle = sock_connect("127.0.0.1", g_run_port);
+            CHECK(idle != MHX_SOCK_INVALID, "空闲客户端连上了");
+            set_recv_timeout(idle, 5000);
+
+            mhx_sock_t busy = sock_connect("127.0.0.1", g_run_port);
+            set_recv_timeout(busy, 5000);
+            if (busy != MHX_SOCK_INVALID) {
+                send_auth(busy);
+                send_cmd(busy, "create", "list", "conc_idle", NULL);
+                send_cmd(busy, "rpush", "conc_idle", "x", "y", NULL);
+                send_cmd(busy, "llen", "conc_idle", NULL);
+                send_cmd(busy, ":shutdown", NULL);
+
+                drain(busy, rx, sizeof(rx));
+                CHECK(has(rx, "+OK\r\n"), "认证成功回 +OK");
+                CHECK(has(rx, "\"value\":2"), "旁边挂着空闲连接也照常执行");
+                sock_close(busy);
+            } else {
+                printf("  FAIL: 第二个客户端连不上\n");
+                fails++;
+            }
+
+            stop_server(th);
+            CHECK(g_run_rc == 0, "收到 :shutdown 后事件循环正常返回");
+            sock_close(idle);
+        }
+    }
+
+    printf("多连接：8 个客户端同时在线，结果不串台\n");
+    {
+        pthread_t th;
+        if (start_server(&th)) {
+            enum { N = 8 };
+            mhx_sock_t cli[N];
+            char name[32], other[32];
+
+            for (int i = 0; i < N; i++) {
+                cli[i] = sock_connect("127.0.0.1", g_run_port);
+                if (cli[i] == MHX_SOCK_INVALID) {
+                    printf("  FAIL: 第 %d 个客户端连不上\n", i);
+                    fails++;
+                    continue;
+                }
+                set_recv_timeout(cli[i], 5000);
+
+                snprintf(name, sizeof(name), "conc_%d", i);
+                send_auth(cli[i]);
+                send_cmd(cli[i], "create", "list", name, NULL);
+                send_cmd(cli[i], "rpush", name, name, NULL);
+                send_cmd(cli[i], "llen", name, NULL);
+                send_cmd(cli[i], ":quit", NULL);
+            }
+
+            for (int i = 0; i < N; i++) {
+                if (cli[i] == MHX_SOCK_INVALID) continue;
+                drain(cli[i], rx, sizeof(rx));
+
+                snprintf(name,  sizeof(name),  "conc_%d", i);
+                snprintf(other, sizeof(other), "conc_%d", (i + 1) % N);
+                CHECK(has(rx, "+OK\r\n"), "认证成功回 +OK");
+                CHECK(has(rx, "\"value\":1"), "每个连接都拿到自己的命令结果");
+                CHECK(has(rx, name), "响应里是自己那张表");
+                CHECK(!has(rx, other), "没有混进别的连接的表名");
+                sock_close(cli[i]);
+            }
+
+            mhx_sock_t stopper = sock_connect("127.0.0.1", g_run_port);
+            set_recv_timeout(stopper, 5000);
+            if (stopper != MHX_SOCK_INVALID) {
+                send_auth(stopper);
+                send_cmd(stopper, ":shutdown", NULL);
+                drain(stopper, rx, sizeof(rx));
+                CHECK(has(rx, "停机"), "最后的客户端负责停机");
+                sock_close(stopper);
+            } else {
+                printf("  FAIL: 停机客户端连不上\n");
+                fails++;
+            }
+
+            stop_server(th);
+            CHECK(g_run_rc == 0, "事件循环正常返回");
+        }
+    }
+
+    printf("多连接：一次灌入上千条命令，应答一条不少\n");
+    {
+        pthread_t th;
+        if (start_server(&th)) {
+            /* 先把列表备好，让后面的流水线只读不写 */
+            mhx_sock_t setup = sock_connect("127.0.0.1", g_run_port);
+            set_recv_timeout(setup, 5000);
+            if (setup != MHX_SOCK_INVALID) {
+                send_auth(setup);
+                send_cmd(setup, "create", "list", "pipe_many", NULL);
+                send_cmd(setup, "rpush", "pipe_many", "x", NULL);
+                send_cmd(setup, ":quit", NULL);
+                drain(setup, rx, sizeof(rx));
+                sock_close(setup);
+            } else {
+                printf("  FAIL: 准备连接的客户端连不上\n");
+                fails++;
+            }
+
+            mhx_sock_t cli = sock_connect("127.0.0.1", g_run_port);
+            set_recv_timeout(cli, 10000);
+            if (cli != MHX_SOCK_INVALID) {
+                enum { M = 1000 };
+                char req[128];
+                build_req(req, sizeof(req), "llen", "pipe_many", NULL);
+
+                send_auth(cli);
+                for (int i = 0; i < M; i++) send_all(cli, req);
+                send_cmd(cli, ":quit", NULL);
+
+                char *big = (char*)malloc(1u << 20);
+                if (big) {
+                    size_t got = drain(cli, big, 1u << 20);
+                    int count = 0;
+                    for (char *p = big; (p = strstr(p, "\"value\":1")) != NULL; p++)
+                        count++;
+                    if (count != M) {
+                        printf("  FAIL: 期望 %d 条应答，实际 %d 条（收到 %zu 字节）\n",
+                               M, count, got);
+                        fails++;
+                    }
+                    free(big);
+                }
+                sock_close(cli);
+            } else {
+                printf("  FAIL: 流水线客户端连不上\n");
+                fails++;
+            }
+
+            mhx_sock_t stopper = sock_connect("127.0.0.1", g_run_port);
+            set_recv_timeout(stopper, 5000);
+            if (stopper != MHX_SOCK_INVALID) {
+                send_auth(stopper);
+                send_cmd(stopper, ":shutdown", NULL);
+                drain(stopper, rx, sizeof(rx));
+                sock_close(stopper);
+            }
+
+            stop_server(th);
+            CHECK(g_run_rc == 0, "事件循环正常返回");
         }
     }
 
