@@ -26,6 +26,7 @@ sock.h —— 跨平台 socket 薄封装
 /* 收发函数的失败返回值。用负数是因为字节数恒为非负，不会撞车。 */
 #define SOCK_ERR   (-1L)   /* 真错误，连接应关闭 */
 #define SOCK_RETRY (-2L)   /* 被信号打断，重试即可 */
+#define SOCK_AGAIN (-3L)   /* 非阻塞模式下"现在没有数据 / 暂时发不出去" */
 
 /* 进程级初始化 / 收尾。Windows 要 WSAStartup，POSIX 是空操作。
  *
@@ -47,16 +48,50 @@ int sock_last_was_interrupted(void);
  * 收一次。返回值：
  *   > 0  实际收到的字节数
  *   0    对端有序关闭
- *   SOCK_RETRY / SOCK_ERR
+ *   SOCK_RETRY / SOCK_AGAIN / SOCK_ERR
  * 只收一次，不收满 —— 半包由调用方的缓冲自己攒。
  */
 long sock_recv(mhx_sock_t s, void *buf, size_t len);
 
 /*
- * 发完整块，内部循环补齐部分写。返回已发送字节数（等于 len），
- * 或 SOCK_ERR。上层不必关心 TCP 分片。
+ * 发一次（非阻塞用）。返回已发字节数；0 表示一个字节都没发出去（与
+ * SOCK_AGAIN 同义），SOCK_RETRY / SOCK_ERR。它不保证发完，没发完的部分
+ * 由调用方下次接着发。
+ */
+long sock_send_some(mhx_sock_t s, const void *buf, size_t len);
+
+/*
+ * 发完整块，内部循环补齐部分写。阻塞套接字上用；非阻塞套接字上会出错，
+ * 那一路请用 sock_send_some。返回已发送字节数（等于 len），或 SOCK_ERR。
  */
 long sock_send_all(mhx_sock_t s, const void *buf, size_t len);
+
+/* 打开/关闭非阻塞模式。成功返回 0。 */
+int sock_set_nonblocking(mhx_sock_t s, int on);
+
+/* 上次失败是不是"暂时不可用"（EAGAIN / WSAEWOULDBLOCK） */
+int sock_last_would_block(void);
+
+/*
+ * 等一组套接字就绪 —— 事件循环的地基。
+ *
+ * 调用方填好 fd / want_read / want_write，返回后读 can_read / can_write。
+ * timeout_ms < 0 表示一直等。
+ * 返回就绪的套接字个数；0 = 超时或被信号打断；SOCK_ERR = 真错误。
+ * 在 Windows 上用 select 实现（受 FD_SETSIZE 限制，Makefile 里抬高到 512，
+ * 这里再设一道编译期闸门），POSIX 上用 poll。
+ */
+#define SOCK_MAX_EVENTS 512
+
+typedef struct {
+    mhx_sock_t fd;
+    int want_read;
+    int want_write;
+    int can_read;      /* 返回时填 */
+    int can_write;     /* 返回时填 */
+} sock_event;
+
+int sock_wait(sock_event *evs, int n, int timeout_ms);
 
 /* 监听。bind_addr 传 NULL 时用 127.0.0.1；port 传 0 表示让系统挑一个，
  * 实际端口事后用 sock_local_port 问。失败返回 MHX_SOCK_INVALID。 */

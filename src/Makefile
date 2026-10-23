@@ -49,7 +49,11 @@ OBJS = Mhuixs.o \
 #
 NET_OBJS = lib/sock.o server.o
 
+# Windows 的事件等待用 select 实现，fd_set 是定长数组，
+# 默认 FD_SETSIZE 只有 64 —— 不抬高的话第 65 个连接会让 select 直接失败。
+# 这里和 sock.h 的 SOCK_MAX_EVENTS 对齐（sock.c 里有编译期检查）。
 ifeq ($(OS),Windows_NT)
+CFLAGS  += -DFD_SETSIZE=512
 NET_LIBS = -lws2_32
 else
 NET_LIBS =
