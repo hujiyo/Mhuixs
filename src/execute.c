@@ -38,11 +38,13 @@ KVALOT 的键一律按字符串处理，不做数字回退。
 #include "bitmap.h"
 #include "tblh.h"
 #include "kvalh.h"
+#include "mstring.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h>
+#include <stdint.h>
 
 /* 分词缓冲的规格。数值的唯一出处是 execute.h 里的 MHX_MAX_*，
  * 免得命令层放宽了限制、协议层还按老数字设界。 */
@@ -577,6 +579,456 @@ static int cmd_info(token_t *t, int argc, mhx_result *res)
             append(out, outlen, "  值: %s\n", v);
             break;
         }
+    }
+    return 0;
+}
+
+/* ---------------- biggest：按估算内存列出前 n 个 hook ---------------- */
+
+/* 抽样规模。这些数字只影响估算的精度和耗时，不影响命令语义。
+ * 选 32 是为了让大容器也只走几十次元素访问；
+ * 嵌套结构另用更小的采样数和总预算兜底，避免病态嵌套把成本放大。 */
+#define BIGGEST_DEFAULT_N      10
+#define BIGGEST_MAX_N          100
+#define BIGGEST_SAMPLES        32    /* 顶层容器最多抽样元素数 */
+#define BIGGEST_NESTED_SAMPLES 8     /* 嵌套容器每层最多抽样数 */
+#define BIGGEST_TOTAL_SAMPLES  128   /* 每个 hook 的递归抽样总预算 */
+#define BIGGEST_MAX_DEPTH      3     /* 根对象 depth=0，再深就只做浅估 */
+#define BIGGEST_LINE_BUF       512
+
+typedef struct {
+    const char *name;   /* 指向注册表里的键，命令执行期间不变 */
+    const BHS  *obj;
+    uint64_t    bytes;
+} biggest_ent;
+
+typedef struct {
+    biggest_ent item[BIGGEST_MAX_N];
+    int count;          /* 已收集的条数 */
+    int total;          /* 遍历到的 hook 总数 */
+    int cap;            /* = n */
+} biggest_acc;
+
+/* 估算值会沿对象图累加，用饱和运算避免溢出回绕成一个小数字。 */
+static uint64_t sat_add(uint64_t a, uint64_t b)
+{
+    return (a > UINT64_MAX - b) ? UINT64_MAX : a + b;
+}
+
+static uint64_t sat_mul(uint64_t a, uint64_t b)
+{
+    if (a != 0 && b > UINT64_MAX / a) return UINT64_MAX;
+    return a * b;
+}
+
+/* 用样本平均值外推 total 个元素，四舍五入。 */
+static uint64_t scale_count(uint64_t count, double avg)
+{
+    double v = (double)count * avg;
+    if (v >= (double)UINT64_MAX) return UINT64_MAX;
+    if (v <= 0.0) return 0;
+    return (uint64_t)(v + 0.5);
+}
+
+/* 把第 t 个（共 k 个）样本均匀映射到 [0, n) 上。
+ * 全部用整数运算：不用随机数，输出才可复现、测试才能断言顺序。 */
+static size_t sample_index(size_t n, size_t t, size_t k)
+{
+    if (n == 0 || k == 0) return 0;
+    size_t v = (n / k) * t + ((n % k) * t) / k;
+    return v < n ? v : n - 1;
+}
+
+static uint64_t est_shallow(const BHS *b);
+static uint64_t est_obj(const BHS *b, int depth, int *budget);
+
+/* 只算容器自身的结构开销，不碰元素内容。深度/预算耗尽时走这里。 */
+static uint64_t est_shallow(const BHS *b)
+{
+    if (!b) return 0;
+
+    uint64_t n = sizeof(BHS);
+
+    switch (b->type) {
+        case BIGNUM_TYPE_LIST: {
+            const LIST *l = b->data.list;
+            if (!l) break;
+            n = sat_add(n, sizeof(LIST));
+            n = sat_add(n, sat_mul((uint64_t)l->num, sizeof(BHS)));
+            break;
+        }
+        case BIGNUM_TYPE_TABLE: {
+            const TABLE *t = b->data.table;
+            if (!t) break;
+            n = sat_add(n, sizeof(TABLE));
+            n = sat_add(n, sat_mul(t->field_num, sizeof(FIELD)));
+            n = sat_add(n, sat_mul(sat_mul(t->capacity, t->field_num), sizeof(Obj)));
+            n = sat_add(n, sat_mul(t->capacity, 2 * sizeof(size_t)));
+            n = sat_add(n, sat_mul(sat_mul(t->line_num, t->field_num), sizeof(BHS)));
+            if (t->name) n = sat_add(n, MSTR_CAP(t->name));
+            for (size_t c = 0; c < t->field_num; c++)
+                if (t->field[c].name) n = sat_add(n, MSTR_CAP(t->field[c].name));
+            break;
+        }
+        case BIGNUM_TYPE_KVALOT: {
+            const KVALOT *kv = b->data.kvalot;
+            if (!kv) break;
+            n = sat_add(n, sizeof(KVALOT));
+            n = sat_add(n, sat_mul(kv->num_buckets, sizeof(HASH_BUCKET)));
+            n = sat_add(n, sat_mul(kv->keypool_capacity, sizeof(KVPAIR)));
+            n = sat_add(n, sat_mul(kv->num_keys, sizeof(BHS)));
+            if (kv->name) n = sat_add(n, est_shallow(kv->name));
+            break;
+        }
+        default:
+            /* 数字 / 字符串 / 位图：数据要么内联在 BHS 里，要么单独分配。 */
+            if (b->is_large && b->data.large_data)
+                n = sat_add(n, (uint64_t)b->capacity);
+            break;
+    }
+    return n;
+}
+
+/* LIST：块结构是精确的；元素大小按"每块取一个中间元素"抽样外推。
+ * 不能对每个下标调 list_get_index —— 它每次都从 head 串块，整体会退化成 O(n²)。 */
+static uint64_t est_list(const LIST *l, int depth, int *budget)
+{
+    uint64_t base = sat_add(sizeof(BHS), sizeof(LIST));
+    if (!l) return base;
+
+    size_t blocks = 0;
+    size_t seen = 0;
+    for (const Block *blk = l->head_block; blk; blk = blk->next) {
+        blocks++;
+        seen += blk->size;
+    }
+    base = sat_add(base, sat_mul(blocks, sizeof(Block)));
+
+    if (seen == 0) return base;
+
+    size_t limit = (depth == 0) ? BIGGEST_SAMPLES : BIGGEST_NESTED_SAMPLES;
+    size_t want = seen < limit ? seen : limit;
+    if (budget) {
+        if (*budget <= 0) want = 0;
+        else if ((size_t)*budget < want) want = (size_t)*budget;
+    }
+    if (want == 0) return sat_add(base, sat_mul(seen, sizeof(BHS)));
+    if (budget) *budget -= (int)want;
+
+    size_t stride = (blocks + want - 1) / want;
+    if (stride == 0) stride = 1;
+
+    uint64_t sum = 0;
+    size_t sampled = 0;
+    size_t bi = 0;
+    for (const Block *blk = l->head_block; blk && sampled < want; blk = blk->next, bi++) {
+        if (bi % stride != 0 || blk->size == 0) continue;
+        const Obj e = blk->data[blk->start + blk->size / 2];
+        if (!e) continue;
+        sum = sat_add(sum, est_obj(e, depth + 1, budget));
+        sampled++;
+    }
+
+    if (sampled == 0) return sat_add(base, sat_mul(seen, sizeof(BHS)));
+    return sat_add(base, scale_count(seen, (double)sum / (double)sampled));
+}
+
+/* TABLE：结构按 capacity 精确计；单元格按行/列两个方向均匀抽样。
+ * 采样必须经过 logic_index：删除行后逻辑行号与物理行号不是一回事。 */
+static uint64_t est_table(const TABLE *t, int depth, int *budget)
+{
+    uint64_t base = sat_add(sizeof(BHS), sizeof(TABLE));
+    if (!t) return base;
+
+    base = sat_add(base, sat_mul(t->field_num, sizeof(FIELD)));
+    base = sat_add(base, sat_mul(sat_mul(t->capacity, t->field_num), sizeof(Obj)));
+    base = sat_add(base, sat_mul(t->capacity, 2 * sizeof(size_t)));
+    if (t->name) base = sat_add(base, MSTR_CAP(t->name));
+    for (size_t c = 0; c < t->field_num; c++)
+        if (t->field[c].name) base = sat_add(base, MSTR_CAP(t->field[c].name));
+
+    uint64_t cells = sat_mul(t->line_num, t->field_num);
+    if (cells == 0) return base;
+
+    size_t limit = (depth == 0) ? BIGGEST_SAMPLES : BIGGEST_NESTED_SAMPLES;
+    size_t want = cells < limit ? (size_t)cells : limit;
+    if (budget) {
+        if (*budget <= 0) want = 0;
+        else if ((size_t)*budget < want) want = (size_t)*budget;
+    }
+    if (want == 0) return sat_add(base, sat_mul(cells, sizeof(BHS)));
+    if (budget) *budget -= (int)want;
+
+    uint64_t sum = 0;
+    size_t sampled = 0;
+    for (size_t k = 0; k < want; k++) {
+        size_t row = sample_index(t->line_num, k, want);
+        size_t col = (t->field_num <= want)
+                   ? k % t->field_num
+                   : sample_index(t->field_num, k, want);
+        size_t phys = t->logic_index ? t->logic_index[row] : row;
+        if (phys >= t->capacity) continue;
+        if (!t->field[col].data) continue;
+        const Obj cell = t->field[col].data[phys];
+        if (!cell) continue;
+        sum = sat_add(sum, est_obj(cell, depth + 1, budget));
+        sampled++;
+    }
+
+    if (sampled == 0) return sat_add(base, sat_mul(cells, sizeof(BHS)));
+    return sat_add(base, scale_count(cells, (double)sum / (double)sampled));
+}
+
+/* KVALOT：keypool 连续且无空洞，可 O(1) 随机取。
+ * 桶内 key_indices 的容量不逐个桶扫（那会是 O(桶数)）；
+ * 按"抽中的 key 所在桶的容量 / 该桶 key 数"取平均，期望值就是总容量。 */
+static uint64_t est_kvalot(const KVALOT *kv, int depth, int *budget)
+{
+    uint64_t base = sat_add(sizeof(BHS), sizeof(KVALOT));
+    if (!kv) return base;
+
+    base = sat_add(base, sat_mul(kv->num_buckets, sizeof(HASH_BUCKET)));
+    base = sat_add(base, sat_mul(kv->keypool_capacity, sizeof(KVPAIR)));
+    if (kv->name) base = sat_add(base, est_obj(kv->name, depth + 1, budget));
+
+    if (kv->num_keys == 0) return base;
+
+    size_t limit = (depth == 0) ? BIGGEST_SAMPLES : BIGGEST_NESTED_SAMPLES;
+    size_t want = kv->num_keys < limit ? kv->num_keys : limit;
+    if (budget) {
+        if (*budget <= 0) want = 0;
+        else if ((size_t)*budget < want) want = (size_t)*budget;
+    }
+    if (want == 0)
+        return sat_add(base, sat_mul(kv->num_keys, sat_add(sizeof(BHS), sizeof(uint32_t))));
+    if (budget) *budget -= (int)want;
+
+    uint64_t per_key = 0;
+    double ratio_sum = 0.0;
+    size_t sampled = 0;
+    for (size_t k = 0; k < want; k++) {
+        size_t idx = sample_index(kv->num_keys, k, want);
+        const KVPAIR *pair = &kv->keypool[idx];
+        uint64_t one = pair->key ? MSTR_CAP(pair->key) : 0;
+        if (pair->value) one = sat_add(one, est_obj(pair->value, depth + 1, budget));
+        per_key = sat_add(per_key, one);
+
+        if (kv->hash_table && pair->hash_index < kv->num_buckets) {
+            const HASH_BUCKET *bk = &kv->hash_table[pair->hash_index];
+            if (bk->num_keys > 0)
+                ratio_sum += (double)bk->capacity / (double)bk->num_keys;
+        }
+        sampled++;
+    }
+
+    if (sampled == 0) return base;
+    double avg = (double)per_key / (double)sampled;
+    double avg_ratio = ratio_sum / (double)sampled;
+    uint64_t out = sat_add(base, scale_count(kv->num_keys, avg));
+    out = sat_add(out, scale_count(kv->num_keys, avg_ratio * (double)sizeof(uint32_t)));
+    return out;
+}
+
+static uint64_t est_obj(const BHS *b, int depth, int *budget)
+{
+    if (!b) return 0;
+    if (depth >= BIGGEST_MAX_DEPTH) return est_shallow(b);
+
+    switch (b->type) {
+        case BIGNUM_TYPE_LIST:   return est_list(b->data.list, depth, budget);
+        case BIGNUM_TYPE_TABLE:  return est_table(b->data.table, depth, budget);
+        case BIGNUM_TYPE_KVALOT: return est_kvalot(b->data.kvalot, depth, budget);
+        default:                 return est_shallow(b);
+    }
+}
+
+/* 估算口径：HOOK 结构 + 名字 + 对象图。
+ * 不含 malloc 分配器头部、对齐填充、堆碎片和注册表自身的哈希条目 ——
+ * 所以输出用 "~" 标记，只适合比较相对大小，不适合当容量账本。 */
+static uint64_t est_hook(const HOOK *h)
+{
+    if (!h) return 0;
+
+    uint64_t n = sizeof(HOOK);
+    if (h->name) n = sat_add(n, MSTR_CAP(h->name));
+    if (h->obj) {
+        int budget = BIGGEST_TOTAL_SAMPLES;
+        n = sat_add(n, est_obj(h->obj, 0, &budget));
+    }
+    return n;
+}
+
+/* biggest 专用的摘要。
+ * 不复用 summarize()：它的位图分支会调 bitmap_count()，那是逐位循环，
+ * 大位图上等于全量遍历；而 hooks 的输出不能动，只能在旁边另写一份。 */
+static void summarize_mem(const BHS *obj, char *buf, size_t n)
+{
+    if (!obj) { snprintf(buf, n, "(empty)"); return; }
+
+    switch (obj->type) {
+        case BIGNUM_TYPE_LIST: {
+            const LIST *l = obj->data.list;
+            snprintf(buf, n, "len=%zu", l ? l->num : 0);
+            break;
+        }
+        case BIGNUM_TYPE_BITMAP:
+            /* 只报位数，不数 1 —— 数 1 是 O(bits)。 */
+            snprintf(buf, n, "bits=%llu", (unsigned long long)obj->length);
+            break;
+        case BIGNUM_TYPE_KVALOT: {
+            const KVALOT *kv = obj->data.kvalot;
+            snprintf(buf, n, "keys=%u", kv ? kv->num_keys : 0);
+            break;
+        }
+        case BIGNUM_TYPE_TABLE: {
+            const TABLE *t = obj->data.table;
+            snprintf(buf, n, "rows=%zu fields=%zu",
+                     t ? t->line_num : 0, t ? t->field_num : 0);
+            break;
+        }
+        case BIGNUM_TYPE_STRING: {
+            size_t len = (size_t)obj->length;
+            size_t show = len < 24 ? len : 24;
+            char preview[25];
+            const char *p = BIGNUM_DIGITS(obj);
+            for (size_t i = 0; i < show; i++) {
+                unsigned char c = (unsigned char)p[i];
+                preview[i] = (c >= 0x20 && c < 0x7f) ? (char)c : '?';
+            }
+            preview[show] = '\0';
+            snprintf(buf, n, "len=%zu \"%s%s\"", len, preview, len > show ? "..." : "");
+            break;
+        }
+        default: {
+            char v[64];
+            v[0] = '\0';
+            bignum_to_string(obj, v, sizeof(v), -1);
+            snprintf(buf, n, "%s", v);
+            break;
+        }
+    }
+}
+
+/* 排序键：字节数降序；同大小按名字升序，保证输出可复现。 */
+static int biggest_before(const biggest_ent *a, const biggest_ent *b)
+{
+    if (a->bytes != b->bytes) return a->bytes > b->bytes;
+    return strcmp(a->name, b->name) < 0;
+}
+
+static void biggest_offer(biggest_acc *acc, const char *name,
+                          const BHS *obj, uint64_t bytes)
+{
+    biggest_ent e;
+    e.name = name;
+    e.obj = obj;
+    e.bytes = bytes;
+
+    /* 榜已满且没超过末位时直接退出：绝大多数 hook 走这一条，
+     * 不必每次都做 O(n) 的插入扫描。 */
+    if (acc->count >= acc->cap && !biggest_before(&e, &acc->item[acc->cap - 1]))
+        return;
+
+    int pos = acc->count;
+    while (pos > 0 && biggest_before(&e, &acc->item[pos - 1])) pos--;
+    if (pos >= acc->cap) return;   /* 没挤进前 n */
+
+    int last = (acc->count < acc->cap) ? acc->count : acc->cap - 1;
+    for (int i = last; i > pos; i--) acc->item[i] = acc->item[i - 1];
+    acc->item[pos] = e;
+    if (acc->count < acc->cap) acc->count++;
+}
+
+static int collect_biggest(const char *key, void *value, void *user_data)
+{
+    biggest_acc *acc = (biggest_acc *)user_data;
+    const HOOK *h = (const HOOK *)value;
+
+    acc->total++;
+    biggest_offer(acc, key, h ? h->obj : NULL, est_hook(h));
+    return 0;
+}
+
+/* 严格解析 n：只接受十进制数字。超过上限时立刻返回，避免长数字溢出。 */
+static int parse_biggest_n(const char *s, int *out, mhx_result *res)
+{
+    if (!s || !*s) {
+        res_err(res, MHX_ERR_BAD_USAGE, "usage: biggest [n]");
+        return -1;
+    }
+
+    unsigned long v = 0;
+    for (const char *p = s; *p; p++) {
+        if (*p < '0' || *p > '9') {
+            res_err(res, MHX_ERR_BAD_USAGE, "usage: biggest [n]");
+            return -1;
+        }
+        v = v * 10 + (unsigned long)(*p - '0');
+        if (v > BIGGEST_MAX_N) {
+            res_err(res, MHX_ERR_RANGE, "n must be between 1 and %d", BIGGEST_MAX_N);
+            return -1;
+        }
+    }
+    if (v == 0) {
+        res_err(res, MHX_ERR_RANGE, "n must be between 1 and %d", BIGGEST_MAX_N);
+        return -1;
+    }
+
+    *out = (int)v;
+    return 0;
+}
+
+static int cmd_biggest(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+
+    if (argc > 2) {
+        res_err(res, MHX_ERR_BAD_USAGE, "usage: biggest [n]");
+        return -1;
+    }
+
+    int n = BIGGEST_DEFAULT_N;
+    if (argc == 2 && parse_biggest_n(t[1].text, &n, res) != 0) return -1;
+
+    biggest_acc acc;
+    memset(&acc, 0, sizeof(acc));
+    acc.cap = n;
+    hash_foreach(Reg.hook_map, collect_biggest, &acc);
+
+    out[0] = '\0';
+    append(out, outlen, "OK %d hook(s), top %d by estimated memory:\n",
+           acc.total, acc.count);
+
+    for (int i = 0; i < acc.count; i++) {
+        char summary[96];
+        summarize_mem(acc.item[i].obj, summary, sizeof(summary));
+
+        const char *tn = acc.item[i].obj ? type_name(acc.item[i].obj->type) : "?";
+        char row[BIGGEST_LINE_BUF];
+        int rn = snprintf(row, sizeof(row), "%-16s %-8s ~%llu B  %s\n",
+                          acc.item[i].name, tn,
+                          (unsigned long long)acc.item[i].bytes, summary);
+        if (rn < 0) continue;
+
+        size_t need = (size_t)rn;
+        if (need >= sizeof(row)) need = sizeof(row) - 1;
+        if (strlen(out) + need + 1 >= outlen) {
+            append(out, outlen, "... %d more hook(s) not shown (output buffer full)\n",
+                   acc.count - i);
+            break;
+        }
+        append(out, outlen, "%s", row);
+    }
+
+    /* JSON 契约：列表，每项 "名字 ~字节数"。
+     * 列表上限由 mhx_value 决定（32 项）；文本模式才是完整输出。 */
+    res->val.kind = MHX_V_LIST;
+    for (int i = 0; i < acc.count; i++) {
+        char item[MHX_VITEM_MAX];
+        snprintf(item, sizeof(item), "%s ~%llu",
+                 acc.item[i].name, (unsigned long long)acc.item[i].bytes);
+        res_value_list_add(res, item);
     }
     return 0;
 }
@@ -1326,6 +1778,7 @@ const char *mhx_help_text(void)
 "  create table <name> <field:type> [...]   创建表，如 id:int name:str\n"
 "  drop <name>                              摘除钩子（释放其数据）\n"
 "  hooks                                    列出所有钩子（含内容摘要）\n"
+"  biggest [n]                              按估算内存列出前 n 个钩子（默认 10）\n"
 "  info <name>                              查看某个钩子的内容\n"
 "  type <name>                              只看钩子指向的类型\n"
 "\n"
@@ -1491,6 +1944,7 @@ static int mhx_run_tokens(token_t *toks, int argc, mhx_result *res)
     if      (!strcmp(cmd, "create"))  rc = cmd_create  (toks, argc, res);
     else if (!strcmp(cmd, "drop"))    rc = cmd_drop    (toks, argc, res);
     else if (!strcmp(cmd, "hooks"))   rc = cmd_hooks   (toks, argc, res);
+    else if (!strcmp(cmd, "biggest")) rc = cmd_biggest (toks, argc, res);
     else if (!strcmp(cmd, "type"))    rc = cmd_type    (toks, argc, res);
     else if (!strcmp(cmd, "info"))    rc = cmd_info    (toks, argc, res);
 

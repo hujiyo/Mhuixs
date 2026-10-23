@@ -80,6 +80,7 @@ create <list|bitmap|kvalot> <name>      创建数据结构并挂钩
 create table <name> <field:type> [...]  创建表，如 id:int name:str
 drop <name>                             摘除钩子（并释放其数据）
 hooks                                   列出所有钩子，带内容摘要
+biggest [n]                             按估算内存列出前 n 个钩子（默认 10）
 info <name>                             查看某个钩子的内容
 type <name>                             只看钩子指向的类型
 
@@ -125,6 +126,10 @@ flags : bitmap
 ```
 
 `info` 最多展示 20 条，更多的会提示还有多少未显示。
+
+`biggest [n]` 按抽样估算的内存大小排出前 n 个钩子（默认 10，最多 100）。
+数字前的 `~` 表示这是估算值：抽样外推，只用于比较相对大小，不包含分配器头部、
+对齐填充和堆碎片；位图只按位数计，不会去数 1 的个数。
 
 运行效果：
 

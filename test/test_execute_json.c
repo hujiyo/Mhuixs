@@ -66,6 +66,13 @@ int main(void)
     logger_init(".");
     if (reg_init() != 0) { printf("reg_init failed\n"); return 1; }
 
+    printf("biggest：空注册表\n");
+    texpect("biggest", 0,
+            "OK 0 hook(s), top 0 by estimated memory:\n",
+            "空库排行只有头部");
+    jexpect("biggest", 0, "\"kind\":\"list\",\"value\":[]",
+            "空库 JSON 是空列表");
+
     {
         char out[8192];
         mhx_execute("create list fruits", out, sizeof(out));
@@ -214,6 +221,76 @@ int main(void)
             CHECK(rc == 0 && out[0] == '\0', "argv: 0 个参数等价于空行");
         }
     }
+
+    /* ---------------- biggest ----------------
+     * 大小是估算值，所以只断言相对顺序与错误分类，
+     * 不把具体字节数写进测试（否则会因估算常量的调整而误挂）。 */
+    printf("biggest：估算排行\n");
+    {
+        char out[8192];
+        char cmd[512];
+        char val[65];
+        memset(val, 'q', 64);
+        val[64] = '\0';
+
+        mhx_execute("create list big_large", out, sizeof(out));
+        for (int i = 0; i < 300; i++) {
+            snprintf(cmd, sizeof(cmd), "rpush big_large %s", val);
+            mhx_execute(cmd, out, sizeof(out));
+        }
+
+        mhx_execute("create list big_small", out, sizeof(out));
+        for (int i = 0; i < 400; i++)
+            mhx_execute("rpush big_small x", out, sizeof(out));
+    }
+
+    {
+        char out[8192];
+        int rc = mhx_execute("biggest 2", out, sizeof(out));
+        char *large = strstr(out, "big_large");
+        char *small = strstr(out, "big_small");
+
+        CHECK(rc == 0, "biggest 2 应当成功");
+        CHECK(large && small && large < small,
+              "元素更大的列表应排在前面");
+        CHECK(strstr(out, "fruits") == NULL, "top 2 不应包含更小的钩子");
+        CHECK(strstr(out, "~") != NULL, "应带估算标记");
+    }
+
+    {
+        char a[8192], b[8192], c[8192], d[8192];
+        mhx_execute("biggest", a, sizeof(a));
+        mhx_execute("biggest 10", b, sizeof(b));
+        mhx_execute("biggest 5", c, sizeof(c));
+        mhx_execute("biggest 5", d, sizeof(d));
+        CHECK(strcmp(a, b) == 0, "默认 n 应为 10");
+        CHECK(strcmp(c, d) == 0, "同一状态下输出必须可复现");
+    }
+
+    {
+        char out[8192];
+        char needle[96];
+        int total = reg_get_hook_count();
+        int rc = mhx_execute("biggest 100", out, sizeof(out));
+        snprintf(needle, sizeof(needle), "OK %d hook(s), top %d by", total, total);
+        CHECK(rc == 0, "biggest 100 应当成功");
+        CHECK(strstr(out, needle) != NULL, "n 大于钩子数时应全部列出");
+    }
+
+    jexpect("biggest 2", 0, "\"kind\":\"list\",\"value\":[\"big_large",
+            "JSON 首项是最占内存的钩子");
+    jexpect("biggest 2", 0, "\"ok\":true", "成功");
+
+    printf("biggest：参数校验\n");
+    texpect("biggest 0",   -1, "ERR n must be between 1 and 100", "0 越界");
+    texpect("biggest 101", -1, "ERR n must be between 1 and 100", "超过上限");
+    texpect("biggest 999999999999999999999", -1,
+            "ERR n must be between 1 and 100", "超长数字不溢出");
+    texpect("biggest abc", -1, "ERR usage: biggest [n]", "非数字");
+    texpect("biggest -1",  -1, "ERR usage: biggest [n]", "负数");
+    texpect("biggest 1 2", -1, "ERR usage: biggest [n]", "参数过多");
+    jexpect("biggest 0",   -1, "\"code\":\"out_of_range\"", "越界错误码");
+    jexpect("biggest abc", -1, "\"code\":\"bad_usage\"",    "用法错误码");
 
     {
         /* 缓冲区不足时必须安全返回，不能越界写。
