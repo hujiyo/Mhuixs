@@ -237,6 +237,9 @@ int main(void)
     static char rx[65536];
     pthread_t th;
 
+    /* 测试挂住时要能看见停在哪个小节 —— 重定向到文件时默认是全缓冲 */
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     if (sock_init() != 0) { printf("sock_init 失败\n"); return 1; }
     logger_init(".");
     if (reg_init() != 0) { printf("reg_init failed\n"); return 1; }

@@ -71,6 +71,14 @@ class UnknownCommandError(CommandError):
     """命令不认识。"""
 
 
+class NoIndexError(CommandError):
+    """该列还没有建索引（用 ``tindex`` 建）。"""
+
+
+class IndexStaleError(CommandError):
+    """索引建好之后表被写过，需要重建（重新 ``tindex``）。"""
+
+
 # 服务端 code -> 异常类。没有列出的 code 用 CommandError 兜底。
 _CODE_MAP = {
     "bad_usage": BadUsageError,
@@ -83,6 +91,8 @@ _CODE_MAP = {
     "empty": EmptyError,
     "name_taken": NameTakenError,
     "unknown_command": UnknownCommandError,
+    "no_index": NoIndexError,
+    "index_stale": IndexStaleError,
 }
 
 

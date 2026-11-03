@@ -8,6 +8,7 @@
  * 字段没了、错了必须挂。
  */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "execute.h"
@@ -305,6 +306,160 @@ int main(void)
         rc = mhx_execute(NULL, one, sizeof(one));
         CHECK(rc == -1, "line == NULL 应当拒绝");
         CHECK(one[0] == 'X', "line 为 NULL 时不应写入缓冲区");
+    }
+
+    /* ---------------- 范围读取 ----------------
+     * 这一组盯的是新返回值 kind "rows" 的形状，以及区间语义
+     * （闭区间、负下标、越界截断、空区间不报错）。 */
+    printf("范围读取：LIST lrange\n");
+    {
+        char out[8192];
+        mhx_execute("create list nums", out, sizeof(out));
+        mhx_execute("rpush nums 0 1 2 3 4 5 6 7 8 9", out, sizeof(out));
+
+        texpect("lrange nums 2 4", 0,
+                "OK 3 item(s)\nvalue\n2\n3\n4", "闭区间，负下标之外的基本用法");
+        jexpect("lrange nums 2 4", 0,
+                "\"kind\":\"rows\",\"columns\":[\"value\"],\"value\":[[2],[3],[4]]",
+                "rows 形状：列名 + 二维值");
+        jexpect("lrange nums -2 -1", 0, "\"value\":[[8],[9]]", "负下标从尾部数");
+        jexpect("lrange nums 0 99", 0, "\"value\":[[0],[1],[2],[3],[4],[5],[6],[7],[8],[9]]",
+                "终点越界截到最后");
+        texpect("lrange nums 5 2", 0, "OK 0 item(s)", "起点在终点之后是空区间");
+        jexpect("lrange nums 100 200", 0, "\"value\":[]", "空区间仍是成功");
+        texpect("lrange nums a 3", -1, "ERR usage: lrange <name> <from> <to>",
+                "非数字区间报用法错误");
+        texpect("lrange nums 1", -1, "ERR usage: lrange <name> <from> <to>", "参数不足");
+        jexpect("lrange flags 0 1", -1, "\"code\":\"type_mismatch\"", "类型不符");
+
+        mhx_execute("create table prices d:int v:str", out, sizeof(out));
+        mhx_execute("tadd prices 20240101 1.5", out, sizeof(out));
+        mhx_execute("tadd prices 20240102", out, sizeof(out));       /* v 为空单元格 */
+        mhx_execute("tadd prices 20240103 3", out, sizeof(out));
+
+        printf("范围读取：TABLE trange\n");
+        texpect("trange prices 0 1", 0,
+                "OK 2 row(s)\nd v\n20240101 1.5\n20240102 (empty)",
+                "不指定列时返回全部列，空单元格为 (empty)");
+        jexpect("trange prices 0 1", 0,
+                "\"kind\":\"rows\",\"columns\":[\"d\",\"v\"],\"value\":[[20240101,1.5],[20240102,null]]",
+                "空单元格在 JSON 里是 null");
+        jexpect("trange prices 0 2 d", 0,
+                "\"columns\":[\"d\"],\"value\":[[20240101],[20240102],[20240103]]",
+                "只取指定的列");
+        jexpect("trange prices -1 -1 v", 0, "\"value\":[[3]]", "负下标");
+        texpect("trange prices 5 9", 0, "OK 0 row(s)", "越界区间为空，不报错");
+        jexpect("trange prices 5 9", 0, "\"value\":[]", "空区间的 JSON");
+        texpect("trange prices 0 0 nope", -1, "ERR no such field: nope", "列不存在");
+        texpect("trange prices x 0", -1,
+                "ERR usage: trange <name> <from> <to> [<col>...]", "非数字区间");
+
+        printf("范围读取：KVALOT mget\n");
+        mhx_execute("kset cache a 1", out, sizeof(out));
+        mhx_execute("kset cache b hello", out, sizeof(out));
+        texpect("mget cache k a nope", 0,
+                "OK 3 key(s), 1 missing\nkey value\n\"k\" \"v\"\n\"a\" 1\n\"nope\" (empty)",
+                "顺序与请求一致，缺失键为 (empty)");
+        jexpect("mget cache k a nope", 0,
+                "\"columns\":[\"key\",\"value\"],\"value\":[[\"k\",\"v\"],[\"a\",1],[\"nope\",null]]",
+                "缺失键在 JSON 里是 null，数字保持数字");
+        jexpect("mget cache", -1, "\"code\":\"bad_usage\"", "至少给一个键");
+    }
+
+    /* ---------------- 列索引与按值查找 ----------------
+     * 索引是显式创建的：没建、或建好后表被写过（stale），查询都报错，
+     * 不会悄悄退化成全表扫描 —— 行为可预期。 */
+    printf("列索引：tindex / tindexes / tunindex\n");
+    {
+        char out[8192];
+        mhx_execute("create table idx_t d:int name:str", out, sizeof(out));
+        mhx_execute("tadd idx_t 30 c", out, sizeof(out));
+        mhx_execute("tadd idx_t 10 a", out, sizeof(out));
+        mhx_execute("tadd idx_t 20 b", out, sizeof(out));
+        mhx_execute("tadd idx_t 10 a2", out, sizeof(out));
+
+        jexpect("tfind idx_t d 10", -1, "\"code\":\"no_index\"", "没建索引就查 -> no_index");
+        texpect("tfind idx_t nope 10", -1, "ERR no such field: nope", "索引列不存在");
+
+        texpect("tindex idx_t d", 0, "OK indexed idx_t.d, 4 row(s)", "建索引");
+        jexpect("tindex idx_t d", 0, "\"kind\":\"int\",\"value\":4", "返回行数");
+        jexpect("tindexes idx_t", 0,
+                "\"columns\":[\"column\",\"status\"],\"value\":[[\"d\",\"fresh\"]]",
+                "索引列表显示列名与状态");
+
+        printf("列索引：等值查找\n");
+        texpect("tfind idx_t d 10", 0,
+                "OK 2 row(s)\nd name\n10 \"a\"\n10 \"a2\"",
+                "等值命中多行，保持原行序");
+        jexpect("tfind idx_t d 10 name", 0,
+                "\"columns\":[\"name\"],\"value\":[[\"a\"],[\"a2\"]]",
+                "只取指定列");
+        jexpect("tfind idx_t d 99", 0, "\"value\":[]", "没有命中是空结果，不是错误");
+
+        mhx_execute("tindex idx_t name", out, sizeof(out));
+        jexpect("tfind idx_t name b", 0, "\"value\":[[20,\"b\"]]",
+                "字符串列也能按索引查");
+
+        printf("列索引：范围查找\n");
+        jexpect("tselect idx_t d 10 20", 0,
+                "\"value\":[[10,\"a\"],[10,\"a2\"],[20,\"b\"]]",
+                "闭区间按索引顺序返回");
+        jexpect("tselect idx_t d 15 99", 0, "\"value\":[[20,\"b\"],[30,\"c\"]]",
+                "下界不必正好命中");
+        jexpect("tselect idx_t d 50 60", 0, "\"value\":[]", "区间内无数据");
+        jexpect("tselect idx_t name a a2", 0, "\"value\":[[10,\"a\"],[10,\"a2\"]]",
+                "字符串按字节字典序");
+        mhx_execute("tunindex idx_t name", out, sizeof(out));
+
+        printf("列索引：写操作让索引失效，查询报 stale\n");
+        texpect("tadd idx_t 40 d", 0, "OK tadd idx_t, rows=5", "写入");
+        jexpect("tindexes idx_t", 0, "\"value\":[[\"d\",\"stale\"]]", "索引标记为 stale");
+        jexpect("tfind idx_t d 10", -1, "\"code\":\"index_stale\"",
+                "stale 索引不参与查询");
+        jexpect("tselect idx_t d 0 99", -1, "\"code\":\"index_stale\"", "范围查询同样拒绝");
+
+        texpect("tindex idx_t d", 0, "OK indexed idx_t.d, 5 row(s)", "重建索引");
+        jexpect("tfind idx_t d 40", 0, "\"value\":[[40,\"d\"]]", "重建后能查到新写入的行");
+
+        texpect("tunindex idx_t d", 0, "OK dropped index on 'd'", "删除索引");
+        jexpect("tfind idx_t d 10", -1, "\"code\":\"no_index\"", "删除后回到 no_index");
+        texpect("tunindex idx_t d", 0, "OK no index on 'd'", "重复删除是幂等的");
+        texpect("tindexes idx_t", 0, "OK 0 index(es)", "空索引列表");
+        jexpect("tindexes idx_t", 0, "\"value\":[]", "空索引列表的 JSON");
+    }
+
+    /* ---------------- 输出不再受固定缓冲限制 ----------------
+     * 固定缓冲版装不下时**报错**，绝不静默截断；
+     * alloc 版把完整结果交出去。 */
+    printf("大结果：固定缓冲报错，alloc 入口完整\n");
+    {
+        char out[8192];
+        char cmd[64];
+        char *big = NULL;
+
+        mhx_execute("create table wide d:int name:str", out, sizeof(out));
+        for (int i = 0; i < 600; i++) {
+            snprintf(cmd, sizeof(cmd), "tadd wide %d row_value_%d", i, i);
+            mhx_execute(cmd, out, sizeof(out));
+        }
+
+        char tiny[64];
+        int rc = mhx_execute("trange wide 0 -1", tiny, sizeof(tiny));
+        CHECK(rc == -1 && strstr(tiny, "output buffer too small") != NULL,
+              "固定缓冲装不下时必须报错，不能截断成半份数据");
+
+        rc = mhx_execute_alloc("trange wide 0 -1", &big, 0);
+        CHECK(rc == 0 && big != NULL && strlen(big) > 8192,
+              "alloc 入口应当返回完整的大结果");
+        CHECK(big && strstr(big, "row_value_599") != NULL,
+              "最后一行必须还在结果里");
+        free(big);
+
+        big = NULL;
+        rc = mhx_execute_alloc("trange wide 0 -1", &big, 1);
+        CHECK(rc == 0 && big != NULL && strstr(big, "\"rows\"") != NULL,
+              "alloc 入口的 JSON 版式可用");
+        free(big);
     }
 
     reg_destroy();

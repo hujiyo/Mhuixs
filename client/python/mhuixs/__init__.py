@@ -15,17 +15,19 @@
 """
 
 from ._version import __version__
-from ._client import Mhuixs
+from ._client import Mhuixs, Rows
 from ._errors import (
     AuthenticationError,
     BadUsageError,
     CommandError,
     ConnectionError,
     EmptyError,
+    IndexStaleError,
     MhuixsError,
     NameTakenError,
     NoFieldError,
     NoHookError,
+    NoIndexError,
     NoKeyError,
     NoObjectError,
     OutOfRangeError,
@@ -37,6 +39,7 @@ from ._protocol import Forced
 
 __all__ = [
     "Mhuixs",
+    "Rows",
     "Forced",
     "MhuixsError",
     "ConnectionError",
@@ -53,5 +56,7 @@ __all__ = [
     "EmptyError",
     "NameTakenError",
     "UnknownCommandError",
+    "NoIndexError",
+    "IndexStaleError",
     "__version__",
 ]

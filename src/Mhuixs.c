@@ -49,7 +49,7 @@ Mhuixs 内核入口
 
 #define SELFCHECK_HOOK_NAME "mhuixs_selfcheck"
 
-#define MHUIXS_VERSION "0.2.5"
+#define MHUIXS_VERSION "0.2.6"
 
 static void print_usage(void)
 {
@@ -265,9 +265,6 @@ static FILE *boot_stream(void)
 static void repl(void)
 {
     char line[4096];
-    /* JSON 是文本的超集（还含 text 字段），转义后可能膨胀，
-     * 按 execute.h 的建议给到 128KB（文本模式当年是 16KB）。 */
-    char out[131072];
 
     mhx_session s;
     mhx_session_init(&s, 0);
@@ -296,17 +293,19 @@ static void repl(void)
 
         /* 交给会话层：元命令与数据命令都从那里走。
          * 这里只管"结果往哪写" —— 交互模式下的失败不中止，继续等下一行。 */
-        switch (mhx_session_feed_line(&s, line, out, sizeof(out))) {
+        char *out = NULL;
+        switch (mhx_session_feed_line_alloc(&s, line, &out)) {
         case MHX_SESS_QUIT:
+            free(out);
             printf("\n");
             return;
 
         case MHX_SESS_HELP:
-            fputs(out, stdout);            /* 帮助文本自带换行 */
+            fputs(out ? out : "", stdout);            /* 帮助文本自带换行 */
             break;
 
         case MHX_SESS_SAVE_OK:
-            printf("%s\n", out);
+            printf("%s\n", out ? out : "");
             break;
 
         case MHX_SESS_SAVE_FAIL:
@@ -314,7 +313,7 @@ static void repl(void)
             break;
 
         case MHX_SESS_FORMAT_OK:
-            printf("输出格式：%s\n", out);
+            printf("输出格式：%s\n", out ? out : "");
             break;
 
         case MHX_SESS_FORMAT_BAD:
@@ -322,16 +321,17 @@ static void repl(void)
             break;
 
         case MHX_SESS_UNKNOWN_META:
-            printf("未知的元命令：%s（可用 :help :save :format :quit）\n", out);
+            printf("未知的元命令：%s（可用 :help :save :format :quit）\n", out ? out : "");
             break;
 
         default:   /* OK / ERR：数据命令的输出，成败都照打 */
-            if (out[0] != '\0') {
+            if (out && out[0] != '\0') {
                 fputs(out, stdout);
                 if (out[strlen(out) - 1] != '\n') putchar('\n');
             }
             break;
         }
+        free(out);
     }
 }
 
@@ -354,7 +354,6 @@ static void repl(void)
 static int run_script(FILE *fp, const char *label)
 {
     char line[4096];
-    char out[131072];   /* 与 repl() 同规格：JSON 是文本的超集，转义会膨胀 */
     int  lineno = 0;
 
     mhx_session s;
@@ -398,20 +397,23 @@ static int run_script(FILE *fp, const char *label)
         if (blank) continue;
 
         /* 与交互模式同一个会话层，差别只在失败处理：脚本出错即停 */
-        switch (mhx_session_feed_line(&s, line, out, sizeof(out))) {
+        char *out = NULL;
+        switch (mhx_session_feed_line_alloc(&s, line, &out)) {
         case MHX_SESS_QUIT:
+            free(out);
             return 0;
 
         case MHX_SESS_HELP:
-            fputs(out, stdout);
+            fputs(out ? out : "", stdout);
             break;
 
         case MHX_SESS_SAVE_OK:
-            printf("%s\n", out);
+            printf("%s\n", out ? out : "");
             break;
 
         case MHX_SESS_SAVE_FAIL:
             fprintf(stderr, "mhuixs: %s:%d: :save 失败，中止执行\n", label, lineno);
+            free(out);
             return 1;
 
         case MHX_SESS_FORMAT_OK:
@@ -419,29 +421,33 @@ static int run_script(FILE *fp, const char *label)
 
         case MHX_SESS_FORMAT_BAD:
             fprintf(stderr, "mhuixs: %s:%d: 用法：:format text|json\n", label, lineno);
+            free(out);
             return 1;
 
         case MHX_SESS_UNKNOWN_META:
             fprintf(stderr, "mhuixs: %s:%d: 未知的元命令：%s（可用 :help :save :format :quit）\n",
                     label, lineno, line);
+            free(out);
             return 1;
 
         case MHX_SESS_ERR:
             /* 先把命令自己的输出吐出去（与原行为一致），再报错中止 */
-            if (out[0] != '\0') {
+            if (out && out[0] != '\0') {
                 fputs(out, stdout);
                 if (out[strlen(out) - 1] != '\n') putchar('\n');
             }
             fprintf(stderr, "mhuixs: %s:%d: 命令失败，中止执行: %s\n", label, lineno, line);
+            free(out);
             return 1;
 
         default:   /* OK：命令输出 */
-            if (out[0] != '\0') {
+            if (out && out[0] != '\0') {
                 fputs(out, stdout);
                 if (out[strlen(out) - 1] != '\n') putchar('\n');
             }
             break;
         }
+        free(out);
     }
     return 0;
 }

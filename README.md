@@ -86,17 +86,28 @@ type <name>                             只看钩子指向的类型
 
 rpush/lpush/lpop/rpop <name> [<v>...]   LIST 操作
 llen/lget/lset/lrem <name> ...          LIST 操作
+lrange <name> <from> <to>               读取闭区间，负下标从尾部数
 
 bset/bget/bcount/bsize <name> ...       BITMAP 操作
 
 kset <name> <key> <value>               KVALOT 写入（键已存在则覆盖）
 kget/kdel/kexists/klen <name> ...       KVALOT 操作
+mget <name> <key> [<key>...]            一次取多个键，返回 key/value 表
 
 tadd <name> [<v>...]                    TABLE 追加一行
 tget/tset <name> <row> <col> [...]      TABLE 读写单元格，col 可用列名
 tdel <name> <row>                       TABLE 删除一行
 trows/tfields <name>                    TABLE 行数 / 字段列表
+trange <name> <from> <to> [<col>...]    读取闭区间，可只取部分列
+tindex/tunindex <name> <col>            建/删该列的有序索引
+tindexes <name>                         列出索引及状态（fresh / stale）
+tfind <name> <col> <v> [<col>...]       按列值等值查找（需要新鲜的索引）
+tselect <name> <col> <min> <max> [...]  按列值闭区间查找（需要新鲜的索引）
 ```
+
+范围读取与索引查询返回 `kind:"rows"`：`columns` 是列名数组，`value` 是二维数组。
+行数不设上限。索引是显式创建的：任何写操作都会让它变成 `stale`，
+再次查询会报 `index_stale`，重新 `tindex` 即可。
 
 值语法：`123` → NUMBER，`"hello"` → STRING（引号强制），`hello` → STRING（自动回退）。
 KVALOT 的键一律按字符串处理。

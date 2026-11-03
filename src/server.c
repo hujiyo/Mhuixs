@@ -31,12 +31,6 @@ server.c —— 网络前端
 #define READ_BUDGET ((size_t)256 * 1024)
 
 /*
- * 单次会话的输出缓冲。JSON 是文本的超集、转义后还会膨胀，按 execute.h
- * 的建议给到 128KB。放在堆上：这条路径每个连接都会走，128KB 的栈帧不划算。
- */
-#define SESSION_OUT 131072
-
-/*
  * 单连接待发数据的高水位。到了就不再读这个连接、也不再解析它的输入，
  * 等可写事件把缓冲排空再继续 —— 客户端只发不收时，内存不会无限涨。
  */
@@ -130,22 +124,29 @@ static int push_ok(conn *c)
  * 发一段 JSON 文档。去掉 render_json / mhx_json_text 末尾那一个换行 ——
  * 载荷就是干净的 JSON 文档本身。
  */
-static int push_json(conn *c, char *scratch, size_t scratch_len, const char *json)
+static int push_json(conn *c, const char *json)
 {
     size_t n = strlen(json);
     if (n > 0 && json[n - 1] == '\n') n--;
 
-    size_t wn = proto_encode_bulk(scratch, scratch_len, json, n);
-    if (wn == 0) return -1;   /* scratch 不够大，属于内部错误 */
-    return out_push(c, scratch, wn);
+    /* 编码暂存按本次载荷大小现分配：范围读取的响应没有固定上限。
+     * +1 是 proto_encode_bulk 要求的结尾 NUL 余量。 */
+    size_t cap = proto_bulk_size(n) + 1;
+    char *buf = (char*)malloc(cap);
+    if (!buf) return -1;
+
+    size_t wn = proto_encode_bulk(buf, cap, json, n);
+    int rc = (wn == 0) ? -1 : out_push(c, buf, wn);
+    free(buf);
+    return rc;
 }
 
 /* 发一条"只带一句话"的成功应答 */
-static int push_note(conn *c, char *scratch, size_t scratch_len, const char *text)
+static int push_note(conn *c, const char *text)
 {
     char tmp[512];
     mhx_json_text(tmp, sizeof(tmp), 1, "ok", text);
-    return push_json(c, scratch, scratch_len, tmp);
+    return push_json(c, tmp);
 }
 
 /* 参数与字面量做大小写不敏感比较（命令名用） */
@@ -232,8 +233,7 @@ static int conn_read(conn *c, int *too_large)
  * 把输入缓冲里能凑齐的命令全部执行掉，结果堆进输出缓冲。
  * 返回 PROC_*；PROC_FAIL / PROC_QUIT / PROC_STOP 都会顺手置 closing。
  */
-static int conn_process(conn *c, const char *token, char *out,
-                        char *scratch, size_t scratch_len)
+static int conn_process(conn *c, const char *token)
 {
     while (!c->closing) {
         /* 背压：发不出去就先别接着算，否则缓冲没有上限。
@@ -278,25 +278,38 @@ static int conn_process(conn *c, const char *token, char *out,
             continue;
         }
 
-        mhx_sess_status st = mhx_session_feed(&c->sess, cmd.argc, cmd.args, NULL,
-                                              out, SESSION_OUT);
+        char *out = NULL;
+        mhx_sess_status st = mhx_session_feed_alloc(&c->sess, cmd.argc, cmd.args,
+                                                    NULL, &out);
 
         /* 这两条要先把应答排出去再收摊，否则客户端只看到连接被掐 */
         if (st == MHX_SESS_QUIT) {
-            push_note(c, scratch, scratch_len, "再见");
+            free(out);
+            push_note(c, "再见");
             c->closing = 1;
             return PROC_QUIT;
         }
         if (st == MHX_SESS_SHUTDOWN) {
-            push_note(c, scratch, scratch_len, "服务正在停机");
+            free(out);
+            push_note(c, "服务正在停机");
             c->closing = 1;
             return PROC_STOP;
         }
 
-        if (push_json(c, scratch, scratch_len, out) != 0) {
+        if (!out) {
+            /* 内存不足：给客户端一个明确的失败，而不是掐断连接 */
+            free(out);
+            push_err(c, "SERVER", "out of memory while building response");
             c->closing = 1;
             return PROC_FAIL;
         }
+
+        if (push_json(c, out) != 0) {
+            free(out);
+            c->closing = 1;
+            return PROC_FAIL;
+        }
+        free(out);
     }
     return PROC_OK;
 }
@@ -348,19 +361,8 @@ int mhx_server_run_listener(mhx_sock_t lfd, const char *token)
     conn  conns[MHX_MAX_CONNS];
     for (int i = 0; i < MHX_MAX_CONNS; i++) conn_reset(&conns[i]);
 
-    /* 会话输出与编码暂存各一份就够：命令执行是串行的，一份轮着用 */
-    char *out     = (char*)malloc(SESSION_OUT);
-    char *scratch = (char*)malloc(SESSION_OUT + 64);
-    if (!out || !scratch) {
-        free(out);
-        free(scratch);
-        return -1;
-    }
-
     if (sock_set_nonblocking(lfd, 1) != 0) {
         fprintf(stderr, "mhuixs: 监听套接字切不到非阻塞模式\n");
-        free(out);
-        free(scratch);
         return -1;
     }
 
@@ -460,7 +462,7 @@ int mhx_server_run_listener(mhx_sock_t lfd, const char *token)
 
             /* 执行 -> 发送 -> （缓冲排空且还有被背压挡住输入）接着执行 */
             for (;;) {
-                int proc = conn_process(c, token, out, scratch, SESSION_OUT + 64);
+                int proc = conn_process(c, token);
                 if (proc == PROC_STOP) stop = 1;
 
                 if (c->out_len > c->out_sent) {
@@ -483,8 +485,6 @@ int mhx_server_run_listener(mhx_sock_t lfd, const char *token)
     /* 停机：把排着队的应答尽量送完，再全部关闭 */
     for (int i = 0; i < MHX_MAX_CONNS; i++) conn_finish(&conns[i]);
 
-    free(scratch);
-    free(out);
     return rc;
 }
 
@@ -520,19 +520,8 @@ int mhx_server_serve_one(mhx_sock_t s, const char *token)
     conn_reset(&c);
     c.fd = s;
 
-    char *out     = (char*)malloc(SESSION_OUT);
-    char *scratch = (char*)malloc(SESSION_OUT + 64);
-    if (!out || !scratch) {
-        free(out);
-        free(scratch);
-        conn_reset(&c);
-        return SERVE_FAIL;
-    }
-
     c.in = (char*)malloc(RB_MIN);
     if (!c.in) {
-        free(out);
-        free(scratch);
         conn_reset(&c);
         return SERVE_FAIL;
     }
@@ -540,8 +529,6 @@ int mhx_server_serve_one(mhx_sock_t s, const char *token)
     mhx_session_init(&c.sess, 1);
 
     if (sock_set_nonblocking(s, 1) != 0) {
-        free(out);
-        free(scratch);
         free(c.in);
         conn_reset(&c);
         return SERVE_FAIL;
@@ -574,7 +561,7 @@ int mhx_server_serve_one(mhx_sock_t s, const char *token)
 
         int leave = 0;
         for (;;) {
-            int proc = conn_process(&c, token, out, scratch, SESSION_OUT + 64);
+            int proc = conn_process(&c, token);
             if (proc == PROC_STOP) rc = SERVE_STOP;
             else if (proc == PROC_FAIL) rc = SERVE_FAIL;
 
@@ -608,8 +595,6 @@ int mhx_server_serve_one(mhx_sock_t s, const char *token)
 
     free(c.in);
     free(c.out);
-    free(out);
-    free(scratch);
     conn_reset(&c);      /* 连接由调用方关闭，这里不碰 fd */
 
     return rc;

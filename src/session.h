@@ -60,6 +60,18 @@ mhx_sess_status mhx_session_feed(mhx_session *s, int argc,
                                  const char *meta_raw,
                                  char *out, size_t outlen);
 
+/*
+ * 输出不设上限的入口：*out 由 malloc 分配，调用方 free。
+ * 返回码与上面两个完全一致。范围读取的结果可能远超固定缓冲，前端走这里。
+ * 失败（内存不足）时 *out 为 NULL。
+ */
+mhx_sess_status mhx_session_feed_alloc(mhx_session *s, int argc,
+                                       const struct mhx_arg *args,
+                                       const char *meta_raw,
+                                       char **out);
+mhx_sess_status mhx_session_feed_line_alloc(mhx_session *s, const char *line,
+                                            char **out);
+
 /* <MhuixsHomePath>/registry.dat 的完整路径，调用方负责 free */
 char *mhx_registry_path(void);
 

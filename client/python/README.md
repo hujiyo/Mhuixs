@@ -75,20 +75,37 @@ with mhuixs.Mhuixs(token="你的令牌") as db:
 | LIST | `lpop` / `rpop` / `lget` / `lrem` | 值 |
 | LIST | `llen` | `int` |
 | LIST | `lset` | `None` |
+| LIST | `lrange` | `Rows`（一列 `value`） |
 | BITMAP | `bset` / `bget` | `bool` |
 | BITMAP | `bcount` / `bsize` | `int` |
 | KVALOT | `kset` / `kdel` / `klen` | `int` |
 | KVALOT | `kget` | 值 |
 | KVALOT | `kexists` | `bool` |
+| KVALOT | `mget` | `Rows`（`key` / `value`，缺失键为 `None`） |
 | TABLE | `tadd` / `tdel` / `trows` | `int` |
 | TABLE | `tget` | 值或 `None`（空格子） |
 | TABLE | `tset` | `None` |
 | TABLE | `tfields` | `list[str]` |
+| TABLE | `trange` / `tfind` / `tselect` | `Rows`（行数不设上限） |
+| TABLE | `tindex` | `int`（建索引时的行数） |
+| TABLE | `tunindex` | `str` |
+| TABLE | `tindexes` | `Rows`（`column` / `status`） |
 | 会话 | `ping` | `bool` |
 | 会话 | `save` / `shutdown` | `str` |
 
 `tfields` 受服务端类型化返回值 32 项上限约束；字段更多时用 `call()` 看
 `truncated`，或读 `info()` 的文本。
+
+表索引是显式创建的：`tfind` / `tselect` 要求该列已有索引；任何写操作都会
+让它失效，需要重新 `tindex`，否则抛 `IndexStaleError`（没建过索引则抛
+`NoIndexError`）：
+
+```python
+db.tindex("daily", "date")
+rows = db.tselect("daily", "date", 20240101, 20240131)
+db.tadd("daily", 20240201, 1.5)      # 索引由此变 stale
+db.tindex("daily", "date")           # 重建后才能继续按日期查
+```
 
 ## 参数类型规则
 
@@ -131,6 +148,7 @@ db.execute("rpush", "numbers", mhuixs.Forced("123"))   # 字符串
 | `bool` | `bool` |
 | `null` | `None` |
 | `list` | `list` |
+| `rows` | `Rows(columns, values)`，行内元素按 `columns` 顺序 |
 
 小数用 `Decimal` 是为了不丢精度。`call()` 返回的是原始 JSON 文档，小数按标准
 JSON 解析成 `float`；需要无损数值时用 `execute()` 或类型化方法。

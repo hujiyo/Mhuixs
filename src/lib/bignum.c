@@ -319,6 +319,44 @@ static int bignum_compare_abs(const BHS *a, const BHS *b) {
     return 0;
 }
 
+/* 按值的全序比较：空值 < 数值 < 字符串 < 其他类型。
+ * 数值走精确十进制比较（bignum_compare_abs），不经过 double。 */
+int bignum_compare(const BHS *a, const BHS *b)
+{
+    if (a == b) return 0;
+    if (!a) return -1;
+    if (!b) return 1;
+
+    int a_num = (a->type == BIGNUM_TYPE_NUMBER);
+    int b_num = (b->type == BIGNUM_TYPE_NUMBER);
+    if (a_num != b_num) return a_num ? -1 : 1;   /* 数值排在字符串前面 */
+
+    if (a_num) {
+        int a_neg = a->type_data.num.is_negative;
+        int b_neg = b->type_data.num.is_negative;
+        if (a_neg != b_neg) return a_neg ? -1 : 1;
+
+        int c = bignum_compare_abs(a, b);
+        return a_neg ? -c : c;
+    }
+
+    if (a->type == BIGNUM_TYPE_STRING) {
+        size_t la = (size_t)a->length;
+        size_t lb = (size_t)b->length;
+        size_t n  = la < lb ? la : lb;
+
+        int c = n ? memcmp(BIGNUM_DIGITS(a), BIGNUM_DIGITS(b), n) : 0;
+        if (c) return c < 0 ? -1 : 1;
+        if (la == lb) return 0;
+        return la < lb ? -1 : 1;
+    }
+
+    /* 容器类型之间只按类型区分：排序/查找对它们没有意义，
+     * 但保持一个稳定顺序，至少不会让排序结果乱跳。 */
+    if (a->type != b->type) return a->type < b->type ? -1 : 1;
+    return 0;
+}
+
 /* 大数绝对值加法（忽略符号） */
 static int bignum_add_abs(const BHS *a, const BHS *b, BHS *result) {
     int max_decimal = (a->type_data.num.decimal_pos > b->type_data.num.decimal_pos) ? a->type_data.num.decimal_pos : b->type_data.num.decimal_pos;

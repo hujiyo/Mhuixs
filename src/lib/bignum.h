@@ -416,6 +416,17 @@ KVALOT* bignum_get_kvalot(const BHS *num);
  */
 double bignum_to_double(const BHS *num);
 
+/**
+ * 按值的全序比较两个 BHS（给排序 / 索引 / 范围查找用）。
+ *
+ * 顺序与主流数据库一致：空值 < 数值 < 字符串 < 其他容器类型。
+ * 数值按精确十进制比较（不经过 double，不丢精度）；
+ * 字符串按字节字典序；其他类型只按类型区分，同类型视作相等。
+ *
+ * @return <0 / 0 / >0 分别表示 a<b、a==b、a>b
+ */
+int bignum_compare(const BHS *a, const BHS *b);
+
 /* 
  * bignum_eval 已弃用 - 请使用 evaluator.h 中的 eval_to_string()
  * 该函数支持更多功能（布尔运算、比较运算等）

@@ -12,14 +12,17 @@ from mhuixs import (
     BadUsageError,
     ConnectionError,
     EmptyError,
+    IndexStaleError,
     Mhuixs,
     MhuixsError,
     NameTakenError,
     NoFieldError,
     NoHookError,
+    NoIndexError,
     NoKeyError,
     OutOfRangeError,
     ProtocolError,
+    Rows,
     TypeMismatchError,
     UnknownCommandError,
 )
@@ -264,6 +267,120 @@ class ValueTests(ClientTest):
         self.assertFalse(cmd[3]["forced"])
 
 
+class RowsTests(ClientTest):
+    """kind == "rows" 的解包：列名与二维值都保留。"""
+
+    def handler(self, req):
+        cmd = req[0]["body"]
+        if cmd == b"lrange":
+            return reply_json({"ok": True, "code": "ok", "kind": "rows",
+                               "columns": ["value"],
+                               "value": [["a"], [2]],
+                               "text": "OK 2 item(s)"})
+        if cmd == b"trange":
+            return reply_json({"ok": True, "code": "ok", "kind": "rows",
+                               "columns": ["d", "name"],
+                               "value": [[20240101, "a"], [20240102, None]],
+                               "text": "OK 2 row(s)"})
+        if cmd == b"mget":
+            return reply_json({"ok": True, "code": "ok", "kind": "rows",
+                               "columns": ["key", "value"],
+                               "value": [["k", 1.5], ["nope", None]],
+                               "text": "OK 2 key(s), 1 missing"})
+        if cmd == b"tindex":
+            return reply_json({"ok": True, "code": "ok", "kind": "int",
+                               "value": 2, "text": "OK indexed t.d, 2 row(s)"})
+        if cmd == b"tunindex":
+            return reply_json({"ok": True, "code": "ok",
+                               "text": "OK dropped index on 'd'"})
+        if cmd == b"tindexes":
+            return reply_json({"ok": True, "code": "ok", "kind": "rows",
+                               "columns": ["column", "status"],
+                               "value": [["d", "fresh"]],
+                               "text": "OK 1 index(es)"})
+        if cmd == b"tfind":
+            return reply_json({"ok": True, "code": "ok", "kind": "rows",
+                               "columns": ["d", "name"],
+                               "value": [[20240101, "a"]],
+                               "text": "OK 1 row(s)"})
+        if cmd == b"tselect":
+            return reply_json({"ok": True, "code": "ok", "kind": "rows",
+                               "columns": ["d"],
+                               "value": [[20240101], [20240102]],
+                               "text": "OK 2 row(s)"})
+        if cmd == b"boom":
+            code = req[1]["body"].decode("ascii")
+            return reply_json({"ok": False, "code": code, "text": "ERR"})
+        raise AssertionError("没准备这个命令：%r" % (cmd,))
+
+    def test_rows_unpack(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        rows = db.lrange("l", 0, 1)
+        self.assertIsInstance(rows, Rows)
+        self.assertEqual(rows.columns, ["value"])
+        self.assertEqual(rows.values, [["a"], [2]])
+
+        rows = db.trange("t", 0, 1)
+        self.assertEqual(rows.columns, ["d", "name"])
+        self.assertEqual(rows.values, [[20240101, "a"], [20240102, None]])
+
+    def test_rows_value_types(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        rows = db.mget("cache", "k", "nope")
+        self.assertEqual(rows.columns, ["key", "value"])
+        self.assertEqual(rows.values[0][0], "k")
+        self.assertEqual(rows.values[0][1], Decimal("1.5"))
+        self.assertIsInstance(rows.values[0][1], Decimal)
+        self.assertIsNone(rows.values[1][1])
+
+    def test_columns_are_forwarded(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        db.trange("t", 0, 1, "d", "name")
+        sent = server.received[0]
+        self.assertEqual([a["body"] for a in sent],
+                         [b"trange", b"t", b"0", b"1", b"d", b"name"])
+        # 列名是字符串参数，走 +；行号是数字，走 $
+        self.assertEqual([a["forced"] for a in sent],
+                         [False, True, False, False, True, True])
+
+    def test_index_commands(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        self.assertEqual(db.tindex("t", "d"), 2)
+        self.assertEqual(db.tunindex("t", "d"), "OK dropped index on 'd'")
+
+        rows = db.tindexes("t")
+        self.assertEqual(rows.columns, ["column", "status"])
+        self.assertEqual(rows.values, [["d", "fresh"]])
+
+        rows = db.tfind("t", "d", 20240101, "name")
+        self.assertEqual(rows.values, [[20240101, "a"]])
+
+        rows = db.tselect("t", "d", 20240101, 20240102)
+        self.assertEqual(rows.columns, ["d"])
+        self.assertEqual(rows.values, [[20240101], [20240102]])
+
+        sent = server.received[-1]
+        self.assertEqual([a["body"] for a in sent],
+                         [b"tselect", b"t", b"d", b"20240101", b"20240102"])
+
+    def test_index_errors_map(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        with self.assertRaises(NoIndexError):
+            db.execute("boom", "no_index")
+        with self.assertRaises(IndexStaleError):
+            db.execute("boom", "index_stale")
+
+
 class ErrorTests(ClientTest):
     CODES = {
         "bad_usage": BadUsageError,
@@ -275,6 +392,8 @@ class ErrorTests(ClientTest):
         "empty": EmptyError,
         "name_taken": NameTakenError,
         "unknown_command": UnknownCommandError,
+        "no_index": NoIndexError,
+        "index_stale": IndexStaleError,
     }
 
     def test_codes_map_to_exceptions(self):

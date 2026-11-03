@@ -12,6 +12,7 @@
 import json
 import socket
 import threading
+from collections import namedtuple
 from decimal import Decimal
 
 from ._errors import (
@@ -22,6 +23,10 @@ from ._errors import (
     error_from_document,
 )
 from ._protocol import Forced, encode_request, parse_reply, to_bytes
+
+
+#: 多行结果：``columns`` 是列名列表，``values`` 是行列表（行内按列顺序）。
+Rows = namedtuple("Rows", ["columns", "values"])
 
 
 def _unwrap(doc):
@@ -36,6 +41,8 @@ def _unwrap(doc):
         return doc.get("text")
     if kind == "null":
         return None
+    if kind == "rows":
+        return Rows(doc.get("columns") or [], doc.get("value") or [])
     return doc.get("value")
 
 
@@ -118,6 +125,7 @@ class Mhuixs:
         - ``int`` -> ``int``
         - ``num`` -> ``int``（无小数点）或 ``decimal.Decimal``（有小数点）
         - ``str`` / ``bool`` / ``list`` -> 对应类型
+        - ``rows`` -> :class:`Rows`（列名 + 行列表）
         - ``null`` -> ``None``
         - 没有 ``kind`` 的响应 -> 服务端 ``text`` 字符串
         """
@@ -220,6 +228,13 @@ class Mhuixs:
         """移除下标 ``index`` 处的值并返回它。"""
         return self._run("lrem", name, index)
 
+    def lrange(self, name, start, end):
+        """读取闭区间 ``[start, end]``，负下标从尾部数。返回 :class:`Rows`。
+
+        区间越界自动截断，起点在终点之后得到空结果（不报错）。
+        """
+        return self._run("lrange", name, start, end)
+
     # ---------------- BITMAP ----------------
 
     def bset(self, name, offset, bit):
@@ -260,6 +275,13 @@ class Mhuixs:
         """键是否存在（``bool``）。"""
         return self._run("kexists", name, key)
 
+    def mget(self, name, *keys):
+        """一次取多个键，返回两列 :class:`Rows`（``key`` / ``value``）。
+
+        结果顺序与请求一致；不存在的键值为 ``None``。
+        """
+        return self._run("mget", name, *keys)
+
     # ---------------- TABLE ----------------
 
     def tadd(self, name, *values):
@@ -290,6 +312,46 @@ class Mhuixs:
         :meth:`info` 的文本。
         """
         return self._run("tfields", name)
+
+    def trange(self, name, start, end, *columns):
+        """读取闭区间的行，可只取部分列（不给就取全部）。返回 :class:`Rows`。
+
+        行下标语义与 :meth:`lrange` 一致：负下标从尾部数，越界自动截断。
+        """
+        return self._run("trange", name, start, end, *columns)
+
+    def tindex(self, name, col):
+        """为某列建/重建有序索引，返回建索引时的行数（``int``）。
+
+        建好之后用 :meth:`tfind` / :meth:`tselect` 查询；任何写操作都会让
+        索引失效（``IndexStaleError``），需要重新调用本方法。
+        """
+        return self._run("tindex", name, col)
+
+    def tunindex(self, name, col):
+        """删除某列的索引（幂等）。返回服务端文本。"""
+        return self._run("tunindex", name, col)
+
+    def tindexes(self, name):
+        """列出已有索引，返回两列 :class:`Rows`（``column`` / ``status``）。
+
+        ``status`` 是 ``"fresh"`` 或 ``"stale"``。
+        """
+        return self._run("tindexes", name)
+
+    def tfind(self, name, col, value, *columns):
+        """按列值等值查找，返回 :class:`Rows`；该列必须已有新鲜索引。
+
+        没建索引抛 :class:`NoIndexError`，索引过期抛 :class:`IndexStaleError`。
+        """
+        return self._run("tfind", name, col, value, *columns)
+
+    def tselect(self, name, col, low, high, *columns):
+        """按列值闭区间 ``[low, high]`` 查找，返回 :class:`Rows`。
+
+        索引要求与 :meth:`tfind` 相同。
+        """
+        return self._run("tselect", name, col, low, high, *columns)
 
     # ---------------- 会话 ----------------
 

@@ -64,6 +64,66 @@ static void append(char *out, size_t outlen, const char *fmt, ...)
     va_end(ap);
 }
 
+/* 可增长输出缓冲。
+ * 范围读取返回的行数没有上限，固定大小的 res->text 装不下，
+ * 渲染阶段又不能假设调用方给了多大缓冲 —— 所以先拼进这里，最后再拷贝。 */
+typedef struct {
+    char  *p;
+    size_t len;
+    size_t cap;
+} mhx_buf;
+
+static int buf_need(mhx_buf *b, size_t extra)
+{
+    if (b->len + extra + 1 <= b->cap) return 0;
+
+    size_t ncap = b->cap ? b->cap : 256;
+    while (ncap < b->len + extra + 1) ncap *= 2;
+
+    char *np = (char*)realloc(b->p, ncap);
+    if (!np) return -1;
+    b->p = np;
+    b->cap = ncap;
+    return 0;
+}
+
+static int buf_add(mhx_buf *b, const char *s, size_t n)
+{
+    if (buf_need(b, n) != 0) return -1;
+    if (n) memcpy(b->p + b->len, s, n);
+    b->len += n;
+    b->p[b->len] = '\0';
+    return 0;
+}
+
+static int buf_puts(mhx_buf *b, const char *s)
+{
+    return buf_add(b, s ? s : "", s ? strlen(s) : 0);
+}
+
+static int buf_printf(mhx_buf *b, const char *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    int need = vsnprintf(NULL, 0, fmt, ap);
+    va_end(ap);
+    if (need < 0) return -1;
+    if (buf_need(b, (size_t)need) != 0) return -1;
+
+    va_start(ap, fmt);
+    vsnprintf(b->p + b->len, b->cap - b->len, fmt, ap);
+    va_end(ap);
+    b->len += (size_t)need;
+    return 0;
+}
+
+static void buf_free(mhx_buf *b)
+{
+    free(b->p);
+    b->p = NULL;
+    b->len = b->cap = 0;
+}
+
 /* ---------------- 分词 ---------------- */
 
 typedef struct {
@@ -129,6 +189,8 @@ typedef enum {
     MHX_ERR_EMPTY,         /* empty            容器为空 */
     MHX_ERR_NAME_TAKEN,    /* name_taken       钩子名已被占用 */
     MHX_ERR_UNKNOWN_CMD,   /* unknown_command  命令不认识 */
+    MHX_ERR_NO_INDEX,      /* no_index          该列还没有建索引 */
+    MHX_ERR_INDEX_STALE,   /* index_stale       索引建好后表被写过，需重建 */
     MHX_ERR_FAILED,        /* failed           其他失败 */
     MHX_ERR_INTERNAL       /* internal         调用方参数不合法 */
 } mhx_code;
@@ -147,6 +209,8 @@ static const char *code_name(mhx_code c)
         case MHX_ERR_EMPTY:       return "empty";
         case MHX_ERR_NAME_TAKEN:  return "name_taken";
         case MHX_ERR_UNKNOWN_CMD: return "unknown_command";
+        case MHX_ERR_NO_INDEX:    return "no_index";
+        case MHX_ERR_INDEX_STALE: return "index_stale";
         case MHX_ERR_FAILED:      return "failed";
         default:                  return "internal";
     }
@@ -159,13 +223,23 @@ typedef enum {
     MHX_V_NUM,        /* 任意精度数值，按十进制文本保存 */
     MHX_V_STR,        /* 字符串 */
     MHX_V_BOOL,       /* 布尔（某一位、键是否存在） */
-    MHX_V_LIST        /* 字符串数组（字段列表） */
+    MHX_V_LIST,       /* 字符串数组（字段列表） */
+    MHX_V_ROWS        /* 二维值表格（范围读取），行数不设上限 */
 } mhx_vkind;
 
 #define MHX_TEXT_MAX  16384
 #define MHX_VSTR_MAX  512
 #define MHX_VLIST_MAX 32
 #define MHX_VITEM_MAX 64
+
+/* 表格里的一个单元格：数值保存十进制文本（保留任意精度），
+ * 字符串保存原始字节（可能是二进制），空单元格由 is_null 标记。 */
+typedef struct {
+    int      is_null;
+    int      is_num;
+    char    *text;   /* 自有内存 */
+    size_t   len;
+} mhx_cell;
 
 typedef struct {
     mhx_vkind kind;
@@ -175,6 +249,12 @@ typedef struct {
     char      items[MHX_VLIST_MAX][MHX_VITEM_MAX];
     int       n;
     int       truncated;   /* LIST 超过 MHX_VLIST_MAX，只留了前若干项 */
+
+    /* MHX_V_ROWS：nrows × ncols 的单元格，按行优先排列 */
+    mhx_cell *cells;
+    char    **cols;        /* 列名，ncols 个，自有内存 */
+    size_t    nrows;
+    size_t    ncols;
 } mhx_value;
 
 typedef struct {
@@ -194,7 +274,28 @@ static void res_init(mhx_result *r)
     r->val.s[0] = '\0';
     r->val.n = 0;
     r->val.truncated = 0;
+    r->val.cells = NULL;
+    r->val.cols  = NULL;
+    r->val.nrows = 0;
+    r->val.ncols = 0;
     r->text[0] = '\0';
+}
+
+/* 释放表格返回值。渲染完必须调用 —— 行数不设上限，泄漏会很可观。 */
+static void res_free(mhx_result *r)
+{
+    if (r->val.cells) {
+        size_t total = r->val.nrows * r->val.ncols;
+        for (size_t i = 0; i < total; i++) free(r->val.cells[i].text);
+        free(r->val.cells);
+        r->val.cells = NULL;
+    }
+    if (r->val.cols) {
+        for (size_t i = 0; i < r->val.ncols; i++) free(r->val.cols[i]);
+        free(r->val.cols);
+        r->val.cols = NULL;
+    }
+    r->val.nrows = r->val.ncols = 0;
 }
 
 /* 记一次失败。
@@ -293,6 +394,101 @@ static void res_value_from_bhs(mhx_result *r, const BHS *b)
     res_value_str(r, buf);
 }
 
+/* ---------------- 表格返回值 ----------------
+ *
+ * 单元格在命令执行时**复制**成独立文本，渲染阶段不再碰原表 ——
+ * 这样渲染发生在命令返回之后也不会踩到已变化的数据。
+ * 数值保留十进制文本（与 MHX_V_NUM 同一契约，任意精度不丢）。 */
+
+static int cell_set_bytes(mhx_cell *c, const char *p, size_t n, int is_num)
+{
+    c->text = (char*)malloc(n + 1);
+    if (!c->text) return -1;
+    if (n) memcpy(c->text, p, n);
+    c->text[n] = '\0';
+    c->len = n;
+    c->is_null = 0;
+    c->is_num = is_num;
+    return 0;
+}
+
+static int cell_set_bhs(mhx_cell *c, const BHS *v)
+{
+    c->is_null = 0;
+    c->is_num = 0;
+    c->text = NULL;
+    c->len = 0;
+
+    if (!v) { c->is_null = 1; return 0; }
+
+    if (bignum_is_number(v)) {
+        size_t cap = (size_t)v->length + 4;   /* 数字位 + 符号 + 小数点 + NUL */
+        char *s = (char*)malloc(cap);
+        if (!s) return -1;
+        s[0] = '\0';
+        bignum_to_string(v, s, cap, -1);
+        c->text = s;
+        c->len = strlen(s);
+        c->is_num = 1;
+        return 0;
+    }
+
+    if (bignum_is_string(v))
+        return cell_set_bytes(c, BIGNUM_DIGITS(v), (size_t)v->length, 0);
+
+    char buf[512];
+    buf[0] = '\0';
+    bignum_to_string(v, buf, sizeof(buf), -1);
+    return cell_set_bytes(c, buf, strlen(buf), 0);
+}
+
+/* 预分配一张 nrows × ncols 的空表格（全部标记为空单元格） */
+static int rows_begin(mhx_result *r, size_t nrows, size_t ncols)
+{
+    res_free(r);
+    r->val.kind  = MHX_V_ROWS;
+    r->val.nrows = nrows;
+    r->val.ncols = ncols;
+
+    if (ncols == 0) return 0;
+
+    /* 列名始终分配：行数为 0 时结果仍要带表头 */
+    r->val.cols = (char**)calloc(ncols, sizeof(char*));
+    if (!r->val.cols) { res_free(r); return -1; }
+
+    if (nrows == 0) return 0;
+
+    r->val.cells = (mhx_cell*)calloc(nrows * ncols, sizeof(mhx_cell));
+    if (!r->val.cells) { res_free(r); return -1; }
+    for (size_t i = 0; i < nrows * ncols; i++)
+        r->val.cells[i].is_null = 1;
+
+    for (size_t j = 0; j < ncols; j++) r->val.cols[j] = NULL;
+    return 0;
+}
+
+static int rows_set_col(mhx_result *r, size_t j, const char *p, size_t n)
+{
+    if (j >= r->val.ncols) return -1;
+    char *s = (char*)malloc(n + 1);
+    if (!s) return -1;
+    if (n) memcpy(s, p, n);
+    s[n] = '\0';
+    free(r->val.cols[j]);
+    r->val.cols[j] = s;
+    return 0;
+}
+
+static const mhx_cell *rows_cell(const mhx_result *r, size_t row, size_t col)
+{
+    return &r->val.cells[row * r->val.ncols + col];
+}
+
+static mhx_cell *rows_cell_mut(mhx_result *r, size_t row, size_t col)
+{
+    return &r->val.cells[row * r->val.ncols + col];
+}
+
 /* ---------------- 取对象 ---------------- */
 
 static const char *type_name(int t)
@@ -342,6 +538,44 @@ static BHS *parse_value(const token_t *tok)
 
 /* LIST 的取值函数在越界时返回 (BHS*)-1，需要单独记 */
 #define IS_MERR_OBJ(p) ((p) == NULL || (p) == (Obj)(intptr_t)-1)
+
+/* 区间参数：整串必须是有符号十进制，否则报用法错误。
+ * 不用 strtol 的宽松解析 —— "1x" 悄悄变成 1 会让调用方以为读到了别的行。 */
+static int parse_ll(const char *s, long long *out)
+{
+    if (!s || !*s) return -1;
+
+    const char *p = s;
+    if (*p == '-') p++;
+    if (!*p) return -1;
+    for (const char *q = p; *q; q++)
+        if (*q < '0' || *q > '9') return -1;
+
+    *out = strtoll(s, NULL, 10);
+    return 0;
+}
+
+/* 把区间归一到 [0, n-1]，语义与 Redis 的 LRANGE 一致：
+ * 负数从尾部数（-1 是最后一个），越界自动截到边界，
+ * 起点落在终点之后就是空区间 —— 不报错，返回 0 行。 */
+static void range_normalize(long long from, long long to, size_t n,
+                            size_t *out_from, size_t *out_to, int *empty)
+{
+    if (n == 0) { *empty = 1; return; }
+
+    long long f = from;
+    long long t = to;
+    if (f < 0) f += (long long)n;
+    if (t < 0) t += (long long)n;
+    if (f < 0) f = 0;
+    if (t >= (long long)n) t = (long long)n - 1;
+
+    if (f > t || f >= (long long)n) { *empty = 1; return; }
+
+    *out_from = (size_t)f;
+    *out_to   = (size_t)t;
+    *empty    = 0;
+}
 
 /* ---------------- 命令实现 ---------------- */
 
@@ -1187,6 +1421,47 @@ static int cmd_lrem(token_t *t, int argc, mhx_result *res)
     return 0;
 }
 
+/* lrange <name> <from> <to>
+ * 闭区间，负下标从尾部数（与 Redis LRANGE 一致）。 */
+static int cmd_lrange(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc != 4) { res_err(res, MHX_ERR_BAD_USAGE, "usage: lrange <name> <from> <to>"); return -1; }
+    BHS *obj = get_obj(t[1].text, BIGNUM_TYPE_LIST, res);
+    if (!obj) return -1;
+
+    long long from, to;
+    if (parse_ll(t[2].text, &from) || parse_ll(t[3].text, &to)) {
+        res_err(res, MHX_ERR_BAD_USAGE, "usage: lrange <name> <from> <to>");
+        return -1;
+    }
+
+    LIST *lst = bignum_get_list(obj);
+    size_t n = list_size(lst);
+    size_t f = 0, e = 0;
+    int empty = 0;
+    range_normalize(from, to, n, &f, &e, &empty);
+
+    size_t nrows = empty ? 0 : (e - f + 1);
+    if (rows_begin(res, nrows, 1) != 0 ||
+        rows_set_col(res, 0, "value", 5) != 0) {
+        res_err(res, MHX_ERR_FAILED, "out of memory");
+        return -1;
+    }
+
+    for (size_t i = 0; i < nrows; i++) {
+        Obj v = list_get_index(lst, f + i);
+        if (IS_MERR_OBJ(v) || cell_set_bhs(rows_cell_mut(res, i, 0), v) != 0) {
+            res_err(res, MHX_ERR_FAILED, "out of memory");
+            return -1;
+        }
+    }
+
+    snprintf(out, outlen, "OK %zu item(s)", nrows);
+    return 0;
+}
+
 /* ---------- BITMAP ---------- */
 
 static int cmd_bset(token_t *t, int argc, mhx_result *res)
@@ -1562,6 +1837,56 @@ static int cmd_kexists(token_t *t, int argc, mhx_result *res)
     return 0;
 }
 
+/* mget <name> <key> [<key>...]
+ * 一次取多个键；不存在的键给出 (empty)，对应 Redis MGET 的 nil。
+ * 返回两列表格：key / value —— 顺序与请求一致，调用方不必自己对齐。 */
+static int cmd_mget(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc < 3) { res_err(res, MHX_ERR_BAD_USAGE, "usage: mget <name> <key> [<key>...]"); return -1; }
+    BHS *obj = get_obj(t[1].text, BIGNUM_TYPE_KVALOT, res);
+    if (!obj) return -1;
+
+    KVALOT *kv = bignum_get_kvalot(obj);
+    size_t n = (size_t)argc - 2;
+
+    if (rows_begin(res, n, 2) != 0 ||
+        rows_set_col(res, 0, "key", 3) != 0 ||
+        rows_set_col(res, 1, "value", 5) != 0) {
+        res_err(res, MHX_ERR_FAILED, "out of memory");
+        return -1;
+    }
+
+    size_t miss = 0;
+    for (size_t i = 0; i < n; i++) {
+        const token_t *kt = &t[2 + (int)i];
+
+        if (cell_set_bytes(rows_cell_mut(res, i, 0), kt->text, strlen(kt->text), 0) != 0) {
+            res_err(res, MHX_ERR_FAILED, "out of memory");
+            return -1;
+        }
+
+        BHS *key = parse_key(kt);
+        if (!key) { res_err(res, MHX_ERR_FAILED, "out of memory"); return -1; }
+
+        Obj found = kvalot_find(kv, key);
+        bignum_destroy(key);
+
+        if (!found) {
+            miss++;
+            continue;
+        }
+        if (cell_set_bhs(rows_cell_mut(res, i, 1), found) != 0) {
+            res_err(res, MHX_ERR_FAILED, "out of memory");
+            return -1;
+        }
+    }
+
+    snprintf(out, outlen, "OK %zu key(s), %zu missing", n, miss);
+    return 0;
+}
+
 /* ---------- TABLE ---------- */
 
 /* 把行列参数解析为字段下标；col 可以是数字下标或字段名 */
@@ -1766,6 +2091,374 @@ static int cmd_tfields(token_t *t, int argc, mhx_result *res)
     return 0;
 }
 
+/* trange <name> <from> <to> [<col>...]
+ * 闭区间读取一段行；负下标从尾部数（-1 是最后一行）。
+ * 不指定列时返回全部列。 */
+static int cmd_trange(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc < 4) {
+        res_err(res, MHX_ERR_BAD_USAGE, "usage: trange <name> <from> <to> [<col>...]");
+        return -1;
+    }
+    BHS *obj = get_obj(t[1].text, BIGNUM_TYPE_TABLE, res);
+    if (!obj) return -1;
+
+    long long from, to;
+    if (parse_ll(t[2].text, &from) || parse_ll(t[3].text, &to)) {
+        res_err(res, MHX_ERR_BAD_USAGE, "usage: trange <name> <from> <to> [<col>...]");
+        return -1;
+    }
+
+    TABLE *tb = bignum_get_table(obj);
+    size_t n = get_record_count(tb);
+    size_t f = 0, e = 0;
+    int empty = 0;
+    range_normalize(from, to, n, &f, &e, &empty);
+
+    /* 列：没给就是全部列；给了就按给定顺序投影 */
+    size_t ncols;
+    size_t col_idx[MHX_MAX_ARGS];
+    if (argc > 4) {
+        ncols = (size_t)argc - 4;
+        for (size_t j = 0; j < ncols; j++) {
+            if (resolve_col(tb, &t[4 + (int)j], &col_idx[j]) != 0) {
+                res_err(res, MHX_ERR_NO_FIELD, "no such field: %s", t[4 + (int)j].text);
+                return -1;
+            }
+        }
+    } else {
+        ncols = get_field_count(tb);
+        for (size_t j = 0; j < ncols; j++) col_idx[j] = j;
+    }
+
+    size_t nrows = empty ? 0 : (e - f + 1);
+    if (rows_begin(res, nrows, ncols) != 0) {
+        res_err(res, MHX_ERR_FAILED, "out of memory");
+        return -1;
+    }
+
+    for (size_t j = 0; j < ncols; j++) {
+        char fname[64];
+        const char *nm = mstr_to_buf(tb->field[col_idx[j]].name, fname, sizeof(fname));
+        if (rows_set_col(res, j, nm, strlen(nm)) != 0) {
+            res_err(res, MHX_ERR_FAILED, "out of memory");
+            return -1;
+        }
+    }
+
+    for (size_t i = 0; i < nrows; i++) {
+        for (size_t j = 0; j < ncols; j++) {
+            Obj v = get_value(tb, f + i, col_idx[j]);
+            if (cell_set_bhs(rows_cell_mut(res, i, j), v) != 0) {
+                res_err(res, MHX_ERR_FAILED, "out of memory");
+                return -1;
+            }
+        }
+    }
+
+    snprintf(out, outlen, "OK %zu row(s)", nrows);
+    return 0;
+}
+
+/* ---------- 列索引与按值查找 ---------- */
+
+/* 取某列的索引并要求它是最新的。失败时错误码已经记好。 */
+static TABLE_INDEX *require_index(TABLE *tb, size_t field, const char *col,
+                                  mhx_result *res)
+{
+    TABLE_INDEX *ix = table_index_get(tb, field);
+
+    if (!ix) {
+        res_err(res, MHX_ERR_NO_INDEX,
+                "no index on column '%s' (build one with: tindex <name> %s)", col, col);
+        return NULL;
+    }
+    if (ix->stale) {
+        res_err(res, MHX_ERR_INDEX_STALE,
+                "index on column '%s' is stale after writes (rebuild with: tindex <name> %s)",
+                col, col);
+        return NULL;
+    }
+    return ix;
+}
+
+/* 在有序行号数组上找第一个 >= v 的位置 */
+static size_t index_lower_bound(TABLE *tb, const TABLE_INDEX *ix, size_t field,
+                                const BHS *v)
+{
+    size_t lo = 0, hi = ix->n;
+
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (bignum_compare(get_value(tb, ix->order[mid], field), v) < 0) lo = mid + 1;
+        else                                                              hi = mid;
+    }
+    return lo;
+}
+
+/* 收集闭区间 [lo_v, hi_v] 内的逻辑行号。返回 malloc 的数组，调用方 free。 */
+static int collect_value_range(TABLE *tb, const TABLE_INDEX *ix, size_t field,
+                               const BHS *lo_v, const BHS *hi_v,
+                               size_t **rows_out, size_t *n_out)
+{
+    size_t cap = 16, n = 0;
+    size_t *rows = (size_t*)malloc(cap * sizeof(size_t));
+    if (!rows) return -1;
+
+    for (size_t i = index_lower_bound(tb, ix, field, lo_v); i < ix->n; i++) {
+        Obj cell = get_value(tb, ix->order[i], field);
+        if (bignum_compare(cell, hi_v) > 0) break;
+
+        if (n == cap) {
+            size_t ncap = cap * 2;
+            size_t *nr = (size_t*)realloc(rows, ncap * sizeof(size_t));
+            if (!nr) { free(rows); return -1; }
+            rows = nr;
+            cap = ncap;
+        }
+        rows[n++] = ix->order[i];
+    }
+
+    *rows_out = rows;
+    *n_out = n;
+    return 0;
+}
+
+/* 解析输出列：first 之后没给列名就返回全部列。
+ * col_idx 由调用方提供，至少能装 field_num 个。 */
+static int parse_output_cols(TABLE *tb, token_t *t, int first, int argc,
+                             size_t *col_idx, size_t *ncols, mhx_result *res)
+{
+    if (argc > first) {
+        *ncols = (size_t)argc - (size_t)first;
+        for (size_t j = 0; j < *ncols; j++) {
+            if (resolve_col(tb, &t[first + (int)j], &col_idx[j]) != 0) {
+                res_err(res, MHX_ERR_NO_FIELD, "no such field: %s",
+                        t[first + (int)j].text);
+                return -1;
+            }
+        }
+    } else {
+        *ncols = get_field_count(tb);
+        for (size_t j = 0; j < *ncols; j++) col_idx[j] = j;
+    }
+    return 0;
+}
+
+/* 按给定的逻辑行号与列，填出一张 rows 结果 */
+static int fill_rows(TABLE *tb, mhx_result *res, const size_t *logical, size_t nrows,
+                     const size_t *col_idx, size_t ncols)
+{
+    if (rows_begin(res, nrows, ncols) != 0) return -1;
+
+    for (size_t j = 0; j < ncols; j++) {
+        char fname[64];
+        const char *nm = mstr_to_buf(tb->field[col_idx[j]].name, fname, sizeof(fname));
+        if (rows_set_col(res, j, nm, strlen(nm)) != 0) return -1;
+    }
+
+    for (size_t i = 0; i < nrows; i++) {
+        for (size_t j = 0; j < ncols; j++) {
+            Obj v = get_value(tb, logical[i], col_idx[j]);
+            if (cell_set_bhs(rows_cell_mut(res, i, j), v) != 0) return -1;
+        }
+    }
+    return 0;
+}
+
+/* tindex <name> <col> —— 建或重建索引 */
+static int cmd_tindex(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc != 3) { res_err(res, MHX_ERR_BAD_USAGE, "usage: tindex <name> <col>"); return -1; }
+    BHS *obj = get_obj(t[1].text, BIGNUM_TYPE_TABLE, res);
+    if (!obj) return -1;
+
+    TABLE *tb = bignum_get_table(obj);
+    size_t col = 0;
+    if (resolve_col(tb, &t[2], &col) != 0) {
+        res_err(res, MHX_ERR_NO_FIELD, "no such field: %s", t[2].text);
+        return -1;
+    }
+
+    if (table_index_build(tb, col) != 0) {
+        res_err(res, MHX_ERR_FAILED, "build index failed");
+        return -1;
+    }
+
+    char cname[64];
+    snprintf(out, outlen, "OK indexed %s.%s, %zu row(s)", t[1].text,
+             mstr_to_buf(tb->field[col].name, cname, sizeof(cname)),
+             get_record_count(tb));
+    res_value_int(res, (long long)get_record_count(tb));
+    return 0;
+}
+
+/* tunindex <name> <col> —— 删除索引（幂等） */
+static int cmd_tunindex(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc != 3) { res_err(res, MHX_ERR_BAD_USAGE, "usage: tunindex <name> <col>"); return -1; }
+    BHS *obj = get_obj(t[1].text, BIGNUM_TYPE_TABLE, res);
+    if (!obj) return -1;
+
+    TABLE *tb = bignum_get_table(obj);
+    size_t col = 0;
+    if (resolve_col(tb, &t[2], &col) != 0) {
+        res_err(res, MHX_ERR_NO_FIELD, "no such field: %s", t[2].text);
+        return -1;
+    }
+
+    int had = (table_index_drop(tb, col) == 0);
+    snprintf(out, outlen, "OK %s index on '%s'",
+             had ? "dropped" : "no", t[2].text);
+    return 0;
+}
+
+/* tindexes <name> —— 列出已有索引及其状态 */
+static int cmd_tindexes(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc != 2) { res_err(res, MHX_ERR_BAD_USAGE, "usage: tindexes <name>"); return -1; }
+    BHS *obj = get_obj(t[1].text, BIGNUM_TYPE_TABLE, res);
+    if (!obj) return -1;
+
+    TABLE *tb = bignum_get_table(obj);
+    size_t n = table_index_count(tb);
+
+    if (rows_begin(res, n, 2) != 0 ||
+        rows_set_col(res, 0, "column", 6) != 0 ||
+        rows_set_col(res, 1, "status", 6) != 0) {
+        res_err(res, MHX_ERR_FAILED, "out of memory");
+        return -1;
+    }
+
+    for (size_t i = 0; i < n; i++) {
+        TABLE_INDEX *ix = table_index_at(tb, i);
+        char fname[64];
+        const char *nm = (ix->field < get_field_count(tb))
+                       ? mstr_to_buf(tb->field[ix->field].name, fname, sizeof(fname))
+                       : "(unknown)";
+
+        const char *state = ix->stale ? "stale" : "fresh";
+        if (cell_set_bytes(rows_cell_mut(res, i, 0), nm, strlen(nm), 0) != 0 ||
+            cell_set_bytes(rows_cell_mut(res, i, 1), state, 5, 0) != 0) {
+            res_err(res, MHX_ERR_FAILED, "out of memory");
+            return -1;
+        }
+    }
+
+    snprintf(out, outlen, "OK %zu index(es)", n);
+    return 0;
+}
+
+/* tfind <name> <col> <value> [<col>...] —— 按列值等值查找 */
+static int cmd_tfind(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc < 4) {
+        res_err(res, MHX_ERR_BAD_USAGE, "usage: tfind <name> <col> <value> [<col>...]");
+        return -1;
+    }
+    BHS *obj = get_obj(t[1].text, BIGNUM_TYPE_TABLE, res);
+    if (!obj) return -1;
+
+    TABLE *tb = bignum_get_table(obj);
+    size_t field = 0;
+    if (resolve_col(tb, &t[2], &field) != 0) {
+        res_err(res, MHX_ERR_NO_FIELD, "no such field: %s", t[2].text);
+        return -1;
+    }
+
+    TABLE_INDEX *ix = require_index(tb, field, t[2].text, res);
+    if (!ix) return -1;
+
+    size_t col_idx[MHX_MAX_ARGS];
+    size_t ncols = 0;
+    if (parse_output_cols(tb, t, 4, argc, col_idx, &ncols, res) != 0) return -1;
+
+    BHS *v = parse_value(&t[3]);
+    if (!v) { res_err(res, MHX_ERR_FAILED, "out of memory"); return -1; }
+
+    size_t *rows = NULL;
+    size_t nrows = 0;
+    int cr = collect_value_range(tb, ix, field, v, v, &rows, &nrows);
+    bignum_destroy(v);
+
+    if (cr != 0) { res_err(res, MHX_ERR_FAILED, "out of memory"); return -1; }
+
+    if (fill_rows(tb, res, rows, nrows, col_idx, ncols) != 0) {
+        free(rows);
+        res_err(res, MHX_ERR_FAILED, "out of memory");
+        return -1;
+    }
+    free(rows);
+
+    snprintf(out, outlen, "OK %zu row(s)", nrows);
+    return 0;
+}
+
+/* tselect <name> <col> <min> <max> [<col>...] —— 按列值闭区间查找 */
+static int cmd_tselect(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc < 5) {
+        res_err(res, MHX_ERR_BAD_USAGE,
+                "usage: tselect <name> <col> <min> <max> [<col>...]");
+        return -1;
+    }
+    BHS *obj = get_obj(t[1].text, BIGNUM_TYPE_TABLE, res);
+    if (!obj) return -1;
+
+    TABLE *tb = bignum_get_table(obj);
+    size_t field = 0;
+    if (resolve_col(tb, &t[2], &field) != 0) {
+        res_err(res, MHX_ERR_NO_FIELD, "no such field: %s", t[2].text);
+        return -1;
+    }
+
+    TABLE_INDEX *ix = require_index(tb, field, t[2].text, res);
+    if (!ix) return -1;
+
+    size_t col_idx[MHX_MAX_ARGS];
+    size_t ncols = 0;
+    if (parse_output_cols(tb, t, 5, argc, col_idx, &ncols, res) != 0) return -1;
+
+    BHS *lo = parse_value(&t[3]);
+    BHS *hi = parse_value(&t[4]);
+    if (!lo || !hi) {
+        if (lo) bignum_destroy(lo);
+        if (hi) bignum_destroy(hi);
+        res_err(res, MHX_ERR_FAILED, "out of memory");
+        return -1;
+    }
+
+    size_t *rows = NULL;
+    size_t nrows = 0;
+    int cr = collect_value_range(tb, ix, field, lo, hi, &rows, &nrows);
+    bignum_destroy(lo);
+    bignum_destroy(hi);
+
+    if (cr != 0) { res_err(res, MHX_ERR_FAILED, "out of memory"); return -1; }
+
+    if (fill_rows(tb, res, rows, nrows, col_idx, ncols) != 0) {
+        free(rows);
+        res_err(res, MHX_ERR_FAILED, "out of memory");
+        return -1;
+    }
+    free(rows);
+
+    snprintf(out, outlen, "OK %zu row(s)", nrows);
+    return 0;
+}
+
 /* ---------------- 帮助文本 ----------------
  * 命令清单的【唯一出处】。交互层（Mhuixs.c 的 :help）直接打印这个，
  * 不要在别处再抄一份 —— 抄了就会两边不一致。
@@ -1790,6 +2483,7 @@ const char *mhx_help_text(void)
 "  lget  <name> <i>                         读取下标 i\n"
 "  lset  <name> <i> <v>                     改写下标 i\n"
 "  lrem  <name> <i>                         移除下标 i，返回被移除的值\n"
+"  lrange <name> <from> <to>                读取闭区间，负下标从尾部数\n"
 "\n"
 "BITMAP\n"
 "  bset   <name> <off> <0|1>                设置某位\n"
@@ -1803,6 +2497,7 @@ const char *mhx_help_text(void)
 "  kdel <name> <key>                        删除\n"
 "  klen <name>                              键数量\n"
 "  kexists <name> <key>                     键是否存在\n"
+"  mget <name> <key> [<key>...]             一次取多个键，返回 key/value 表\n"
 "\n"
 "TABLE（col 可用列名或下标）\n"
 "  tadd  <name> [<v>...]                    追加一行\n"
@@ -1811,6 +2506,12 @@ const char *mhx_help_text(void)
 "  tdel  <name> <row>                       删除一行\n"
 "  trows <name>                             行数\n"
 "  tfields <name>                           字段列表\n"
+"  trange <name> <from> <to> [<col>...]     读取闭区间，可只取部分列\n"
+"  tindex   <name> <col>                    建/重建该列的有序索引\n"
+"  tunindex <name> <col>                    删除该列索引\n"
+"  tindexes <name>                          列出已有索引及其状态\n"
+"  tfind    <name> <col> <v> [<col>...]     按列值等值查找（需新鲜的索引）\n"
+"  tselect  <name> <col> <min> <max> [...]  按列值闭区间查找（需新鲜的索引）\n"
 "\n"
 "值语法\n"
 "  123       -> 数字\n"
@@ -1843,74 +2544,106 @@ static int json_num_literal_ok(const char *s)
     return digits && *s == '\0';
 }
 
-/* 把 src 的前 n 个字节按 JSON 字符串规则转义后追加到 dst。
+/* 把 src 的前 n 个字节按 JSON 字符串规则转义后追加到 buf。
  * 只转义 JSON 必须转义的字符，UTF-8 原样透传。 */
-static void json_escape_append(char *dst, size_t dstlen, const char *src, size_t n)
+static int json_escape_to(mhx_buf *b, const char *src, size_t n)
 {
-    size_t used = strlen(dst);
-
     for (size_t i = 0; i < n; i++) {
-        if (used + 8 >= dstlen) break;   /* 留够最坏情况（\uXXXX）的余量 */
         unsigned char c = (unsigned char)src[i];
         switch (c) {
-            case '"':  dst[used++] = '\\'; dst[used++] = '"';  break;
-            case '\\': dst[used++] = '\\'; dst[used++] = '\\'; break;
-            case '\n': dst[used++] = '\\'; dst[used++] = 'n';  break;
-            case '\r': dst[used++] = '\\'; dst[used++] = 'r';  break;
-            case '\t': dst[used++] = '\\'; dst[used++] = 't';  break;
-            case '\b': dst[used++] = '\\'; dst[used++] = 'b';  break;
-            case '\f': dst[used++] = '\\'; dst[used++] = 'f';  break;
+            case '"':  if (buf_puts(b, "\\\"")) return -1; break;
+            case '\\': if (buf_puts(b, "\\\\")) return -1; break;
+            case '\n': if (buf_puts(b, "\\n"))  return -1; break;
+            case '\r': if (buf_puts(b, "\\r"))  return -1; break;
+            case '\t': if (buf_puts(b, "\\t"))  return -1; break;
+            case '\b': if (buf_puts(b, "\\b"))  return -1; break;
+            case '\f': if (buf_puts(b, "\\f"))  return -1; break;
             default:
-                if (c < 0x20) used += (size_t)snprintf(dst + used, dstlen - used, "\\u%04x", c);
-                else          dst[used++] = (char)c;
+                if (c < 0x20) {
+                    if (buf_printf(b, "\\u%04x", c)) return -1;
+                } else {
+                    if (buf_add(b, (const char*)&c, 1)) return -1;
+                }
                 break;
         }
     }
-    dst[used] = '\0';
+    return 0;
 }
 
-static void render_json(const mhx_result *r, char *out, size_t outlen)
+/* 单元格 -> JSON 值。数值按数字字面量输出（与 MHX_V_NUM 一致）；
+ * 字符串按字符串输出，二进制内容由转义保证合法。 */
+static int json_cell_to(mhx_buf *b, const mhx_cell *c)
 {
-    out[0] = '\0';
-    append(out, outlen, "{\"ok\":%s,\"code\":\"%s\"",
-           r->ok ? "true" : "false", code_name(r->code));
+    if (c->is_null) return buf_puts(b, "null");
+    if (c->is_num && json_num_literal_ok(c->text))
+        return buf_add(b, c->text, c->len);
+
+    if (buf_puts(b, "\"")) return -1;
+    if (json_escape_to(b, c->text, c->len)) return -1;
+    return buf_puts(b, "\"");
+}
+
+static int render_json_to(const mhx_result *r, mhx_buf *b)
+{
+    if (buf_printf(b, "{\"ok\":%s,\"code\":\"%s\"",
+                   r->ok ? "true" : "false", code_name(r->code))) return -1;
 
     switch (r->val.kind) {
         case MHX_V_NULL:
-            append(out, outlen, ",\"kind\":\"null\"");
+            if (buf_puts(b, ",\"kind\":\"null\"")) return -1;
             break;
         case MHX_V_INT:
-            append(out, outlen, ",\"kind\":\"int\",\"value\":%lld", r->val.i);
+            if (buf_printf(b, ",\"kind\":\"int\",\"value\":%lld", r->val.i)) return -1;
             break;
         case MHX_V_BOOL:
-            append(out, outlen, ",\"kind\":\"bool\",\"value\":%s",
-                   r->val.b ? "true" : "false");
+            if (buf_printf(b, ",\"kind\":\"bool\",\"value\":%s",
+                           r->val.b ? "true" : "false")) return -1;
             break;
         case MHX_V_NUM:
-            append(out, outlen, ",\"kind\":\"num\",\"value\":");
+            if (buf_puts(b, ",\"kind\":\"num\",\"value\":")) return -1;
             if (json_num_literal_ok(r->val.s)) {
-                append(out, outlen, "%s", r->val.s);
+                if (buf_puts(b, r->val.s)) return -1;
             } else {
-                append(out, outlen, "\"");
-                json_escape_append(out, outlen, r->val.s, strlen(r->val.s));
-                append(out, outlen, "\"");
+                if (buf_puts(b, "\"")) return -1;
+                if (json_escape_to(b, r->val.s, strlen(r->val.s))) return -1;
+                if (buf_puts(b, "\"")) return -1;
             }
             break;
         case MHX_V_STR:
-            append(out, outlen, ",\"kind\":\"str\",\"value\":\"");
-            json_escape_append(out, outlen, r->val.s, strlen(r->val.s));
-            append(out, outlen, "\"");
+            if (buf_puts(b, ",\"kind\":\"str\",\"value\":\"")) return -1;
+            if (json_escape_to(b, r->val.s, strlen(r->val.s))) return -1;
+            if (buf_puts(b, "\"")) return -1;
             break;
         case MHX_V_LIST:
-            append(out, outlen, ",\"kind\":\"list\",\"value\":[");
+            if (buf_puts(b, ",\"kind\":\"list\",\"value\":[")) return -1;
             for (int i = 0; i < r->val.n; i++) {
-                if (i) append(out, outlen, ",");
-                append(out, outlen, "\"");
-                json_escape_append(out, outlen, r->val.items[i], strlen(r->val.items[i]));
-                append(out, outlen, "\"");
+                if (i && buf_puts(b, ",")) return -1;
+                if (buf_puts(b, "\"")) return -1;
+                if (json_escape_to(b, r->val.items[i], strlen(r->val.items[i]))) return -1;
+                if (buf_puts(b, "\"")) return -1;
             }
-            append(out, outlen, "]");
-            if (r->val.truncated) append(out, outlen, ",\"truncated\":true");
+            if (buf_puts(b, "]")) return -1;
+            if (r->val.truncated && buf_puts(b, ",\"truncated\":true")) return -1;
+            break;
+        case MHX_V_ROWS:
+            if (buf_puts(b, ",\"kind\":\"rows\",\"columns\":[")) return -1;
+            for (size_t j = 0; j < r->val.ncols; j++) {
+                if (j && buf_puts(b, ",")) return -1;
+                if (buf_puts(b, "\"")) return -1;
+                if (json_escape_to(b, r->val.cols[j], strlen(r->val.cols[j]))) return -1;
+                if (buf_puts(b, "\"")) return -1;
+            }
+            if (buf_puts(b, "],\"value\":[")) return -1;
+            for (size_t i = 0; i < r->val.nrows; i++) {
+                if (i && buf_puts(b, ",")) return -1;
+                if (buf_puts(b, "[")) return -1;
+                for (size_t j = 0; j < r->val.ncols; j++) {
+                    if (j && buf_puts(b, ",")) return -1;
+                    if (json_cell_to(b, rows_cell(r, i, j))) return -1;
+                }
+                if (buf_puts(b, "]")) return -1;
+            }
+            if (buf_puts(b, "]")) return -1;
             break;
         case MHX_V_NONE:
         default:
@@ -1921,9 +2654,93 @@ static void render_json(const mhx_result *r, char *out, size_t outlen)
     size_t tn = strlen(r->text);
     if (tn > 0 && r->text[tn - 1] == '\n') tn--;
 
-    append(out, outlen, ",\"text\":\"");
-    json_escape_append(out, outlen, r->text, tn);
-    append(out, outlen, "\"}\n");
+    if (buf_puts(b, ",\"text\":\"")) return -1;
+    if (json_escape_to(b, r->text, tn)) return -1;
+    return buf_puts(b, "\"}\n");
+}
+
+/* 文本版式的一个单元格：数字原样，字符串加引号，空单元格写成 (empty)。
+ * 换行/制表符转义，保证一行表格就是一行。 */
+static int text_cell_to(mhx_buf *b, const mhx_cell *c)
+{
+    if (c->is_null) return buf_puts(b, "(empty)");
+
+    if (c->is_num) return buf_add(b, c->text, c->len);
+
+    if (buf_puts(b, "\"")) return -1;
+    for (size_t i = 0; i < c->len; i++) {
+        unsigned char ch = (unsigned char)c->text[i];
+        switch (ch) {
+            case '"':  if (buf_puts(b, "\\\"")) return -1; break;
+            case '\\': if (buf_puts(b, "\\\\")) return -1; break;
+            case '\n': if (buf_puts(b, "\\n"))  return -1; break;
+            case '\r': if (buf_puts(b, "\\r"))  return -1; break;
+            case '\t': if (buf_puts(b, "\\t"))  return -1; break;
+            default:   if (buf_add(b, (const char*)&ch, 1)) return -1; break;
+        }
+    }
+    return buf_puts(b, "\"");
+}
+
+static int render_text_to(const mhx_result *r, mhx_buf *b)
+{
+    if (buf_puts(b, r->text) != 0) return -1;
+    if (r->val.kind != MHX_V_ROWS || r->val.nrows == 0) return 0;
+
+    if (buf_puts(b, "\n")) return -1;
+    for (size_t j = 0; j < r->val.ncols; j++) {
+        if (j && buf_puts(b, " ")) return -1;
+        if (buf_puts(b, r->val.cols[j])) return -1;
+    }
+    for (size_t i = 0; i < r->val.nrows; i++) {
+        if (buf_puts(b, "\n")) return -1;
+        for (size_t j = 0; j < r->val.ncols; j++) {
+            if (j && buf_puts(b, " ")) return -1;
+            if (text_cell_to(b, rows_cell(r, i, j))) return -1;
+        }
+    }
+    return 0;
+}
+
+/* 把渲染结果写进调用方缓冲。装不下就**报错**（ok:false / 空文本），
+ * 绝不静默截断 —— 截断的 JSON 会解析失败，调用方会以为数据就这么多。 */
+static int render_output(const mhx_result *r, char *out, size_t outlen, int json)
+{
+    mhx_buf b = { NULL, 0, 0 };
+    int rc = 0;
+
+    if (json) {
+        if (render_json_to(r, &b) != 0) rc = -1;
+    } else {
+        if (render_text_to(r, &b) != 0) rc = -1;
+    }
+
+    if (rc != 0) {
+        if (json)
+            snprintf(out, outlen,
+                     "{\"ok\":false,\"code\":\"internal\","
+                     "\"text\":\"output too large\"}\n");
+        else
+            snprintf(out, outlen, "ERR output too large");
+        buf_free(&b);
+        return -1;
+    }
+
+    if (b.len >= outlen) {
+        if (json)
+            snprintf(out, outlen,
+                     "{\"ok\":false,\"code\":\"internal\","
+                     "\"text\":\"output buffer too small (%zu bytes needed)\"}\n",
+                     b.len);
+        else
+            snprintf(out, outlen, "ERR output buffer too small (%zu bytes needed)", b.len);
+        buf_free(&b);
+        return -1;
+    }
+
+    memcpy(out, b.p ? b.p : "", b.len + 1);
+    buf_free(&b);
+    return 0;
 }
 
 /* ---------------- 分发 ---------------- */
@@ -1956,6 +2773,7 @@ static int mhx_run_tokens(token_t *toks, int argc, mhx_result *res)
     else if (!strcmp(cmd, "lget"))    rc = cmd_lget    (toks, argc, res);
     else if (!strcmp(cmd, "lset"))    rc = cmd_lset    (toks, argc, res);
     else if (!strcmp(cmd, "lrem"))    rc = cmd_lrem    (toks, argc, res);
+    else if (!strcmp(cmd, "lrange"))  rc = cmd_lrange  (toks, argc, res);
 
     else if (!strcmp(cmd, "bset"))    rc = cmd_bset    (toks, argc, res);
     else if (!strcmp(cmd, "bget"))    rc = cmd_bget    (toks, argc, res);
@@ -1967,6 +2785,7 @@ static int mhx_run_tokens(token_t *toks, int argc, mhx_result *res)
     else if (!strcmp(cmd, "kdel"))    rc = cmd_kdel    (toks, argc, res);
     else if (!strcmp(cmd, "klen"))    rc = cmd_klen    (toks, argc, res);
     else if (!strcmp(cmd, "kexists")) rc = cmd_kexists (toks, argc, res);
+    else if (!strcmp(cmd, "mget"))    rc = cmd_mget    (toks, argc, res);
 
     else if (!strcmp(cmd, "tadd"))    rc = cmd_tadd    (toks, argc, res);
     else if (!strcmp(cmd, "tget"))    rc = cmd_tget    (toks, argc, res);
@@ -1974,6 +2793,12 @@ static int mhx_run_tokens(token_t *toks, int argc, mhx_result *res)
     else if (!strcmp(cmd, "tdel"))    rc = cmd_tdel    (toks, argc, res);
     else if (!strcmp(cmd, "trows"))   rc = cmd_trows   (toks, argc, res);
     else if (!strcmp(cmd, "tfields")) rc = cmd_tfields (toks, argc, res);
+    else if (!strcmp(cmd, "trange"))  rc = cmd_trange  (toks, argc, res);
+    else if (!strcmp(cmd, "tindex"))  rc = cmd_tindex  (toks, argc, res);
+    else if (!strcmp(cmd, "tunindex"))rc = cmd_tunindex(toks, argc, res);
+    else if (!strcmp(cmd, "tindexes"))rc = cmd_tindexes(toks, argc, res);
+    else if (!strcmp(cmd, "tfind"))   rc = cmd_tfind   (toks, argc, res);
+    else if (!strcmp(cmd, "tselect")) rc = cmd_tselect (toks, argc, res);
 
     else {
         res_err(res, MHX_ERR_UNKNOWN_CMD, "unknown command: %s", cmd);
@@ -1998,11 +2823,12 @@ static int mhx_run(const char *line, mhx_result *res)
     return mhx_run_tokens(toks, argc, res);
 }
 
-/* 把结果按请求的版式写进 out。两个入口共用，避免版式分叉。 */
-static void render_result(const mhx_result *res, char *out, size_t outlen, int json)
+/* 把结果按请求的版式写进 out，并释放表格返回值。
+ * 两个入口共用，避免版式分叉。 */
+static void render_result(mhx_result *res, char *out, size_t outlen, int json)
 {
-    if (json) render_json(res, out, outlen);
-    else      snprintf(out, outlen, "%s", res->text);
+    render_output(res, out, outlen, json);
+    res_free(res);
 }
 
 int mhx_execute(const char *line, char *out, size_t outlen)
@@ -2013,8 +2839,9 @@ int mhx_execute(const char *line, char *out, size_t outlen)
     mhx_result res;
     int rc = mhx_run(line, &res);
 
-    render_result(&res, out, outlen, 0);
-    return rc;
+    int rr = render_output(&res, out, outlen, 0);
+    res_free(&res);
+    return (rc == 0 && rr != 0) ? -1 : rc;
 }
 
 int mhx_execute_json(const char *line, char *out, size_t outlen)
@@ -2025,8 +2852,84 @@ int mhx_execute_json(const char *line, char *out, size_t outlen)
     mhx_result res;
     int rc = mhx_run(line, &res);
 
-    render_result(&res, out, outlen, 1);
+    int rr = render_output(&res, out, outlen, 1);
+    res_free(&res);
+    return (rc == 0 && rr != 0) ? -1 : rc;
+}
+
+/* 渲染到 malloc 的缓冲区，所有权交给调用方。
+ * 返回执行码；渲染失败或内存不足返回 -1 且 *out 为 NULL。 */
+static int finish_alloc(mhx_result *res, char **out, int rc, int json)
+{
+    mhx_buf b = { NULL, 0, 0 };
+
+    int r = json ? render_json_to(res, &b) : render_text_to(res, &b);
+    if (r != 0 || !b.p) {
+        buf_free(&b);
+        res_free(res);
+        return -1;
+    }
+
+    *out = b.p;
+    res_free(res);
     return rc;
+}
+
+/* 与 mhx_execute / mhx_execute_json 同语义，但输出不设上限。
+ * 范围读取的结果可能远大于固定缓冲，走这条路。 */
+int mhx_execute_alloc(const char *line, char **out, int json)
+{
+    if (!line || !out) return -1;
+    *out = NULL;
+
+    mhx_result res;
+    int rc = mhx_run(line, &res);
+    return finish_alloc(&res, out, rc, json);
+}
+
+/* 参数已切好、输出不设上限的入口。json 决定版式，与固定缓冲版一致。 */
+int mhx_execute_argv_alloc(int argc, const struct mhx_arg *args, char **out, int json)
+{
+    if (argc < 0 || (argc > 0 && !args) || !out) return -1;
+    *out = NULL;
+
+    mhx_result res;
+
+    if (argc > MAX_TOKENS) {
+        res_init(&res);
+        res_err(&res, MHX_ERR_INTERNAL, "too many arguments (max %d)", MAX_TOKENS);
+        return finish_alloc(&res, out, -1, json);
+    }
+
+    token_t toks[MAX_TOKENS];
+    for (int i = 0; i < argc; i++) {
+        const struct mhx_arg *a = &args[i];
+
+        if (a->len > MAX_TOKEN_LEN - 1) {
+            res_init(&res);
+            res_err(&res, MHX_ERR_INTERNAL,
+                    "argument %d too long (%zu bytes, max %d)",
+                    i, a->len, MAX_TOKEN_LEN - 1);
+            return finish_alloc(&res, out, -1, json);
+        }
+        if (a->len > 0 && !a->p) {
+            res_init(&res);
+            res_err(&res, MHX_ERR_INTERNAL, "argument %d is null", i);
+            return finish_alloc(&res, out, -1, json);
+        }
+        if (a->len > 0 && memchr(a->p, '\0', a->len)) {
+            res_init(&res);
+            res_err(&res, MHX_ERR_INTERNAL, "argument %d contains NUL", i);
+            return finish_alloc(&res, out, -1, json);
+        }
+
+        memcpy(toks[i].text, a->p, a->len);
+        toks[i].text[a->len] = '\0';
+        toks[i].quoted = a->quoted;
+    }
+
+    int rc = mhx_run_tokens(toks, argc, &res);
+    return finish_alloc(&res, out, rc, json);
 }
 
 int mhx_execute_argv(int argc, const struct mhx_arg *args,
@@ -2111,11 +3014,23 @@ void mhx_json_text(char *dst, size_t dstlen, int ok, const char *code, const cha
     if (!dst || dstlen == 0) return;
     dst[0] = '\0';
 
-    append(dst, dstlen, "{\"ok\":%s,\"code\":\"%s\",\"text\":\"",
-           ok ? "true" : "false",
-           code ? code : (ok ? "ok" : "failed"));
+    mhx_buf b = { NULL, 0, 0 };
+    if (buf_printf(&b, "{\"ok\":%s,\"code\":\"%s\",\"text\":\"",
+                   ok ? "true" : "false",
+                   code ? code : (ok ? "ok" : "failed")) != 0 ||
+        (text && json_escape_to(&b, text, strlen(text)) != 0) ||
+        buf_puts(&b, "\"}\n") != 0) {
+        buf_free(&b);
+        snprintf(dst, dstlen, "{\"ok\":false,\"code\":\"internal\"}\n");
+        return;
+    }
 
-    if (text) json_escape_append(dst, dstlen, text, strlen(text));
+    if (b.len >= dstlen) {
+        buf_free(&b);
+        snprintf(dst, dstlen, "{\"ok\":false,\"code\":\"internal\"}\n");
+        return;
+    }
 
-    append(dst, dstlen, "\"}\n");
+    memcpy(dst, b.p, b.len + 1);
+    buf_free(&b);
 }

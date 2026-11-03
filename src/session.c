@@ -191,6 +191,75 @@ mhx_sess_status mhx_session_feed(mhx_session *s, int argc,
     return run_command(s, argc, args, out, outlen);
 }
 
+/* ---------------- 不设上限的入口 ---------------- */
+
+static char *dup_text(const char *s)
+{
+    size_t n = strlen(s) + 1;
+    char *p = (char*)malloc(n);
+    if (p) memcpy(p, s, n);
+    return p;
+}
+
+static mhx_sess_status run_command_alloc(mhx_session *s, int argc,
+                                         const struct mhx_arg *args, char **out)
+{
+    /* 网络会话恒用 JSON，本地会话跟随 :format —— 与 run_command 同一口径 */
+    int json = s->is_server ? 1 : s->json_mode;
+
+    mhx_exec_lock();
+    int rc = mhx_execute_argv_alloc(argc, args, out, json);
+    mhx_exec_unlock();
+    return rc == 0 ? MHX_SESS_OK : MHX_SESS_ERR;
+}
+
+static mhx_sess_status feed_meta_alloc(mhx_session *s, int argc,
+                                       const struct mhx_arg *args,
+                                       const char *raw, char **out)
+{
+    /* 元命令的输出都是短文本（帮助全文目前不到 8KB），用固定暂存即可 */
+    char tmp[16384];
+    mhx_sess_status st = feed_meta(s, argc, args, raw, tmp, sizeof(tmp));
+    *out = dup_text(tmp);
+    return st;
+}
+
+mhx_sess_status mhx_session_feed_alloc(mhx_session *s, int argc,
+                                       const struct mhx_arg *args,
+                                       const char *meta_raw, char **out)
+{
+    if (!out) return MHX_SESS_OK;
+    *out = NULL;
+    if (!s) { *out = dup_text(""); return MHX_SESS_OK; }
+
+    if (argc <= 0) { *out = dup_text(""); return MHX_SESS_OK; }
+
+    if (args[0].len > 0 && args[0].p[0] == ':')
+        return feed_meta_alloc(s, argc, args, meta_raw, out);
+
+    return run_command_alloc(s, argc, args, out);
+}
+
+mhx_sess_status mhx_session_feed_line_alloc(mhx_session *s, const char *line,
+                                            char **out)
+{
+    if (!out) return MHX_SESS_OK;
+    *out = NULL;
+    if (!s || !line) { *out = dup_text(""); return MHX_SESS_OK; }
+
+    const int is_meta_line = (line[0] == ':');
+
+    char storage[LINE_STORAGE];
+    struct mhx_arg args[MHX_MAX_ARGS];
+    int argc = mhx_split_line(line, storage, sizeof(storage), args, MHX_MAX_ARGS);
+
+    if (argc <= 0) { *out = dup_text(""); return MHX_SESS_OK; }
+
+    if (is_meta_line) return feed_meta_alloc(s, argc, args, line, out);
+
+    return run_command_alloc(s, argc, args, out);
+}
+
 mhx_sess_status mhx_session_feed_line(mhx_session *s, const char *line,
                                       char *out, size_t outlen)
 {

@@ -21,9 +21,11 @@ JSON 契约（调用方只需依赖这几个字段；文案随时可能改，不
     ok      bool    与返回码一致。判断成功失败只看它。
     code    string  稳定 token，见下表。失败时据此分支。
     kind    string  成功且命令有返回值时出现：
-                    "int" | "num" | "str" | "bool" | "null" | "list"
+                    "int" | "num" | "str" | "bool" | "null" | "list" | "rows"
     value   任意    随 kind：num 是 JSON 数字字面量（保留任意精度），
-                    list 是字符串数组（超过 32 项时附 "truncated":true）
+                    list 是字符串数组（超过 32 项时附 "truncated":true），
+                    rows 是二维数组（另带 "columns" 列名数组，
+                    行数不设上限；空单元格是 null）
     text    string  同一命令在文本模式下的输出（仅去掉末尾一个换行）。
                     它是所有命令都有的兜底：即使某个命令还没提供结构化
                     返回值，信息也不会丢，LLM 调用方可以直接读 text。
@@ -57,6 +59,16 @@ int mhx_execute(const char *line, char *out, size_t outlen);
 int mhx_execute_json(const char *line, char *out, size_t outlen);
 
 /*
+ * 输出不设上限的入口。
+ *
+ * 上面的固定缓冲版在结果装不下时**报错**（不会静默截断）；范围读取
+ * （trange / lrange / mget）的结果大小由数据决定，所以网络前端、交互
+ * 前端和脚本前端改走这两个入口：*out 是 malloc 出来的整份输出，
+ * 调用方负责 free。返回码语义与对应固定缓冲版完全一致。
+ */
+int mhx_execute_alloc(const char *line, char **out, int json);
+
+/*
  * 一条命令的参数上限，以及单个参数的长度上限（不含结尾 NUL）。
  * 协议层和会话层都按这两个值设界 —— 它们必须跟着命令层走，
  * 数字只在这里定义一次。
@@ -88,6 +100,10 @@ struct mhx_arg {
 
 int mhx_execute_argv(int argc, const struct mhx_arg *args,
                      char *out, size_t outlen, int json);
+
+/* 同 mhx_execute_argv，但输出不设上限：*out 由 malloc 分配，调用方 free。 */
+int mhx_execute_argv_alloc(int argc, const struct mhx_arg *args,
+                           char **out, int json);
 
 /*
  * 把一段纯文本包成 JSON 文档：{"ok":<ok>,"code":"<code>","text":"<已转义>"}

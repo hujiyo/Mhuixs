@@ -1,5 +1,8 @@
 #include "tblh.h"
 
+/* 列索引的内部辅助（定义在文件末尾） */
+static void table_index_clear(TABLE* table);
+
 TABLE* create_table(int* types, mstring* field_names, size_t field_num, mstring table_name){
     //先验证参数是否合法
     if(types==NULL || field_names==NULL || field_num==0 || table_name==NULL){
@@ -26,6 +29,9 @@ TABLE* create_table(int* types, mstring* field_names, size_t field_num, mstring 
     table->field_num = field_num;
     table->line_num = 0;//当前0行
     table->capacity = INCREASE_LINES_NUM;//预分配容量
+    table->idx = NULL;
+    table->idx_num = 0;
+    table->idx_cap = 0;
     
     //申请索引数组内存
     table->logic_index = (size_t*)malloc(sizeof(size_t) * INCREASE_LINES_NUM);
@@ -107,6 +113,11 @@ TABLE* table_copy(const TABLE* other){
     table->capacity = 0;
     table->logic_index = NULL;
     table->memory_index = NULL;
+    table->idx = NULL;
+    table->idx_num = 0;
+    table->idx_cap = 0;
+    /* 列索引不随深拷贝带走：副本从没有索引的状态开始，
+     * 调用方需要时自己重建，避免复制一份可能已经 stale 的排序数组 */
 
     if(other->name != NULL){
         table->name = mstr_copy(other->name);
@@ -237,6 +248,7 @@ int add_record(TABLE* table, Obj* values, size_t num){
     table->memory_index[current_line] = table->line_num;//新的物理行对应新的逻辑行
     
     table->line_num++;
+    table_index_invalidate(table);
     return 0;//成功
 }
 
@@ -281,6 +293,7 @@ int rm_record(TABLE* table, size_t logic_index){
         table->memory_index[table->logic_index[i]] = i;
     }
     table->line_num--;//减少行数
+    table_index_invalidate(table);
     return 0;//成功
 }
 
@@ -313,7 +326,11 @@ int rm_field(TABLE* table, size_t field_index){
     }
     //减少字段数
     table->field_num--;
-    
+
+    /* 列下标在删除后会整体前移，旧索引记录的 field 已不再对应原列，
+     * 直接全部丢弃，比逐个修正可靠 */
+    table_index_clear(table);
+
     //如果字段数为0，释放字段数组
     if(table->field_num == 0){
         free(table->field);
@@ -379,6 +396,7 @@ int swap_record(TABLE* table, size_t logic_index1, size_t logic_index2){
     //更新反向索引
     table->memory_index[table->logic_index[logic_index1]] = logic_index1;
     table->memory_index[table->logic_index[logic_index2]] = logic_index2;
+    table_index_invalidate(table);
     return 0;
 }
 
@@ -394,6 +412,7 @@ int swap_field(TABLE* table, size_t field_index1, size_t field_index2){
     //更新交换后字段的column_index
     table->field[field_index1].column_index = field_index1;
     table->field[field_index2].column_index = field_index2;
+    table_index_clear(table);
     return 0;
 }
 
@@ -414,6 +433,7 @@ int set_value(TABLE* table, size_t idx_x, size_t idx_y, Obj content){
         bignum_destroy(*slot);
     }
     *slot = content;  /* 所有权转移 */
+    table_index_invalidate(table);
     return 0;
 }
 
@@ -464,6 +484,7 @@ void free_table(TABLE* table){
     if(table->memory_index != NULL){
         free(table->memory_index);
     }
+    table_index_clear(table);
     //释放表名（所有权转移）
     if(table->name != NULL){
         free(table->name);
@@ -513,6 +534,7 @@ void clear_table(TABLE* table){
         table->logic_index[i] = i;
         table->memory_index[i] = i;
     }
+    table_index_clear(table);
 }
 
 size_t get_record_count(TABLE* table){
@@ -540,6 +562,7 @@ int update_record(TABLE* table, size_t logic_index, Obj* values, size_t num){
             *slot = values[i];
         }
     }
+    table_index_invalidate(table);
     return 0;//成功
 }
 
@@ -556,4 +579,141 @@ Obj* get_record(TABLE* table, size_t logic_index){
         record[i] = table->field[i].data[physical_line];
     }
     return record;
+}
+
+/* ---------------- 列索引 ---------------- */
+
+static int index_cmp(TABLE* table, size_t field, size_t a, size_t b)
+{
+    return bignum_compare(get_value(table, a, field), get_value(table, b, field));
+}
+
+/* 归并排序。qsort 的 comparator 拿不到"按哪一列比较"的上下文，
+ * 用全局变量在多线程下就错了，所以这里自己实现一个带上下文的版本。 */
+static void merge_sort_rows(TABLE* table, size_t field,
+                            size_t* a, size_t* tmp, size_t n)
+{
+    if (n < 2) return;
+
+    size_t mid = n / 2;
+    merge_sort_rows(table, field, a, tmp, mid);
+    merge_sort_rows(table, field, a + mid, tmp, n - mid);
+
+    size_t i = 0, j = mid, k = 0;
+    while (i < mid && j < n) {
+        if (index_cmp(table, field, a[i], a[j]) <= 0) tmp[k++] = a[i++];
+        else                                         tmp[k++] = a[j++];
+    }
+    while (i < mid) tmp[k++] = a[i++];
+    while (j < n)   tmp[k++] = a[j++];
+
+    memcpy(a, tmp, sizeof(size_t) * n);
+}
+
+/* 找某列的索引槽位；create 时没有就追加一个空槽 */
+static TABLE_INDEX* index_slot(TABLE* table, size_t field, int create)
+{
+    for (size_t i = 0; i < table->idx_num; i++)
+        if (table->idx[i].field == field) return &table->idx[i];
+
+    if (!create) return NULL;
+
+    if (table->idx_num == table->idx_cap) {
+        size_t ncap = table->idx_cap ? table->idx_cap * 2 : 4;
+        TABLE_INDEX* ni = (TABLE_INDEX*)realloc(table->idx, sizeof(TABLE_INDEX) * ncap);
+        if (ni == NULL) return NULL;
+        table->idx = ni;
+        table->idx_cap = ncap;
+    }
+
+    TABLE_INDEX* ix = &table->idx[table->idx_num++];
+    ix->field = field;
+    ix->order = NULL;
+    ix->n = 0;
+    ix->stale = 0;
+    return ix;
+}
+
+static void table_index_clear(TABLE* table)
+{
+    if (table == NULL) return;
+
+    if (table->idx != NULL) {
+        for (size_t i = 0; i < table->idx_num; i++) free(table->idx[i].order);
+        free(table->idx);
+    }
+    table->idx = NULL;
+    table->idx_num = 0;
+    table->idx_cap = 0;
+}
+
+int table_index_build(TABLE* table, size_t field)
+{
+    if (table == NULL || field >= table->field_num) return -1;
+
+    size_t n = table->line_num;
+    size_t* order = NULL;
+    size_t* tmp = NULL;
+
+    if (n > 0) {
+        order = (size_t*)malloc(sizeof(size_t) * n);
+        if (order == NULL) return -1;
+
+        for (size_t i = 0; i < n; i++) order[i] = i;
+
+        if (n > 1) {
+            tmp = (size_t*)malloc(sizeof(size_t) * n);
+            if (tmp == NULL) { free(order); return -1; }
+            merge_sort_rows(table, field, order, tmp, n);
+            free(tmp);
+        }
+    }
+
+    TABLE_INDEX* ix = index_slot(table, field, 1);
+    if (ix == NULL) { free(order); return -1; }
+
+    free(ix->order);
+    ix->order = order;
+    ix->n = n;
+    ix->stale = 0;
+    return 0;
+}
+
+int table_index_drop(TABLE* table, size_t field)
+{
+    if (table == NULL) return -1;
+
+    for (size_t i = 0; i < table->idx_num; i++) {
+        if (table->idx[i].field != field) continue;
+
+        free(table->idx[i].order);
+        for (size_t j = i; j + 1 < table->idx_num; j++)
+            table->idx[j] = table->idx[j + 1];
+        table->idx_num--;
+        return 0;
+    }
+    return -1;
+}
+
+void table_index_invalidate(TABLE* table)
+{
+    if (table == NULL || table->idx == NULL) return;
+    for (size_t i = 0; i < table->idx_num; i++) table->idx[i].stale = 1;
+}
+
+TABLE_INDEX* table_index_get(TABLE* table, size_t field)
+{
+    if (table == NULL) return NULL;
+    return index_slot(table, field, 0);
+}
+
+size_t table_index_count(const TABLE* table)
+{
+    return table == NULL ? 0 : table->idx_num;
+}
+
+TABLE_INDEX* table_index_at(TABLE* table, size_t i)
+{
+    if (table == NULL || i >= table->idx_num) return NULL;
+    return &table->idx[i];
 }
