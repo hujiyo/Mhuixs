@@ -302,10 +302,24 @@ def _fail_text(result):
     return "ERR %s" % body
 
 
+def _cell_text(value):
+    """表格单元格的纯文本：空格子写成 (empty)，其余按 Python 的 str 呈现。"""
+    if value is None:
+        return "(empty)"
+    return str(value)
+
+
 def _render_value(result):
     kind = result.get("kind")
     value = result.get("value")
 
+    if kind == "rows":
+        columns = result.get("columns") or []
+        rows = value or []
+        lines = ["\t".join(columns)]
+        for row in rows:
+            lines.append("\t".join(_cell_text(v) for v in row))
+        return "\n".join(lines)
     if kind == "list":
         items = [str(v) for v in (value or [])]
         if items and result.get("truncated"):

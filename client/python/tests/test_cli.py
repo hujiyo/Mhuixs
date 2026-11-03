@@ -92,6 +92,16 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(render({"ok": True, "kind": "null",
                                  "text": "OK (empty)"}, "value"), ("", True))
 
+    def test_value_mode_rows(self):
+        result = {"ok": True, "kind": "rows", "columns": ["d", "name"],
+                  "value": [[1, "a"], [2, None]], "text": "OK 2 row(s)"}
+        self.assertEqual(render(result, "value"),
+                         ("d\tname\n1\ta\n2\t(empty)", True))
+
+        empty = {"ok": True, "kind": "rows", "columns": ["d", "name"],
+                 "value": [], "text": "OK 0 row(s)"}
+        self.assertEqual(render(empty, "value"), ("d\tname", True))
+
     def test_pretty_and_text(self):
         result = {"ok": True, "kind": "int", "value": 2, "text": "OK 2"}
         self.assertEqual(render(result, "pretty"), ("OK 2", True))
