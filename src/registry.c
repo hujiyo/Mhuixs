@@ -158,6 +158,112 @@ void reg_unregister_hook(const char* name) {
     if (hook) hook_destroy(hook);
 }
 
+/*
+ * 改名。先按新名字写入，再摘掉旧名字 —— 这样改名在注册表里是
+ * "一步换掉"的：读方要么看到旧名字，要么看到新名字，不会两者都没有。
+ * new_name 已存在时，它原来的 HOOK 从表中摘除并交还给调用方销毁。
+ */
+int reg_rename_hook(const char* old_name, const char* new_name, HOOK** replaced) {
+    if (replaced) *replaced = NULL;
+    if (!old_name || !new_name || !*old_name || !*new_name) return -1;
+    if (strcmp(old_name, new_name) == 0) {
+        return reg_is_registered(old_name) ? 0 : 1;
+    }
+
+    mstring mnew = mstr((char*)new_name);
+    if (!mnew) return -1;
+
+    reg_lock();
+
+    HOOK* hook = (HOOK*)hash_get(Reg.hook_map, old_name);
+    if (!hook) {
+        reg_unlock();
+        mstr_free(mnew);
+        return 1;
+    }
+
+    HOOK* clash = (HOOK*)hash_get(Reg.hook_map, new_name);
+
+    /* 新名字不存在时表会多一条，先预留容量，避免 put 途中扩容失败 */
+    if (hash_reserve(Reg.hook_map, hash_size(Reg.hook_map) + 1) != 0) {
+        reg_unlock();
+        mstr_free(mnew);
+        return -1;
+    }
+    if (hash_put(Reg.hook_map, new_name, hook) != 0) {
+        reg_unlock();
+        mstr_free(mnew);
+        return -1;
+    }
+
+    /* put 成功之后旧名字一定还在，这一步不会失败 */
+    hash_remove(Reg.hook_map, old_name);
+
+    mstr_free(hook->name);
+    hook->name = mnew;
+
+    reg_unlock();
+
+    if (replaced) *replaced = clash;
+    return 0;
+}
+
+/* 交换两个钩子的名字。键集合不变，不需要扩容。 */
+int reg_swap_hooks(const char* first, const char* second) {
+    if (!first || !second || !*first || !*second) return -1;
+    if (strcmp(first, second) == 0) {
+        return reg_is_registered(first) ? 0 : 1;
+    }
+
+    mstring mfirst  = mstr((char*)first);
+    mstring msecond = mstr((char*)second);
+    if (!mfirst || !msecond) {
+        mstr_free(mfirst);
+        mstr_free(msecond);
+        return -1;
+    }
+
+    reg_lock();
+
+    HOOK* a = (HOOK*)hash_get(Reg.hook_map, first);
+    HOOK* b = (HOOK*)hash_get(Reg.hook_map, second);
+    if (!a) {
+        reg_unlock();
+        mstr_free(mfirst);
+        mstr_free(msecond);
+        return 1;
+    }
+    if (!b) {
+        reg_unlock();
+        mstr_free(mfirst);
+        mstr_free(msecond);
+        return 2;
+    }
+
+    if (hash_put(Reg.hook_map, first, b) != 0) {
+        reg_unlock();
+        mstr_free(mfirst);
+        mstr_free(msecond);
+        return -1;
+    }
+    if (hash_put(Reg.hook_map, second, a) != 0) {
+        /* 第一次写入成功、第二次失败：把第一条改回去，维持一致 */
+        hash_put(Reg.hook_map, first, a);
+        reg_unlock();
+        mstr_free(mfirst);
+        mstr_free(msecond);
+        return -1;
+    }
+
+    mstr_free(a->name);
+    a->name = msecond;   /* a 现在叫 second */
+    mstr_free(b->name);
+    b->name = mfirst;    /* b 现在叫 first */
+
+    reg_unlock();
+    return 0;
+}
+
 /* 按指针身份摘除（只摘除，不释放）。名字要先拷出来，
  * 因为 hash_remove 会释放表内存储的那个键。 */
 void reg_detach_hook(HOOK* hook) {

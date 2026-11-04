@@ -290,6 +290,94 @@ static void test_table(void)
     printf("  TABLE 基础功能与深拷贝：通过\n\n");
 }
 
+/* 索引必须随写入保持正确：按值有序、行号集合完整、状态为 fresh。 */
+static int index_is_consistent(TABLE *t, size_t field)
+{
+    TABLE_INDEX *ix = table_index_get(t, field);
+    size_t n = get_record_count(t);
+
+    if (!ix || ix->stale || ix->n != n) return 0;
+
+    for (size_t i = 1; i < n; i++) {
+        if (bignum_compare(get_value(t, ix->order[i - 1], field),
+                           get_value(t, ix->order[i], field)) > 0)
+            return 0;
+    }
+
+    /* 每个逻辑行号恰好出现一次 */
+    unsigned char *seen = (unsigned char*)calloc(n ? n : 1, 1);
+    if (!seen) return 0;
+
+    int ok = 1;
+    for (size_t i = 0; i < n; i++) {
+        if (ix->order[i] >= n || seen[ix->order[i]]) { ok = 0; break; }
+        seen[ix->order[i]] = 1;
+    }
+
+    free(seen);
+    return ok;
+}
+
+static void test_table_index(void)
+{
+    printf("=== TABLE 索引维护 ===\n");
+
+    int types[2] = { BIGNUM_TYPE_NUMBER, BIGNUM_TYPE_STRING };
+    mstring names[2];
+    names[0] = mstr("id");
+    names[1] = mstr("name");
+    TABLE *t = create_table(types, names, 2, mstr("idx"));
+    CHECK(t != NULL, "create_table");
+
+    const char *ids[] = { "3", "1", "2", "1" };
+    const char *nms[] = { "c", "a", "b", "a2" };
+    for (int i = 0; i < 4; i++) {
+        Obj row[2] = { num(ids[i]), str(nms[i]) };
+        CHECK(add_record(t, row, 2) == 0, "add row");
+    }
+
+    CHECK(table_index_build(t, 0) == 0, "build index");
+    CHECK(index_is_consistent(t, 0), "build 后索引一致");
+
+    /* 追加：新行必须被插进有序位置 */
+    {
+        Obj extra = num("0");
+        CHECK(add_record(t, &extra, 1) == 0, "append 0");
+        CHECK(index_is_consistent(t, 0), "追加后索引一致");
+    }
+
+    /* 改单元格：只有被改的列需要维护 */
+    {
+        Obj v = num("9");
+        CHECK(set_value(t, 0, 0, v) == 0, "set id = 9");
+        CHECK(index_is_consistent(t, 0), "改值后索引一致");
+
+        Obj nv = str("zzz");
+        CHECK(set_value(t, 0, 1, nv) == 0, "set name = zzz");
+        CHECK(index_is_consistent(t, 0), "改无关列后索引仍一致");
+    }
+
+    /* 删行：后面的逻辑行号整体前移 */
+    CHECK(rm_record(t, 1) == 0, "remove row 1");
+    CHECK(index_is_consistent(t, 0), "删行后索引一致");
+
+    /* 换行：两个逻辑行的内容互换 */
+    CHECK(swap_record(t, 0, get_record_count(t) - 1) == 0, "swap rows");
+    CHECK(index_is_consistent(t, 0), "换行后索引一致");
+
+    /* 重复值也要能正确重排 */
+    {
+        Obj a = num("5");
+        Obj b = num("5");
+        CHECK(add_record(t, &a, 1) == 0, "append dup 5");
+        CHECK(add_record(t, &b, 1) == 0, "append dup 5");
+        CHECK(index_is_consistent(t, 0), "重复值后索引一致");
+    }
+
+    free_table(t);
+    printf("  TABLE 索引随写入维护：通过\n\n");
+}
+
 int main(void)
 {
     printf("============\n");
@@ -301,6 +389,7 @@ int main(void)
     test_decimal();
     test_bitmap();
     test_table();
+    test_table_index();
 
     printf("============\n");
     if (fails == 0) printf("全部通过\n");

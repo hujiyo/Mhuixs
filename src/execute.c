@@ -594,6 +594,60 @@ static int cmd_drop(token_t *t, int argc, mhx_result *res)
     return 0;
 }
 
+/* rename <old> <new> —— 改名；new 已存在时覆盖它 */
+static int cmd_rename(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc != 3) { res_err(res, MHX_ERR_BAD_USAGE, "usage: rename <old> <new>"); return -1; }
+
+    HOOK *replaced = NULL;
+    int r = reg_rename_hook(t[1].text, t[2].text, &replaced);
+
+    if (r == 1) {
+        res_err(res, MHX_ERR_NO_HOOK, "no such hook: %s", t[1].text);
+        return -1;
+    }
+    if (r != 0) {
+        res_err(res, MHX_ERR_FAILED, "rename failed");
+        return -1;
+    }
+
+    /* 被覆盖的钩子已经不在注册表里，这里负责释放它的数据 */
+    int had_replaced = (replaced != NULL);
+    if (replaced) hook_destroy(replaced);
+
+    snprintf(out, outlen, "OK renamed '%s' -> '%s'%s",
+             t[1].text, t[2].text,
+             had_replaced ? " (replaced existing)" : "");
+    return 0;
+}
+
+/* swap <a> <b> —— 交换两个钩子的名字 */
+static int cmd_swap(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc != 3) { res_err(res, MHX_ERR_BAD_USAGE, "usage: swap <a> <b>"); return -1; }
+
+    int r = reg_swap_hooks(t[1].text, t[2].text);
+    if (r == 1) {
+        res_err(res, MHX_ERR_NO_HOOK, "no such hook: %s", t[1].text);
+        return -1;
+    }
+    if (r == 2) {
+        res_err(res, MHX_ERR_NO_HOOK, "no such hook: %s", t[2].text);
+        return -1;
+    }
+    if (r != 0) {
+        res_err(res, MHX_ERR_FAILED, "swap failed");
+        return -1;
+    }
+
+    snprintf(out, outlen, "OK swapped '%s' <-> '%s'", t[1].text, t[2].text);
+    return 0;
+}
+
 static int cmd_type(token_t *t, int argc, mhx_result *res)
 {
     char *out = res->text;
@@ -2054,6 +2108,144 @@ static int cmd_tdel(token_t *t, int argc, mhx_result *res)
     return 0;
 }
 
+/* tupsert <name> <keycol> <key> [<col> <value>]...
+ * 按 keycol == key 找一行：找到就更新给定列，找不到就追加一行。
+ * 重复键只更新找到的那一行；键的唯一性由调用方保证。
+ * keycol 上有新鲜索引时走索引，否则退化为全表扫描。 */
+static int cmd_tupsert(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc < 4 || ((argc - 4) % 2) != 0) {
+        res_err(res, MHX_ERR_BAD_USAGE,
+                "usage: tupsert <name> <keycol> <key> [<col> <value>]...");
+        return -1;
+    }
+    BHS *obj = get_obj(t[1].text, BIGNUM_TYPE_TABLE, res);
+    if (!obj) return -1;
+
+    TABLE *tb = bignum_get_table(obj);
+
+    size_t keycol = 0;
+    if (resolve_col(tb, &t[2], &keycol) != 0) {
+        res_err(res, MHX_ERR_NO_FIELD, "no such field: %s", t[2].text);
+        return -1;
+    }
+
+    TABLE_INDEX *ix = table_index_get(tb, keycol);
+    if (ix && ix->stale) {
+        res_err(res, MHX_ERR_INDEX_STALE,
+                "index on column '%s' is stale (rebuild with: tindex <name> %s)",
+                t[2].text, t[2].text);
+        return -1;
+    }
+
+    BHS *key = parse_value(&t[3]);
+    if (!key) { res_err(res, MHX_ERR_FAILED, "out of memory"); return -1; }
+
+    int npairs = (argc - 4) / 2;
+    size_t cols[MHX_MAX_ARGS];
+    BHS *vals[MHX_MAX_ARGS];
+
+    /* 先把列名和值全部解析完，再动表：中途失败不会留下半行更新 */
+    for (int i = 0; i < npairs; i++) {
+        if (resolve_col(tb, &t[4 + i * 2], &cols[i]) != 0) {
+            res_err(res, MHX_ERR_NO_FIELD, "no such field: %s", t[4 + i * 2].text);
+            for (int j = 0; j < i; j++) bignum_destroy(vals[j]);
+            bignum_destroy(key);
+            return -1;
+        }
+        vals[i] = parse_value(&t[5 + i * 2]);
+        if (!vals[i]) {
+            for (int j = 0; j < i; j++) bignum_destroy(vals[j]);
+            bignum_destroy(key);
+            res_err(res, MHX_ERR_FAILED, "out of memory");
+            return -1;
+        }
+    }
+
+    /* 查找：有索引走二分，没有就全表扫描 */
+    long long found = -1;
+    int used_index = (ix != NULL);
+
+    if (ix) {
+        size_t lo = 0, hi = ix->n;
+        while (lo < hi) {
+            size_t mid = lo + (hi - lo) / 2;
+            if (bignum_compare(get_value(tb, ix->order[mid], keycol), key) < 0)
+                lo = mid + 1;
+            else
+                hi = mid;
+        }
+        if (lo < ix->n) {
+            size_t row = ix->order[lo];
+            if (bignum_compare(get_value(tb, row, keycol), key) == 0)
+                found = (long long)row;
+        }
+    } else {
+        size_t n = get_record_count(tb);
+        for (size_t r = 0; r < n; r++) {
+            if (bignum_compare(get_value(tb, r, keycol), key) == 0) {
+                found = (long long)r;
+                break;
+            }
+        }
+    }
+
+    if (found >= 0) {
+        for (int i = 0; i < npairs; i++) {
+            /* 成功即交出所有权；失败时 set_value 不消费 */
+            if (set_value(tb, (size_t)found, cols[i], vals[i]) != 0) {
+                for (int j = i; j < npairs; j++) bignum_destroy(vals[j]);
+                bignum_destroy(key);
+                res_err(res, MHX_ERR_FAILED, "update failed");
+                return -1;
+            }
+            vals[i] = NULL;
+        }
+        bignum_destroy(key);
+
+        obj->length = get_record_count(tb);
+        snprintf(out, outlen, "OK tupsert %s, updated row %lld%s",
+                 t[1].text, found, used_index ? "" : " (full scan)");
+        res_value_int(res, 0);
+        return 0;
+    }
+
+    /* 没找到：追加一行，没给的列留空 */
+    size_t nf = get_field_count(tb);
+    Obj *row = (Obj*)calloc(nf, sizeof(Obj));
+    if (!row) {
+        for (int i = 0; i < npairs; i++) bignum_destroy(vals[i]);
+        bignum_destroy(key);
+        res_err(res, MHX_ERR_FAILED, "out of memory");
+        return -1;
+    }
+
+    row[keycol] = key;   /* 所有权转移 */
+    key = NULL;
+    for (int i = 0; i < npairs; i++) {
+        size_t c = cols[i];
+        if (row[c] != NULL) bignum_destroy(row[c]);
+        row[c] = vals[i];  /* 所有权转移 */
+        vals[i] = NULL;
+    }
+
+    if (add_record(tb, row, nf) != 0) {
+        for (size_t c = 0; c < nf; c++) if (row[c]) bignum_destroy(row[c]);
+        free(row);
+        res_err(res, MHX_ERR_FAILED, "append failed");
+        return -1;
+    }
+    free(row);
+
+    obj->length = get_record_count(tb);
+    snprintf(out, outlen, "OK tupsert %s, inserted row %zu%s",
+             t[1].text, get_record_count(tb) - 1, used_index ? "" : " (full scan)");
+    res_value_int(res, 1);
+    return 0;
+}
+
 static int cmd_trows(token_t *t, int argc, mhx_result *res)
 {
     char *out = res->text;
@@ -2459,6 +2651,60 @@ static int cmd_tselect(token_t *t, int argc, mhx_result *res)
     return 0;
 }
 
+/* torder <name> <col> <from> <to> [<col>...]
+ * 按该列索引里的名次读取闭区间（0 = 值最小的行），负下标从尾部数。
+ * 名次是索引排序后的位置，不是行号；相同值的先后不保证稳定。
+ * 这是无状态的分段读取原语：位置由调用方持有，服务端不保存游标。 */
+static int cmd_torder(token_t *t, int argc, mhx_result *res)
+{
+    char *out = res->text;
+    size_t outlen = sizeof(res->text);
+    if (argc < 5) {
+        res_err(res, MHX_ERR_BAD_USAGE,
+                "usage: torder <name> <col> <from> <to> [<col>...]");
+        return -1;
+    }
+    BHS *obj = get_obj(t[1].text, BIGNUM_TYPE_TABLE, res);
+    if (!obj) return -1;
+
+    TABLE *tb = bignum_get_table(obj);
+    size_t field = 0;
+    if (resolve_col(tb, &t[2], &field) != 0) {
+        res_err(res, MHX_ERR_NO_FIELD, "no such field: %s", t[2].text);
+        return -1;
+    }
+
+    TABLE_INDEX *ix = require_index(tb, field, t[2].text, res);
+    if (!ix) return -1;
+
+    long long from, to;
+    if (parse_ll(t[3].text, &from) || parse_ll(t[4].text, &to)) {
+        res_err(res, MHX_ERR_BAD_USAGE,
+                "usage: torder <name> <col> <from> <to> [<col>...]");
+        return -1;
+    }
+
+    size_t f = 0, e = 0;
+    int empty = 0;
+    range_normalize(from, to, ix->n, &f, &e, &empty);
+
+    size_t col_idx[MHX_MAX_ARGS];
+    size_t ncols = 0;
+    if (parse_output_cols(tb, t, 5, argc, col_idx, &ncols, res) != 0) return -1;
+
+    size_t nrows = empty ? 0 : (e - f + 1);
+    /* ix->order 本身就是"逻辑行号按值排好"的连续数组，直接切片交给 fill_rows */
+    const size_t *logical = (nrows > 0) ? (ix->order + f) : NULL;
+
+    if (fill_rows(tb, res, logical, nrows, col_idx, ncols) != 0) {
+        res_err(res, MHX_ERR_FAILED, "out of memory");
+        return -1;
+    }
+
+    snprintf(out, outlen, "OK %zu row(s)", nrows);
+    return 0;
+}
+
 /* ---------------- 帮助文本 ----------------
  * 命令清单的【唯一出处】。交互层（Mhuixs.c 的 :help）直接打印这个，
  * 不要在别处再抄一份 —— 抄了就会两边不一致。
@@ -2470,6 +2716,8 @@ const char *mhx_help_text(void)
 "  create <list|bitmap|kvalot> <name>       创建并挂钩\n"
 "  create table <name> <field:type> [...]   创建表，如 id:int name:str\n"
 "  drop <name>                              摘除钩子（释放其数据）\n"
+"  rename <old> <new>                       改名（new 已存在则覆盖它）\n"
+"  swap <a> <b>                             交换两个钩子的名字\n"
 "  hooks                                    列出所有钩子（含内容摘要）\n"
 "  biggest [n]                              按估算内存列出前 n 个钩子（默认 10）\n"
 "  info <name>                              查看某个钩子的内容\n"
@@ -2504,14 +2752,16 @@ const char *mhx_help_text(void)
 "  tget  <name> <row> <col>                 读取单元格\n"
 "  tset  <name> <row> <col> <v>             改写单元格\n"
 "  tdel  <name> <row>                       删除一行\n"
+"  tupsert <name> <keycol> <key> [<col> <v>]...  按键值更新，找不到则追加\n"
 "  trows <name>                             行数\n"
 "  tfields <name>                           字段列表\n"
-"  trange <name> <from> <to> [<col>...]     读取闭区间，可只取部分列\n"
-"  tindex   <name> <col>                    建/重建该列的有序索引\n"
+"  trange <name> <from> <to> [<col>...]     按插入顺序读取闭区间\n"
+"  torder <name> <col> <from> <to> [<col>...]  按索引名次读取闭区间（需索引）\n"
+"  tindex   <name> <col>                    建/重建该列的有序索引（写入时自动维护）\n"
 "  tunindex <name> <col>                    删除该列索引\n"
 "  tindexes <name>                          列出已有索引及其状态\n"
-"  tfind    <name> <col> <v> [<col>...]     按列值等值查找（需新鲜的索引）\n"
-"  tselect  <name> <col> <min> <max> [...]  按列值闭区间查找（需新鲜的索引）\n"
+"  tfind    <name> <col> <v> [<col>...]     按列值等值查找（需索引）\n"
+"  tselect  <name> <col> <min> <max> [...]  按列值闭区间查找（需索引）\n"
 "\n"
 "值语法\n"
 "  123       -> 数字\n"
@@ -2760,6 +3010,8 @@ static int mhx_run_tokens(token_t *toks, int argc, mhx_result *res)
 
     if      (!strcmp(cmd, "create"))  rc = cmd_create  (toks, argc, res);
     else if (!strcmp(cmd, "drop"))    rc = cmd_drop    (toks, argc, res);
+    else if (!strcmp(cmd, "rename"))  rc = cmd_rename  (toks, argc, res);
+    else if (!strcmp(cmd, "swap"))    rc = cmd_swap    (toks, argc, res);
     else if (!strcmp(cmd, "hooks"))   rc = cmd_hooks   (toks, argc, res);
     else if (!strcmp(cmd, "biggest")) rc = cmd_biggest (toks, argc, res);
     else if (!strcmp(cmd, "type"))    rc = cmd_type    (toks, argc, res);
@@ -2791,9 +3043,11 @@ static int mhx_run_tokens(token_t *toks, int argc, mhx_result *res)
     else if (!strcmp(cmd, "tget"))    rc = cmd_tget    (toks, argc, res);
     else if (!strcmp(cmd, "tset"))    rc = cmd_tset    (toks, argc, res);
     else if (!strcmp(cmd, "tdel"))    rc = cmd_tdel    (toks, argc, res);
+    else if (!strcmp(cmd, "tupsert")) rc = cmd_tupsert (toks, argc, res);
     else if (!strcmp(cmd, "trows"))   rc = cmd_trows   (toks, argc, res);
     else if (!strcmp(cmd, "tfields")) rc = cmd_tfields (toks, argc, res);
     else if (!strcmp(cmd, "trange"))  rc = cmd_trange  (toks, argc, res);
+    else if (!strcmp(cmd, "torder"))  rc = cmd_torder  (toks, argc, res);
     else if (!strcmp(cmd, "tindex"))  rc = cmd_tindex  (toks, argc, res);
     else if (!strcmp(cmd, "tunindex"))rc = cmd_tunindex(toks, argc, res);
     else if (!strcmp(cmd, "tindexes"))rc = cmd_tindexes(toks, argc, res);

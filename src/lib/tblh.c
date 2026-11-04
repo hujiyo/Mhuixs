@@ -2,6 +2,10 @@
 
 /* 列索引的内部辅助（定义在文件末尾） */
 static void table_index_clear(TABLE* table);
+static void table_index_note_insert(TABLE* table, size_t logical_row);
+static void table_index_note_remove(TABLE* table, size_t logical_row);
+static void table_index_note_set(TABLE* table, size_t logical_row, size_t field);
+static void table_index_note_swap(TABLE* table, size_t logic_index1, size_t logic_index2);
 
 TABLE* create_table(int* types, mstring* field_names, size_t field_num, mstring table_name){
     //先验证参数是否合法
@@ -248,7 +252,8 @@ int add_record(TABLE* table, Obj* values, size_t num){
     table->memory_index[current_line] = table->line_num;//新的物理行对应新的逻辑行
     
     table->line_num++;
-    table_index_invalidate(table);
+    /* 索引按新增的逻辑行增量插入；失败时该索引会退回 stale */
+    table_index_note_insert(table, current_line);
     return 0;//成功
 }
 
@@ -292,8 +297,9 @@ int rm_record(TABLE* table, size_t logic_index){
         //同时更新反向索引
         table->memory_index[table->logic_index[i]] = i;
     }
+    /* 索引里存的是逻辑行号：删掉被删行，后面的行号整体前移一位 */
+    table_index_note_remove(table, logic_index);
     table->line_num--;//减少行数
-    table_index_invalidate(table);
     return 0;//成功
 }
 
@@ -396,7 +402,7 @@ int swap_record(TABLE* table, size_t logic_index1, size_t logic_index2){
     //更新反向索引
     table->memory_index[table->logic_index[logic_index1]] = logic_index1;
     table->memory_index[table->logic_index[logic_index2]] = logic_index2;
-    table_index_invalidate(table);
+    table_index_note_swap(table, logic_index1, logic_index2);
     return 0;
 }
 
@@ -433,7 +439,8 @@ int set_value(TABLE* table, size_t idx_x, size_t idx_y, Obj content){
         bignum_destroy(*slot);
     }
     *slot = content;  /* 所有权转移 */
-    table_index_invalidate(table);
+    /* 只有被改的那一列需要重新定位，其他列的索引仍然有效 */
+    table_index_note_set(table, idx_x, idx_y);
     return 0;
 }
 
@@ -562,7 +569,8 @@ int update_record(TABLE* table, size_t logic_index, Obj* values, size_t num){
             *slot = values[i];
         }
     }
-    table_index_invalidate(table);
+    /* 每个被覆盖的列各维护自己的索引 */
+    for(size_t i=0; i<num; i++) table_index_note_set(table, logic_index, i);
     return 0;//成功
 }
 
@@ -630,8 +638,129 @@ static TABLE_INDEX* index_slot(TABLE* table, size_t field, int create)
     ix->field = field;
     ix->order = NULL;
     ix->n = 0;
+    ix->cap = 0;
     ix->stale = 0;
     return ix;
+}
+
+/* 确保 order 能放下 need 个逻辑行号；失败返回 -1 */
+static int index_reserve(TABLE_INDEX* ix, size_t need)
+{
+    if (need <= ix->cap) return 0;
+
+    size_t ncap = ix->cap ? ix->cap * 2 : 8;
+    while (ncap < need) ncap *= 2;
+
+    size_t* no = (size_t*)realloc(ix->order, sizeof(size_t) * ncap);
+    if (no == NULL) return -1;
+
+    ix->order = no;
+    ix->cap = ncap;
+    return 0;
+}
+
+/* 在有序数组里找第一个"值大于 row"的位置（相同值排在新行之后） */
+static size_t index_upper_bound_row(TABLE* table, const TABLE_INDEX* ix,
+                                    size_t field, size_t row)
+{
+    size_t lo = 0, hi = ix->n;
+    while (lo < hi) {
+        size_t mid = lo + (hi - lo) / 2;
+        if (index_cmp(table, field, ix->order[mid], row) <= 0) lo = mid + 1;
+        else                                                      hi = mid;
+    }
+    return lo;
+}
+
+/* 追加一行后，把新的逻辑行号插进每个索引 */
+static void table_index_note_insert(TABLE* table, size_t logical_row)
+{
+    if (table == NULL || table->idx == NULL) return;
+
+    for (size_t i = 0; i < table->idx_num; i++) {
+        TABLE_INDEX* ix = &table->idx[i];
+        if (ix->stale) continue;
+
+        if (index_reserve(ix, ix->n + 1) != 0) { ix->stale = 1; continue; }
+
+        size_t pos = index_upper_bound_row(table, ix, ix->field, logical_row);
+        memmove(&ix->order[pos + 1], &ix->order[pos],
+                sizeof(size_t) * (ix->n - pos));
+        ix->order[pos] = logical_row;
+        ix->n++;
+    }
+}
+
+/* 删除一行后：移走该逻辑行号，后面的行号整体减一 */
+static void table_index_note_remove(TABLE* table, size_t logical_row)
+{
+    if (table == NULL || table->idx == NULL) return;
+
+    for (size_t i = 0; i < table->idx_num; i++) {
+        TABLE_INDEX* ix = &table->idx[i];
+        if (ix->stale) continue;
+
+        size_t pos = ix->n;
+        for (size_t k = 0; k < ix->n; k++) {
+            if (ix->order[k] == logical_row) { pos = k; break; }
+        }
+        if (pos == ix->n) { ix->stale = 1; continue; }   /* 索引与表不一致 */
+
+        memmove(&ix->order[pos], &ix->order[pos + 1],
+                sizeof(size_t) * (ix->n - pos - 1));
+        ix->n--;
+
+        for (size_t k = 0; k < ix->n; k++)
+            if (ix->order[k] > logical_row) ix->order[k]--;
+    }
+}
+
+/* 改写某列的一个单元格后：只维护该列的索引 */
+static void table_index_note_set(TABLE* table, size_t logical_row, size_t field)
+{
+    if (table == NULL || table->idx == NULL) return;
+
+    TABLE_INDEX* ix = index_slot(table, field, 0);
+    if (ix == NULL || ix->stale) return;
+
+    size_t pos = ix->n;
+    for (size_t k = 0; k < ix->n; k++) {
+        if (ix->order[k] == logical_row) { pos = k; break; }
+    }
+    if (pos == ix->n) { ix->stale = 1; return; }
+
+    memmove(&ix->order[pos], &ix->order[pos + 1],
+            sizeof(size_t) * (ix->n - pos - 1));
+    ix->n--;
+
+    size_t ins = index_upper_bound_row(table, ix, field, logical_row);
+    if (index_reserve(ix, ix->n + 1) != 0) { ix->stale = 1; return; }
+
+    memmove(&ix->order[ins + 1], &ix->order[ins],
+            sizeof(size_t) * (ix->n - ins));
+    ix->order[ins] = logical_row;
+    ix->n++;
+}
+
+/* 交换两行的内容后：索引里对应的两个行号互换位置 */
+static void table_index_note_swap(TABLE* table, size_t logic_index1, size_t logic_index2)
+{
+    if (table == NULL || table->idx == NULL || logic_index1 == logic_index2) return;
+
+    for (size_t i = 0; i < table->idx_num; i++) {
+        TABLE_INDEX* ix = &table->idx[i];
+        if (ix->stale) continue;
+
+        size_t p1 = ix->n, p2 = ix->n;
+        for (size_t k = 0; k < ix->n; k++) {
+            if      (ix->order[k] == logic_index1) p1 = k;
+            else if (ix->order[k] == logic_index2) p2 = k;
+        }
+        if (p1 == ix->n || p2 == ix->n) { ix->stale = 1; continue; }
+
+        ix->order[p1] = logic_index2;
+        ix->order[p2] = logic_index1;
+    }
 }
 
 static void table_index_clear(TABLE* table)
@@ -675,6 +804,7 @@ int table_index_build(TABLE* table, size_t field)
     free(ix->order);
     ix->order = order;
     ix->n = n;
+    ix->cap = n;
     ix->stale = 0;
     return 0;
 }

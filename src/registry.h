@@ -44,6 +44,20 @@ int reg_register_hook(M_UID owner, const char* name, HOOK** hook_return);
 void reg_unregister_hook(const char* name);
 
 /*
+ * 把 old_name 上的 HOOK 改名为 new_name。
+ *
+ * new_name 已被占用时，旧的那条从注册表摘除并通过 *replaced 交给调用方
+ * 销毁（本函数不释放它）—— 这就是"整块替换一份数据"的发布动作。
+ * 返回：0 成功；1 old_name 不存在；-1 失败（参数/内存）。
+ */
+int reg_rename_hook(const char* old_name, const char* new_name, HOOK** replaced);
+
+/*
+ * 交换两个 HOOK 的名字。返回：0 成功；1 first 不存在；2 second 不存在；-1 失败。
+ */
+int reg_swap_hooks(const char* first, const char* second);
+
+/*
  * 按【指针身份】把指定 HOOK 从注册表摘除（只摘除，不释放）。
  * 用于 HOOK_logout：按名字摘除会误删同名的另一条。
  * 本函数自行获取注册表锁。

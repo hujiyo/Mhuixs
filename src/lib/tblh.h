@@ -35,18 +35,19 @@ typedef struct {
 单列有序索引：按该列的值升序排好的逻辑行号。
 
 只存行号（每行 8 字节），比较时回表取值，不复制单元格。
-索引是**显式创建**的：任何写操作把它置为 stale，查询遇到 stale 直接报错，
-由调用方重新建索引 —— 不自动重建，行为可预期。
+索引是**显式创建**的：`tindex` 建一次，之后的追加 / 删除 / 改单元格 /
+换行都会增量维护它，不需要重建。只有无法安全维护时（例如内存不足）
+才退回 stale，查询遇到 stale 会明确报错。
 
 为什么存逻辑行号而不是物理行号：逻辑行是调用方看到的行号；rm_record
-会搬动物理行，但不改变"逻辑第 r 行"的含义，所以只要表没被写过，
-逻辑行号一直是稳定的。
+会搬动物理行，但不改变"逻辑第 r 行"的含义。
 */
 typedef struct {
     size_t  field;   //列下标
     size_t* order;   //order[i] = 第 i 小的行的逻辑行号
-    size_t  n;       //建索引时的行数
-    int     stale;   //建好之后表被写过
+    size_t  n;       //当前行数
+    size_t  cap;     //order 的容量（行数）
+    int     stale;   //无法继续维护时为 1
 }TABLE_INDEX;
 
 typedef struct TABLE {
@@ -88,6 +89,12 @@ Obj* get_record(TABLE* table, size_t logic_index);
  */
 int table_index_build(TABLE* table, size_t field);
 int table_index_drop(TABLE* table, size_t field);
+
+/*
+ * 强制把所有索引标记为 stale。正常写入路径不调用它 —— 追加、删除、
+ * 改单元格、换行都由 tblh.c 内部增量维护。只有在表结构变化到无法
+ * 安全修正（或维护失败）时才用。
+ */
 void table_index_invalidate(TABLE* table);
 
 /* 查某个列上的索引；没有返回 NULL。返回的指针随表结构变化失效。 */

@@ -367,8 +367,8 @@ int main(void)
     }
 
     /* ---------------- 列索引与按值查找 ----------------
-     * 索引是显式创建的：没建、或建好后表被写过（stale），查询都报错，
-     * 不会悄悄退化成全表扫描 —— 行为可预期。 */
+     * 索引是显式创建的：没建索引时查询报 no_index，不会悄悄退化成全表扫描。
+     * 建好之后，追加 / 删除 / 改单元格 / 换行都会增量维护它，不需要重建。 */
     printf("列索引：tindex / tindexes / tunindex\n");
     {
         char out[8192];
@@ -411,21 +411,117 @@ int main(void)
                 "字符串按字节字典序");
         mhx_execute("tunindex idx_t name", out, sizeof(out));
 
-        printf("列索引：写操作让索引失效，查询报 stale\n");
+        printf("列索引：写入后自动维护，不需要重建\n");
         texpect("tadd idx_t 40 d", 0, "OK tadd idx_t, rows=5", "写入");
-        jexpect("tindexes idx_t", 0, "\"value\":[[\"d\",\"stale\"]]", "索引标记为 stale");
-        jexpect("tfind idx_t d 10", -1, "\"code\":\"index_stale\"",
-                "stale 索引不参与查询");
-        jexpect("tselect idx_t d 0 99", -1, "\"code\":\"index_stale\"", "范围查询同样拒绝");
+        jexpect("tindexes idx_t", 0, "\"value\":[[\"d\",\"fresh\"]]", "追加后索引仍是 fresh");
+        jexpect("tfind idx_t d 10", 0, "\"value\":[[10,\"a\"],[10,\"a2\"]]",
+                "追加后等值查找照常可用");
+        jexpect("tfind idx_t d 40", 0, "\"value\":[[40,\"d\"]]", "新行已在索引里");
 
-        texpect("tindex idx_t d", 0, "OK indexed idx_t.d, 5 row(s)", "重建索引");
-        jexpect("tfind idx_t d 40", 0, "\"value\":[[40,\"d\"]]", "重建后能查到新写入的行");
+        texpect("tset idx_t 0 d 5", 0, "OK tset idx_t row=0 field=d", "改单元格");
+        jexpect("tfind idx_t d 5", 0, "\"value\":[[5,\"c\"]]", "改值后索引同步");
+        jexpect("tfind idx_t d 30", 0, "\"value\":[]", "旧值已不在索引里");
+
+        texpect("tdel idx_t 1", 0, "OK tdel idx_t row=1, rows=4", "删行");
+        jexpect("tindexes idx_t", 0, "\"value\":[[\"d\",\"fresh\"]]", "删行后仍是 fresh");
+        jexpect("tselect idx_t d 0 99", 0,
+                "\"value\":[[5,\"c\"],[10,\"a2\"],[20,\"b\"],[40,\"d\"]]",
+                "删行后逻辑行号整体前移，索引仍然正确");
+
+        texpect("tindex idx_t d", 0, "OK indexed idx_t.d, 4 row(s)", "显式重建仍然可用");
+        jexpect("tfind idx_t d 40", 0, "\"value\":[[40,\"d\"]]", "重建后能查到");
+
+        printf("tupsert：按键值更新或追加\n");
+        texpect("tupsert idx_t d 20 name twenty", 0,
+                "OK tupsert idx_t, updated row 1", "已有键 -> 更新");
+        jexpect("tget idx_t 1 name", 0,
+                "\"kind\":\"str\",\"value\":\"twenty\"", "更新生效");
+        texpect("tupsert idx_t d 99 name ninetynine", 0,
+                "OK tupsert idx_t, inserted row 4", "新键 -> 追加");
+        texpect("trows idx_t", 0, "OK 5", "追加后 5 行");
+        jexpect("tindexes idx_t", 0, "\"value\":[[\"d\",\"fresh\"]]", "upsert 后索引仍 fresh");
+        jexpect("tfind idx_t d 99", 0, "\"value\":[[99,\"ninetynine\"]]", "新行可查");
+
+        texpect("tupsert idx_t d 99 d 100 name hundred", 0,
+                "OK tupsert idx_t, updated row 4", "更新键列本身");
+        jexpect("tfind idx_t d 99", 0, "\"value\":[]", "旧键已不在索引里");
+        jexpect("tfind idx_t d 100", 0, "\"value\":[[100,\"hundred\"]]", "新键已进索引");
+
+        mhx_execute("create table upsert_noidx id:int name:str", out, sizeof(out));
+        mhx_execute("tadd upsert_noidx 1 one", out, sizeof(out));
+        texpect("tupsert upsert_noidx id 1 name ONE", 0,
+                "OK tupsert upsert_noidx, updated row 0 (full scan)", "无索引走全表扫描");
+        texpect("tupsert upsert_noidx id 2 name two", 0,
+                "OK tupsert upsert_noidx, inserted row 1 (full scan)", "无索引也能追加");
 
         texpect("tunindex idx_t d", 0, "OK dropped index on 'd'", "删除索引");
         jexpect("tfind idx_t d 10", -1, "\"code\":\"no_index\"", "删除后回到 no_index");
         texpect("tunindex idx_t d", 0, "OK no index on 'd'", "重复删除是幂等的");
         texpect("tindexes idx_t", 0, "OK 0 index(es)", "空索引列表");
         jexpect("tindexes idx_t", 0, "\"value\":[]", "空索引列表的 JSON");
+    }
+
+    /* ---------------- 按索引名次读取 ---------------- */
+    printf("torder：按索引名次读取\n");
+    {
+        char out[8192];
+
+        mhx_execute("create table ord_t k:int v:str", out, sizeof(out));
+        mhx_execute("tadd ord_t 30 c", out, sizeof(out));
+        mhx_execute("tadd ord_t 10 a", out, sizeof(out));
+        mhx_execute("tadd ord_t 20 b", out, sizeof(out));
+        mhx_execute("tadd ord_t 10 a2", out, sizeof(out));
+
+        jexpect("torder ord_t k 0 1", -1, "\"code\":\"no_index\"", "没索引就查 -> no_index");
+        texpect("tindex ord_t k", 0, "OK indexed ord_t.k, 4 row(s)", "建索引");
+
+        jexpect("torder ord_t k 0 4", 0,
+                "\"columns\":[\"k\",\"v\"],\"value\":[[10,\"a\"],[10,\"a2\"],[20,\"b\"],[30,\"c\"]]",
+                "按名次读取，值升序");
+        jexpect("torder ord_t k 1 2 v", 0,
+                "\"columns\":[\"v\"],\"value\":[[\"a2\"],[\"b\"]]",
+                "只取部分列");
+        jexpect("torder ord_t k -2 -1", 0,
+                "\"value\":[[20,\"b\"],[30,\"c\"]]",
+                "负下标从尾部数");
+        jexpect("torder ord_t k 9 12", 0, "\"value\":[]", "越界截断为空");
+
+        mhx_execute("tadd ord_t 5 z", out, sizeof(out));
+        jexpect("torder ord_t k 0 1", 0,
+                "\"value\":[[5,\"z\"],[10,\"a\"]]",
+                "追加后索引顺序同步");
+        jexpect("tindexes ord_t", 0,
+                "\"value\":[[\"k\",\"fresh\"]]", "索引仍 fresh");
+    }
+
+    /* ---------------- 钩子改名与交换 ---------------- */
+    printf("rename / swap：改名与交换\n");
+    {
+        char out[8192];
+
+        mhx_execute("create list rn_a", out, sizeof(out));
+        mhx_execute("rpush rn_a 1 2", out, sizeof(out));
+        mhx_execute("create list rn_b", out, sizeof(out));
+        mhx_execute("rpush rn_b 9", out, sizeof(out));
+
+        texpect("rename rn_a rn_c", 0, "OK renamed 'rn_a' -> 'rn_c'", "改名");
+        jexpect("llen rn_c", 0, "\"kind\":\"int\",\"value\":2", "新名字可用");
+        jexpect("llen rn_a", -1, "\"code\":\"no_hook\"", "旧名字已不存在");
+        texpect("rename rn_nope rn_x", -1, "ERR no such hook: rn_nope", "改名源不存在");
+
+        texpect("rename rn_c rn_b", 0,
+                "OK renamed 'rn_c' -> 'rn_b' (replaced existing)", "目标已存在时覆盖");
+        jexpect("llen rn_b", 0, "\"kind\":\"int\",\"value\":2", "覆盖后是 rn_c 的数据");
+
+        mhx_execute("create list rn_x", out, sizeof(out));
+        mhx_execute("rpush rn_x 7", out, sizeof(out));
+        mhx_execute("create list rn_y", out, sizeof(out));
+        mhx_execute("rpush rn_y 8", out, sizeof(out));
+
+        texpect("swap rn_x rn_y", 0, "OK swapped 'rn_x' <-> 'rn_y'", "交换名字");
+        jexpect("lget rn_x 0", 0, "\"value\":8", "交换后 rn_x 指向原 rn_y 的数据");
+        jexpect("lget rn_y 0", 0, "\"value\":7", "交换后 rn_y 指向原 rn_x 的数据");
+        texpect("swap rn_x rn_nope", -1, "ERR no such hook: rn_nope", "交换对象不存在");
     }
 
     /* ---------------- 输出不再受固定缓冲限制 ----------------
