@@ -133,6 +133,34 @@ class Mhuixs:
             raise ValueError("至少要有一个参数")
         return _unwrap(self._request(list(args), parse_float=Decimal))
 
+    def pipeline(self, commands, batch_size=256):
+        """批量发送命令，逐条返回解包后的结果。
+
+        ``commands`` 是 ``(命令, 参数...)`` 的可迭代对象。每 ``batch_size`` 条
+        一组：一组一次发出去、再按顺序收回应答，比逐条往返快得多，也不会
+        把全部命令先攒在内存里。
+
+        任何一条命令失败时，这一组剩下的应答仍会被读完（保持连接同步），
+        然后抛出第一个错误。返回值是生成器，要全部收集就 ``list(...)``。
+        """
+        batch_size = int(batch_size)
+        if batch_size < 1:
+            raise ValueError("batch_size 至少为 1")
+
+        batch = []
+        for command in commands:
+            if isinstance(command, (str, bytes, bytearray, memoryview)):
+                raise TypeError("每条命令要写成 (命令, 参数...)，得到 %r" % (command,))
+            command = tuple(command)
+            if not command:
+                raise ValueError("空命令")
+            batch.append(command)
+            if len(batch) >= batch_size:
+                yield from self._pipeline_batch(batch)
+                batch = []
+        if batch:
+            yield from self._pipeline_batch(batch)
+
     def close(self):
         """关闭连接。重复调用无副作用。"""
         with self._lock:
@@ -181,6 +209,18 @@ class Mhuixs:
     def drop(self, name):
         """摘除 HOOK（连同它引用的数据）。不存在的钩子视为成功。返回 None。"""
         self._run("drop", name)
+
+    def rename(self, old, new):
+        """把钩子 ``old`` 改名为 ``new``；``new`` 已存在时其数据被覆盖。
+
+        返回服务端文本。整块替换数据的常见做法：新数据先建在临时钩子下，
+        灌完再 ``rename`` 到正式名字，读方不会看到空表。
+        """
+        return self._run("rename", old, new)
+
+    def swap(self, first, second):
+        """交换两个钩子的名字。返回服务端文本。"""
+        return self._run("swap", first, second)
 
     def hooks(self):
         """返回当前 HOOK 数量（``int``）。"""
@@ -300,6 +340,30 @@ class Mhuixs:
         """删除一行，返回剩余行数（``int``）。"""
         return self._run("tdel", name, row)
 
+    def tupsert(self, name, key_col, key, *columns):
+        """按 ``key_col == key`` 更新一行；找不到就追加。返回 ``1``（插入）/ ``0``（更新）。
+
+        ``columns`` 可以是一个 dict，或若干 ``(列, 值)`` 对::
+
+            db.tupsert("t", "id", 1, {"name": "alice", "age": 30})
+            db.tupsert("t", "id", 1, ("name", "alice"), ("age", 30))
+
+        只更新给出的列，其余列保持原值。``key_col`` 上有索引时走索引，
+        否则服务端做全表扫描。
+        """
+        if len(columns) == 1 and isinstance(columns[0], dict):
+            items = list(columns[0].items())
+        else:
+            items = list(columns)
+
+        pairs = []
+        for item in items:
+            if not isinstance(item, (tuple, list)) or len(item) != 2:
+                raise TypeError("列和值要写成 (列, 值) 对或一个 dict，得到 %r"
+                                % (item,))
+            pairs.extend([item[0], item[1]])
+        return self._run("tupsert", name, key_col, key, *pairs)
+
     def trows(self, name):
         """返回行数（``int``）。"""
         return self._run("trows", name)
@@ -320,11 +384,61 @@ class Mhuixs:
         """
         return self._run("trange", name, start, end, *columns)
 
+    def torder(self, name, col, start, end, *columns):
+        """按某列索引里的名次读取闭区间，返回 :class:`Rows`。
+
+        名次是索引排序后的位置（0 是值最小的行），负下标从尾部数；该列
+        必须已有索引。和无状态的 :meth:`trange` 一样，服务端不保存游标，
+        位置由调用方持有。相同值的先后不保证稳定。
+        """
+        return self._run("torder", name, col, start, end, *columns)
+
+    def iter_rows(self, name, *columns, page_size=1000, start=0, end=None):
+        """分段读取表的行区间，逐页返回 :class:`Rows`。
+
+        默认读整张表。``page_size`` 是每页行数；``start`` / ``end`` 是闭区间，
+        负下标从尾部数（与 :meth:`trange` 一致），``end=None`` 表示读到最后一行。
+        每页是一次独立的 ``trange``，所以 ``page_size`` 决定单次响应的内存峰值。
+
+        并发写入会让后续页的行号漂移；需要读写并行时，请由调用方负责错开或重试。
+        """
+        page_size = int(page_size)
+        if page_size < 1:
+            raise ValueError("page_size 至少为 1")
+
+        total = self.trows(name)
+        if total == 0:
+            return
+
+        start = int(start)
+        if start < 0:
+            start += total
+        if start < 0:
+            start = 0
+
+        if end is None:
+            end = total - 1
+        else:
+            end = int(end)
+            if end < 0:
+                end += total
+        if end >= total:
+            end = total - 1
+        if end < start:
+            return
+
+        lo = start
+        while lo <= end:
+            hi = min(lo + page_size - 1, end)
+            yield self.trange(name, lo, hi, *columns)
+            lo = hi + 1
+
     def tindex(self, name, col):
         """为某列建/重建有序索引，返回建索引时的行数（``int``）。
 
-        建好之后用 :meth:`tfind` / :meth:`tselect` 查询；任何写操作都会让
-        索引失效（``IndexStaleError``），需要重新调用本方法。
+        建好之后用 :meth:`tfind` / :meth:`tselect` 查询；之后的追加 / 删除 /
+        改单元格 / 换行都会增量维护它，不需要重建。只有无法维护时（例如
+        内存不足）才会退回 stale（``IndexStaleError``），此时再调用本方法。
         """
         return self._run("tindex", name, col)
 
@@ -390,7 +504,28 @@ class Mhuixs:
         with self._lock:
             self._send(args)
             tag, payload = self._read_reply()
+        return self._decode_reply(tag, payload, parse_float)
 
+    def _pipeline_batch(self, commands):
+        """一组命令一次发出，按顺序收回全部应答，再逐条解包。
+
+        先收完再解包：中间某条失败时，后面的应答已经被读掉，
+        连接不会停在"上一条的回复"上。
+        """
+        frames = []
+        for command in commands:
+            args = [command[0]] + [_typed_arg(a) for a in command[1:]]
+            frames.append(encode_request(args))
+
+        with self._lock:
+            self._send_encoded(b"".join(frames))
+            replies = [self._read_reply() for _ in frames]
+
+        for tag, payload in replies:
+            yield _unwrap(self._decode_reply(tag, payload, Decimal))
+
+    @staticmethod
+    def _decode_reply(tag, payload, parse_float):
         if tag == "+":
             # +OK 只用于 AUTH；认证之外出现说明服务端行为不对，别猜。
             raise ProtocolError("意外的简单串响应：%s"
@@ -412,11 +547,14 @@ class Mhuixs:
         return doc
 
     def _send(self, args):
+        self._send_encoded(encode_request(args))
+
+    def _send_encoded(self, data):
         sock = self._sock
         if sock is None:
             raise ConnectionError("连接已关闭")
         try:
-            sock.sendall(encode_request(args))
+            sock.sendall(data)
         except OSError as e:
             raise ConnectionError("发送失败：%s" % (e,))
 

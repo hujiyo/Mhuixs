@@ -596,7 +596,10 @@ COMMANDS_HELP = """数据结构
   create <list|bitmap|kvalot> <name>       创建并挂钩
   create table <name> <field:type> [...]   创建表，如 id:int name:str
   drop <name>                              摘除钩子（释放其数据）
+  rename <old> <new>                       改名（new 已存在则覆盖它）
+  swap <a> <b>                             交换两个钩子的名字
   hooks                                    列出所有钩子（含内容摘要）
+  biggest [n]                              按估算内存列出前 n 个钩子
   info <name>                              查看某个钩子的内容
   type <name>                              只看钩子指向的类型
 
@@ -608,6 +611,7 @@ LIST
   lget  <name> <i>                         读取下标 i
   lset  <name> <i> <v>                     改写下标 i
   lrem  <name> <i>                         移除下标 i，返回被移除的值
+  lrange <name> <from> <to>                读取闭区间，负下标从尾部数
 
 BITMAP
   bset   <name> <off> <0|1>                设置某位
@@ -621,14 +625,23 @@ KVALOT（键一律按字符串处理）
   kdel <name> <key>                        删除
   klen <name>                              键数量
   kexists <name> <key>                     键是否存在
+  mget <name> <key> [<key>...]             一次取多个键
 
 TABLE（col 可用列名或下标）
   tadd  <name> [<v>...]                    追加一行
   tget  <name> <row> <col>                 读取单元格
   tset  <name> <row> <col> <v>             改写单元格
   tdel  <name> <row>                       删除一行
+  tupsert <name> <keycol> <key> [<col> <v>]...  按键值更新，找不到则追加
   trows <name>                             行数
   tfields <name>                           字段列表
+  trange <name> <from> <to> [<col>...]     按插入顺序读取闭区间
+  torder <name> <col> <from> <to> [<col>...]  按索引名次读取闭区间（需索引）
+  tindex   <name> <col>                    建/重建该列的有序索引（写入时自动维护）
+  tunindex <name> <col>                    删除该列索引
+  tindexes <name>                          列出已有索引及其状态
+  tfind    <name> <col> <v> [<col>...]     按列值等值查找（需索引）
+  tselect  <name> <col> <min> <max> [...]  按列值闭区间查找（需索引）
 
 值语法
   123       -> 数字

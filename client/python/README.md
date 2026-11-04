@@ -69,6 +69,7 @@ with mhuixs.Mhuixs(token="你的令牌") as db:
 |---|---|---|
 | 管理 | `create_list` / `create_bitmap` / `create_kvalot` / `create_table` | `None` |
 | 管理 | `drop` | `None` |
+| 管理 | `rename` / `swap` | `str` |
 | 管理 | `hooks` | `int` |
 | 管理 | `info` / `type` | `str` |
 | LIST | `rpush` / `lpush` | `int`（新长度） |
@@ -85,26 +86,62 @@ with mhuixs.Mhuixs(token="你的令牌") as db:
 | TABLE | `tadd` / `tdel` / `trows` | `int` |
 | TABLE | `tget` | 值或 `None`（空格子） |
 | TABLE | `tset` | `None` |
+| TABLE | `tupsert` | `int`（`1` 插入 / `0` 更新） |
 | TABLE | `tfields` | `list[str]` |
 | TABLE | `trange` / `tfind` / `tselect` | `Rows`（行数不设上限） |
+| TABLE | `torder` | `Rows`（按索引名次） |
+| TABLE | `iter_rows` | 生成器，逐页 `Rows` |
 | TABLE | `tindex` | `int`（建索引时的行数） |
 | TABLE | `tunindex` | `str` |
 | TABLE | `tindexes` | `Rows`（`column` / `status`） |
+| 批量 | `pipeline` | 生成器，逐条结果 |
 | 会话 | `ping` | `bool` |
 | 会话 | `save` / `shutdown` | `str` |
 
 `tfields` 受服务端类型化返回值 32 项上限约束；字段更多时用 `call()` 看
 `truncated`，或读 `info()` 的文本。
 
-表索引是显式创建的：`tfind` / `tselect` 要求该列已有索引；任何写操作都会
-让它失效，需要重新 `tindex`，否则抛 `IndexStaleError`（没建过索引则抛
-`NoIndexError`）：
+表索引是显式创建的：`tfind` / `tselect` 要求该列已有索引。建好之后，
+追加、删除、改单元格、换行都会增量维护它，不需要重建；只有无法维护时
+（例如内存不足）才抛 `IndexStaleError`，没建过索引则抛 `NoIndexError`：
 
 ```python
 db.tindex("daily", "date")
 rows = db.tselect("daily", "date", 20240101, 20240131)
-db.tadd("daily", 20240201, 1.5)      # 索引由此变 stale
-db.tindex("daily", "date")           # 重建后才能继续按日期查
+db.tadd("daily", 20240201, 1.5)      # 索引自动维护
+rows = db.tselect("daily", "date", 20240201, 20240228)   # 仍然可用
+```
+
+批量写入用 `pipeline`：一组命令一次发出去、再按顺序收回应答，省掉逐条往返。
+大表读取用 `iter_rows` 分段，避免一次把整表塞进一个响应：
+
+```python
+list(db.pipeline([("tadd", "daily", 20240101, 1.5),
+                  ("tadd", "daily", 20240102, 1.6)], batch_size=256))
+
+for page in db.iter_rows("daily", "date", "close", page_size=5000):
+    consume(page.values)
+
+# 需要按某列排序读取时，用 torder 按索引名次分段；
+# 位置由调用方持有，服务端不保存游标。
+total = db.trows("daily")
+for i in range(0, total, 5000):
+    page = db.torder("daily", "date", i, i + 4999, "date", "close")
+    consume(page.values)
+```
+
+按业务键更新用 `tupsert`（找不到就追加，不返回行号，所以行号漂移不影响调用方）：
+
+```python
+db.tupsert("daily", "date", 20240101, {"close": 1.55, "volume": 1000})
+```
+
+整块替换数据用 `rename`：新数据先建在临时钩子下，灌完再换到正式名字。
+
+```python
+db.create_table("daily_new", ["date:int", "close:num"])
+# ... 灌数据 ...
+db.rename("daily_new", "daily")     # 覆盖旧数据，读方不会看到空表
 ```
 
 ## 参数类型规则

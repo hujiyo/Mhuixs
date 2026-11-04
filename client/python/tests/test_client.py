@@ -308,6 +308,11 @@ class RowsTests(ClientTest):
                                "columns": ["d"],
                                "value": [[20240101], [20240102]],
                                "text": "OK 2 row(s)"})
+        if cmd == b"torder":
+            return reply_json({"ok": True, "code": "ok", "kind": "rows",
+                               "columns": ["d", "name"],
+                               "value": [[20240101, "a"], [20240102, "b"]],
+                               "text": "OK 2 row(s)"})
         if cmd == b"boom":
             code = req[1]["body"].decode("ascii")
             return reply_json({"ok": False, "code": code, "text": "ERR"})
@@ -348,6 +353,18 @@ class RowsTests(ClientTest):
         # 列名是字符串参数，走 +；行号是数字，走 $
         self.assertEqual([a["forced"] for a in sent],
                          [False, True, False, False, True, True])
+
+    def test_torder_forwarding(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        rows = db.torder("t", "d", 0, 1, "name")
+        self.assertEqual(rows.columns, ["d", "name"])
+        self.assertEqual(rows.values, [[20240101, "a"], [20240102, "b"]])
+
+        sent = server.received[0]
+        self.assertEqual([a["body"] for a in sent],
+                         [b"torder", b"t", b"d", b"0", b"1", b"name"])
 
     def test_index_commands(self):
         server = self.start(self.handler, token="secret")
@@ -460,6 +477,162 @@ class TransportTests(ClientTest):
         db = self.connect(server)
         value = db.lget("x", 0)
         self.assertEqual(value.encode("utf-8", "surrogateescape"), b"a\xffb")
+
+
+class PipelineTests(ClientTest):
+    """流水线：一组命令一次发出，应答按顺序收回。"""
+
+    def handler(self, req):
+        cmd = req[0]["body"]
+        if cmd == b"echo":
+            return reply_json({"ok": True, "code": "ok", "kind": "str",
+                               "value": req[1]["body"].decode("utf-8"),
+                               "text": "OK"})
+        if cmd == b"boom":
+            return reply_json({"ok": False, "code": "bad_usage", "text": "ERR boom"})
+        raise AssertionError("没准备这个命令：%r" % (cmd,))
+
+    def test_results_in_order(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        results = list(db.pipeline([("echo", "a"), ("echo", "b"), ("echo", "c")]))
+        self.assertEqual(results, ["a", "b", "c"])
+        self.assertEqual([r[0]["body"] for r in server.received],
+                         [b"echo", b"echo", b"echo"])
+        self.assertEqual([r[1]["body"] for r in server.received],
+                         [b"a", b"b", b"c"])
+
+    def test_batches(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        results = list(db.pipeline([("echo", str(i)) for i in range(5)],
+                                   batch_size=2))
+        self.assertEqual(results, ["0", "1", "2", "3", "4"])
+
+    def test_error_drains_remaining_replies(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        with self.assertRaises(BadUsageError):
+            list(db.pipeline([("echo", "a"), ("boom",), ("echo", "c")]))
+
+        # 失败那一组的应答已经读完，连接仍停在正确位置
+        self.assertEqual(list(db.pipeline([("echo", "after")])), ["after"])
+
+    def test_rejects_bad_shapes(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        with self.assertRaises(TypeError):
+            list(db.pipeline(["echo"]))
+        with self.assertRaises(ValueError):
+            list(db.pipeline([()]))
+        with self.assertRaises(ValueError):
+            list(db.pipeline([("echo", "a")], batch_size=0))
+
+
+class IterRowsTests(ClientTest):
+    """分段读取：每页一次 trange，闭区间。"""
+
+    def handler(self, req):
+        cmd = req[0]["body"]
+        if cmd == b"trows":
+            total = 0 if req[1]["body"] == b"empty" else 5
+            return reply_json({"ok": True, "code": "ok", "kind": "int",
+                               "value": total, "text": "OK %d" % total})
+        if cmd == b"trange":
+            start = int(req[2]["body"])
+            end = int(req[3]["body"])
+            cols = [a["body"].decode("utf-8") for a in req[4:]] or ["i", "v"]
+            rows = [[i, "v%d" % i] for i in range(start, end + 1)]
+            return reply_json({"ok": True, "code": "ok", "kind": "rows",
+                               "columns": cols, "value": rows,
+                               "text": "OK %d row(s)" % len(rows)})
+        raise AssertionError("没准备这个命令：%r" % (cmd,))
+
+    def ranges(self, server):
+        return [(int(r[2]["body"]), int(r[3]["body"]))
+                for r in server.received if r[0]["body"] == b"trange"]
+
+    def test_pages(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        pages = list(db.iter_rows("t", "i", "v", page_size=2))
+        self.assertEqual([p.values for p in pages],
+                         [[[0, "v0"], [1, "v1"]],
+                          [[2, "v2"], [3, "v3"]],
+                          [[4, "v4"]]])
+        self.assertEqual(self.ranges(server), [(0, 1), (2, 3), (4, 4)])
+
+    def test_subrange_and_negative_index(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        list(db.iter_rows("t", page_size=2, start=1, end=3))
+        self.assertEqual(self.ranges(server), [(1, 2), (3, 3)])
+
+        list(db.iter_rows("t", page_size=10, start=-2))
+        self.assertEqual(self.ranges(server)[-1], (3, 4))
+
+    def test_empty_table_yields_nothing(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        self.assertEqual(list(db.iter_rows("empty")), [])
+
+    def test_rejects_bad_page_size(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        with self.assertRaises(ValueError):
+            list(db.iter_rows("t", page_size=0))
+
+
+class NewCommandTests(ClientTest):
+    """新增命令的参数编码与返回值解包。"""
+
+    def handler(self, req):
+        cmd = req[0]["body"]
+        if cmd == b"tupsert":
+            return reply_json({"ok": True, "code": "ok", "kind": "int",
+                               "value": 1, "text": "OK tupsert"})
+        if cmd == b"rename":
+            return reply_json({"ok": True, "code": "ok",
+                               "text": "OK renamed 'a' -> 'b'"})
+        if cmd == b"swap":
+            return reply_json({"ok": True, "code": "ok",
+                               "text": "OK swapped 'a' <-> 'b'"})
+        raise AssertionError("没准备这个命令：%r" % (cmd,))
+
+    def test_tupsert_sends_column_pairs(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        self.assertEqual(db.tupsert("t", "id", 1,
+                                    {"name": "alice", "age": 30}), 1)
+        self.assertEqual([a["body"] for a in server.received[0]],
+                         [b"tupsert", b"t", b"id", b"1",
+                          b"name", b"alice", b"age", b"30"])
+
+    def test_tupsert_accepts_pairs(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        db.tupsert("t", "id", 1, ("name", "alice"))
+        self.assertEqual([a["body"] for a in server.received[0]],
+                         [b"tupsert", b"t", b"id", b"1", b"name", b"alice"])
+
+    def test_rename_and_swap(self):
+        server = self.start(self.handler, token="secret")
+        db = self.connect(server)
+
+        self.assertEqual(db.rename("a", "b"), "OK renamed 'a' -> 'b'")
+        self.assertEqual(db.swap("a", "b"), "OK swapped 'a' <-> 'b'")
+        self.assertEqual([r[0]["body"] for r in server.received],
+                         [b"rename", b"swap"])
 
 
 if __name__ == "__main__":
